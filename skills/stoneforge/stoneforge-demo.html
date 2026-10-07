@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StoneForge — demo</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#c8cbc9;font-family:ui-sans-serif,system-ui,Segoe UI,Arial}
+  #hud{position:fixed;left:14px;top:12px;z-index:10;color:#23261f;font-size:12px;line-height:1.5;
+    background:rgba(255,255,255,.4);padding:8px 11px;border-radius:8px;border:1px solid rgba(0,0,0,.08)}
+  #hud b{color:#111}
+  #err{position:fixed;left:12px;bottom:12px;right:12px;z-index:30;color:#a11;font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+<div id="hud"><b>StoneForge demo</b> — one procedural material, four asset types, zero textures.<br>
+Columns · moss &nbsp;|&nbsp; Brick wall · snow &nbsp;|&nbsp; Arch · moss &nbsp;|&nbsp; Boulder · lichen &nbsp; <b>· drag to orbit</b></div>
+<div id="err"></div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import {
+  StoneKit, beveledBox, addArch, addStack, addBrickWall,
+  makeStoneMaterial, OVERGROWTH, quickStudio
+} from './stoneforge.js';
+
+const err = document.getElementById('err');
+addEventListener('error', e => { err.style.display='block'; err.textContent += (e.error?.stack||e.message)+'\n'; });
+addEventListener('unhandledrejection', e => { err.style.display='block'; err.textContent += (e.reason?.stack||e.reason)+'\n'; });
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+renderer.domElement.addEventListener('webglcontextlost', e=>e.preventDefault());
+
+const scene = new THREE.Scene();
+{ const c=document.createElement('canvas'); c.width=8; c.height=256;
+  const ctx=c.getContext('2d'); const g=ctx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'#d5d8d6'); g.addColorStop(1,'#b7bab7'); ctx.fillStyle=g; ctx.fillRect(0,0,8,256);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; scene.background=t; }
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0.5, 4.2, 13.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping=true; controls.target.set(0,1.6,0); controls.maxPolarAngle=Math.PI*0.52; controls.update();
+
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+quickStudio(renderer, scene);
+
+const ground=new THREE.Mesh(new THREE.CircleGeometry(80,64),
+  new THREE.MeshStandardMaterial({color:0xcbcecb,roughness:1}));
+ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+
+function place(mesh){ mesh.castShadow=true; mesh.receiveShadow=true; scene.add(mesh); }
+
+/* ---- 1. COLUMNS (pillars) — moss ---- */
+function column(x){
+  const kit=new StoneKit();
+  kit.add(beveledBox(1.15,0.26,1.15),{position:new THREE.Vector3(x,0.13,0)});
+  kit.add(beveledBox(0.98,0.18,0.98),{position:new THREE.Vector3(x,0.35,0)});
+  addStack(kit,{base:new THREE.Vector3(x,0.44,0), w:0.74,h:0.44,d:0.74, count:5, taper:0.12});
+  const capY=0.44+5*0.44;
+  kit.add(beveledBox(0.98,0.18,0.98),{position:new THREE.Vector3(x,capY+0.09,0)});
+  kit.add(beveledBox(1.18,0.22,1.18),{position:new THREE.Vector3(x,capY+0.30,0)});
+  const {material}=makeStoneMaterial({colorA:0x33322f,colorB:0x8b8579,overgrowth:OVERGROWTH.moss});
+  return new THREE.Mesh(kit.build(),material);
+}
+place(column(-5.2)); place(column(-3.6));
+
+/* ---- 2. BRICK WALL — snow ---- */
+function wall(x){
+  const kit=new StoneKit();
+  addBrickWall(kit,{origin:new THREE.Vector3(x-0.95,0,0), cols:9, rows:11, w:0.42,h:0.24,d:0.32, gap:0.02});
+  const {material}=makeStoneMaterial({colorA:0x4a3a30,colorB:0xa08a70,warm:true,edgeWear:0.5,overgrowth:OVERGROWTH.snow});
+  return new THREE.Mesh(kit.build(),material);
+}
+place(wall(-1.2));
+
+/* ---- 3. ARCH (voussoirs) — moss ---- */
+function archAsset(x){
+  const kit=new StoneKit();
+  addStack(kit,{base:new THREE.Vector3(x-1.02,0,0), w:0.7,h:0.5,d:0.8, count:4});
+  addStack(kit,{base:new THREE.Vector3(x+1.02,0,0), w:0.7,h:0.5,d:0.8, count:4});
+  addArch(kit,{count:11, innerR:0.72, thick:0.6, depth:0.8, center:new THREE.Vector3(x,2.0,0)});
+  const {material}=makeStoneMaterial({colorA:0x323234,colorB:0x878075,overgrowth:OVERGROWTH.moss});
+  return new THREE.Mesh(kit.build(),material);
+}
+place(archAsset(2.1));
+
+/* ---- 4. BOULDER (rock cluster) — lichen ---- */
+function boulder(x){
+  const kit=new StoneKit();
+  for(let i=0;i<7;i++){
+    const s=0.5+Math.random()*0.65;
+    const g=beveledBox(s, s*(0.6+Math.random()*0.5), s*(0.7+Math.random()*0.5), {bevel:0.14, seg:3});
+    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random()*3,Math.random()*3,Math.random()*3));
+    const p=new THREE.Vector3(x+(Math.random()-0.5)*0.7, 0.35+Math.random()*0.6, (Math.random()-0.5)*0.7);
+    kit.add(g,{position:p,quaternion:q});
+  }
+  const {material}=makeStoneMaterial({colorA:0x3a3937,colorB:0x807a70,noiseScale:0.85,edgeWear:0.35,overgrowth:OVERGROWTH.lichen});
+  return new THREE.Mesh(kit.build(),material);
+}
+place(boulder(5.0));
+
+/* ---- post: GTAO for crevice contact shadow ---- */
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+let gtao=null;
+try{ gtao=new GTAOPass(scene,camera,innerWidth,innerHeight); gtao.blendIntensity=0.75;
+  if(gtao.updateGtaoMaterial) gtao.updateGtaoMaterial({radius:0.18,distanceExponent:1.2,thickness:0.4,scale:1.0,samples:16,screenSpaceRadius:false});
+  composer.addPass(gtao);
+}catch(e){}
+composer.addPass(new OutputPass());
+
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight); gtao?.setSize?.(innerWidth,innerHeight); });
+
+(function tick(){ requestAnimationFrame(tick); controls.update(); composer.render(); })();
+window.SF = { scene, camera, controls };
+window.setView=(px,py,pz,tx,ty,tz)=>{camera.position.set(px,py,pz);controls.target.set(tx??0,ty??1.6,tz??0);controls.update();};
+</script>
+</body>
+</html>

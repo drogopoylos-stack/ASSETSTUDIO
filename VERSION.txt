@@ -1,0 +1,2 @@
+Asset Studio 2026.10.1
+built 2026-10-01T01:24:11 from commit 5b6e4fe

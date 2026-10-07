@@ -1,0 +1,377 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Theme tokens (RGB channel triplets) ---- */
+:root,
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --c-bg: 11 13 18;
+  --c-panel: 19 22 31;
+  --c-panel2: 26 30 43;
+  --c-line: 38 43 58;
+  --c-muted: 139 147 167;
+  --c-text: 230 233 240;
+  --c-brand: 110 168 254;
+  --c-brand600: 79 140 247;
+  --c-brand700: 58 111 217;
+  --c-accent: 157 123 255;
+  --c-ok: 62 207 142;
+  --c-warn: 245 166 35;
+  --c-danger: 245 101 101;
+}
+
+[data-theme="black"] {
+  color-scheme: dark;
+  --c-bg: 0 0 0;
+  --c-panel: 12 12 14;
+  --c-panel2: 20 20 24;
+  --c-line: 36 36 42;
+  --c-muted: 140 145 158;
+  --c-text: 233 236 242;
+  --c-brand: 110 168 254;
+  --c-brand600: 79 140 247;
+  --c-brand700: 58 111 217;
+  --c-accent: 167 139 250;
+  --c-ok: 52 211 153;
+  --c-warn: 245 166 35;
+  --c-danger: 248 113 113;
+}
+
+/* high-contrast: pure-black bg, white text */
+[data-theme="contrast"] {
+  color-scheme: dark;
+  --c-bg: 0 0 0;
+  --c-panel: 10 10 12;
+  --c-panel2: 22 22 26;
+  --c-line: 60 60 68;
+  --c-muted: 190 195 208;
+  --c-text: 255 255 255;
+  --c-brand: 130 180 255;
+  --c-brand600: 96 165 250;
+  --c-brand700: 59 130 246;
+  --c-accent: 192 168 255;
+  --c-ok: 74 222 128;
+  --c-warn: 250 204 21;
+  --c-danger: 248 113 113;
+}
+
+[data-theme="slate"] {
+  color-scheme: dark;
+  --c-bg: 15 19 26;
+  --c-panel: 23 29 40;
+  --c-panel2: 32 40 54;
+  --c-line: 48 58 76;
+  --c-muted: 148 160 180;
+  --c-text: 226 232 240;
+  --c-brand: 56 189 248;
+  --c-brand600: 14 165 233;
+  --c-brand700: 2 132 199;
+  --c-accent: 129 140 248;
+  --c-ok: 52 211 153;
+  --c-warn: 251 191 36;
+  --c-danger: 244 114 114;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-text));
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #262b3a;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .card {
+    @apply bg-panel border border-line rounded-xl shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
+           border border-line bg-panel2 hover:bg-line transition-colors disabled:opacity-40
+           disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 hover:bg-brand-700 border-brand-700 text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent border-transparent hover:bg-panel2;
+  }
+  .input {
+    @apply w-full px-3 py-2 rounded-lg bg-panel2 border border-line text-sm
+           outline-none focus:border-brand placeholder:text-muted;
+  }
+  .label {
+    @apply text-xs font-medium text-muted mb-1 block;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
+           bg-panel2 border border-line text-muted;
+  }
+  .tab {
+    @apply px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-muted hover:text-text
+           hover:bg-panel2 transition-colors cursor-pointer whitespace-nowrap;
+  }
+  .tab-active {
+    @apply bg-panel2 text-text border border-line;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* agent-spawn: a little bot flies up into the top-right agent counter */
+@keyframes agent-spawn-fly {
+  0%   { transform: translate(-16px, 18px) scale(0.55); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translate(0, 0) scale(1.05); opacity: 0; }
+}
+.agent-spawn-fly { animation: agent-spawn-fly 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes agent-count-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); color: rgb(var(--c-ok)); }
+  100% { transform: scale(1); }
+}
+.agent-count-pop { animation: agent-count-pop 0.55s ease-out; }
+
+/* progress shimmer */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(110, 168, 254, 0.18), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.4s infinite;
+}
+
+/* ───────── Workflows dashboard ───────── */
+/* an agent card scales/fades in (staggered by index via inline animation-delay) */
+@keyframes wf-spawn {
+  0%   { transform: translateY(10px) scale(0.92); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.wf-spawn { animation: wf-spawn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* a running agent: soft pulsing glow ring */
+@keyframes wf-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--c-warn), 0.5), 0 0 10px -2px rgba(var(--c-warn), 0.45); }
+  50%      { box-shadow: 0 0 0 1px rgba(var(--c-warn), 0.9), 0 0 20px 1px rgba(var(--c-warn), 0.7); }
+}
+.wf-glow { animation: wf-glow 1.8s ease-in-out infinite; }
+
+/* flowing dashes along a phase connector when it's active */
+@keyframes wf-flow {
+  to { background-position: 24px 0; }
+}
+.wf-flow {
+  background-image: linear-gradient(90deg, rgba(var(--c-brand), 0.9) 45%, transparent 45%);
+  background-size: 12px 100%;
+  animation: wf-flow 0.6s linear infinite;
+}
+
+/* slow-drifting aurora gradient for the detail header */
+@keyframes wf-aurora {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.wf-aurora {
+  background: linear-gradient(120deg,
+    rgba(var(--c-brand), 0.20), rgba(var(--c-accent), 0.14),
+    rgba(var(--c-ok), 0.12), rgba(var(--c-brand), 0.20));
+  background-size: 300% 300%;
+  animation: wf-aurora 14s ease infinite;
+}
+
+/* a log line rising into view */
+@keyframes wf-rise {
+  0%   { transform: translateY(6px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.wf-rise { animation: wf-rise 0.35s ease-out both; }
+
+/* a sweeping conic ring for a working agent's avatar */
+@keyframes wf-spin { to { transform: rotate(360deg); } }
+.wf-spin { animation: wf-spin 2.2s linear infinite; }
+
+/* agent drawer: fade the scrim + slide the panel in from the right */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* ── Prism syntax tokens (chat code blocks) ───────────────────────────────────
+   prismjs was already a dependency but nothing imported it, so highlighted code
+   had no colours. Themed from the app palette so light/dark both work. */
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: rgb(var(--c-muted)); font-style: italic; }
+.token.punctuation { color: rgb(var(--c-text)); opacity: .55; }
+.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted { color: rgb(var(--c-danger)); }
+.token.boolean, .token.number, .token.regex, .token.variable { color: rgb(var(--c-warn)); }
+.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: rgb(var(--c-ok)); }
+.token.operator, .token.entity, .token.url, .token.function, .token.class-name { color: rgb(var(--c-accent)); }
+.token.atrule, .token.attr-value, .token.keyword { color: rgb(var(--c-brand)); }
+.token.important, .token.bold { font-weight: 600; }
+.token.italic { font-style: italic; }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   CLI SKIN — the same studio, drawn like a console window.
+
+   Settings → the switcher under the pane list writes data-skin on <html>. This
+   block is the whole visual half of it; the feed's own marks (⏺ ⎿ ✻ >) live in
+   SessionFeed.tsx. Nothing here is wired to a session, so the look can be
+   changed in the middle of a turn and the conversation does not notice.
+
+   Colours are the Windows console "Campbell" scheme — the palette cmd.exe and
+   Windows Terminal actually ship — with Claude's own terracotta as the brand,
+   because that is the colour the CLI prints its ✻ and its spinner in.
+
+   Selected as html[data-skin=…] (0,1,1) so it outranks every [data-theme=…]
+   block (0,1,0) whatever order the file ends up in.
+   ═════════════════════════════════════════════════════════════════════════ */
+html[data-skin="cli"],
+[data-skin="cli"] {
+  color-scheme: dark;
+  --c-bg: 12 12 12;          /* #0C0C0C  cmd.exe black                        */
+  --c-panel: 18 18 18;
+  --c-panel2: 28 28 28;
+  --c-line: 58 58 58;
+  --c-muted: 118 118 118;    /* #767676  bright black — the CLI's dim text    */
+  --c-text: 204 204 204;     /* #CCCCCC  console foreground                   */
+  --c-brand: 217 119 87;     /* #D97757  Claude terracotta — the ✻ and bullet */
+  --c-brand600: 200 104 74;
+  --c-brand700: 168 85 60;
+  --c-accent: 97 214 214;    /* #61D6D6  bright cyan                          */
+  --c-ok: 22 198 12;         /* #16C60C  bright green                         */
+  --c-warn: 249 241 165;     /* #F9F1A5  bright yellow                        */
+  --c-danger: 231 72 86;     /* #E74856  bright red                           */
+}
+
+/* One face for everything, including the controls — a console has no second font. */
+[data-skin="cli"],
+[data-skin="cli"] body,
+[data-skin="cli"] .font-sans,
+[data-skin="cli"] input,
+[data-skin="cli"] textarea,
+[data-skin="cli"] select,
+[data-skin="cli"] button {
+  font-family: "JetBrains Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+/* Square edges and no elevation. A 1px line is the only thing a console draws. */
+[data-skin="cli"] [class*="rounded"]:not([class*="rounded-full"]),
+[data-skin="cli"] .card,
+[data-skin="cli"] .btn,
+[data-skin="cli"] .input,
+[data-skin="cli"] .chip,
+[data-skin="cli"] .tab {
+  border-radius: 2px;
+}
+[data-skin="cli"] [class*="shadow-"] {
+  box-shadow: none;
+}
+[data-skin="cli"] .card {
+  box-shadow: none;
+}
+
+/* The prompt box the CLI draws round its input keeps its soft corners. */
+[data-skin="cli"] .cli-prompt-box {
+  border-radius: 6px;
+}
+
+[data-skin="cli"] ::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 0;
+}
+[data-skin="cli"] ::selection {
+  background: rgb(58 120 255 / 0.45);   /* #3B78FF — the console's own selection blue */
+}
+[data-skin="cli"] [data-pulse-dot] {
+  display: none;   /* the feed prints ✻ in front of the working line instead */
+}
+
+/* A pane header has to fit the pane, whatever size the pane has been dragged to.
+   The header is a CSS container, so each item is measured against ITS OWN pane rather than the
+   window — six panes across and the window is still 1600px wide, which is why a media query
+   answers the wrong question here. Items drop out least-important first: the speed meter, then
+   the page chip, then the branch. What never drops is the context figure, the layout picker and
+   the full-screen button — the three you need in order to get back out of a small pane. */
+.pane-head { container-type: inline-size; }
+/* 1 the running row (the feed already shows it, at its foot) · 2 the page chip
+   3 the conversation picker · 4 the branch
+   What never goes: the project, the model, the context figure, the layout picker and the
+   full-screen button — the project because two agents look identical without it, and the last
+   two because they are how you get back out of a pane too small to work in. */
+@container (max-width: 1000px) { .pane-head [data-opt="1"] { display: none; } }
+@container (max-width:  900px) { .pane-head [data-opt="2"] { display: none; } }
+@container (max-width:  760px) { .pane-head [data-opt="3"] { display: none; } }
+@container (max-width:  560px) { .pane-head [data-opt="4"] { display: none; } }
+@container (max-width:  440px) { .pane-head [data-opt="5"] { display: none; } }
+
+/* The composer, when the pane is narrow.
+ *
+ * Three panes side by side put the prompt box at about 500px, and the row holds seven controls
+ * around a text field that has to stay usable. The field lost: it squeezed to roughly 240px and
+ * the placeholder wrapped onto three lines inside a box two lines tall.
+ *
+ * The first attempt hid the two least-used buttons at 420px and 340px. That was the wrong answer
+ * twice over — it does not trigger at 500px where the problem actually is, and taking controls
+ * away to make room is a worse trade than moving them.
+ *
+ * So the layout changes instead of the contents. Below the breakpoint the field takes a line of
+ * its own at full width and every button wraps underneath it, in the order they already sit in.
+ * Nothing is hidden, nothing moves to a menu, and the field gets the whole pane. Send stays last,
+ * pushed to the right edge, so the one control you reach for most keeps a fixed corner. */
+/* The container is the composer BOX, not the row.
+ *
+ * `@container` rules only ever match DESCENDANTS of the container — never the container element
+ * itself. Putting `container-type` on the row and then trying to set `flex-wrap: wrap` on that
+ * same row inside the query silently did nothing: the field got its `flex-basis: 100%`, had
+ * nowhere to wrap to, and was simply squeezed as before. Naming the container also stops the
+ * query resolving against some nearer unnamed one if this markup is ever nested. */
+.composer-box { container-type: inline-size; container-name: composer; }
+@container composer (max-width: 560px) {
+  .composer-row { flex-wrap: wrap; row-gap: 0.375rem; }
+  /* `order` moves it above the buttons without changing the DOM, so focus and tab order — which
+     follow the DOM, not the paint order — are unchanged. */
+  .composer-field { order: -1; flex-basis: 100%; }
+  .composer-send { margin-left: auto; }
+}
+/* 5 is also the context bar itself: past this width the figure alone has to do the work. */
+
+/* A chip caught half way across the clip line reads as a rendering fault. The fade turns it into
+   "there is more, and it does not fit" instead. It costs nothing when the header is roomy — the
+   last 24px of a half-empty bar is empty anyway, so there is nothing there to fade. */
+.pane-head-left {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+}
+
+/* One shot, then gone. `animate-pulse` loops, which reads as "something is wrong here" rather
+   than "this is the pane you asked for". */
+@keyframes studio-pane-flash { from { opacity: 1; } to { opacity: 0; } }
+.pane-flash { animation: studio-pane-flash 1s ease-out forwards; }

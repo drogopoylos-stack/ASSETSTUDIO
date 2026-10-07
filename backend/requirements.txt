@@ -1,0 +1,30 @@
+# Asset Studio - core backend dependencies.
+# Version RANGES (not hard pins), and setup installs with --prefer-binary, so a fresh install
+# picks a prebuilt WHEEL for whatever Python you have. This avoids building packages like
+# numpy / scipy from source (which would need a C/C++ compiler). If your Python is brand-new
+# and no wheel exists yet, install Python 3.12 from python.org and re-run setup.
+fastapi>=0.115,<1
+deepseek-harness-sdk==0.1.5rc1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.9,<3
+python-multipart>=0.0.18
+websockets>=13,<16
+httpx>=0.27,<1
+psutil>=6,<8
+pillow>=10.4,<13
+numpy>=2.0,<3
+keyring>=25,<26
+typer>=0.12,<1
+rich>=13,<15
+aiosqlite>=0.20,<1
+trimesh>=4.4,<5
+scipy>=1.13,<2
+python-dotenv>=1,<2
+# The file watcher behind the explorer and the code graph. It arrives with
+# uvicorn[standard] today, but a transitive dependency is not a contract and this is a
+# feature of its own, so it is asked for by name.
+watchfiles>=0.24,<2
+# Real terminals for the other coding agents (Codex, OpenCode, Gemini...). They draw their
+# own full-screen interface, so they need a pty rather than a pipe. Windows only —
+# POSIX uses the stdlib pty module.
+pywinpty>=2.0,<4 ; sys_platform == "win32"

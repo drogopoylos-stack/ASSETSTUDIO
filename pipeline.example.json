@@ -1,0 +1,12 @@
+{
+  "label": "concept-to-game-asset",
+  "target_game": "Demo",
+  "inputs": [],
+  "steps": [
+    { "stage": "image2d",  "provider_id": "placeholder-image", "params": { "prompt": "low-poly treasure chest, game icon", "seed": 42 } },
+    { "stage": "process2d","provider_id": "rembg",             "params": {} },
+    { "stage": "gen3d",    "provider_id": "placeholder-3d",    "params": { "prompt": "treasure chest", "complexity": 7 } },
+    { "stage": "optimize", "provider_id": "gltf-transform",    "params": { "draco": true, "ktx2": true } },
+    { "stage": "qa",       "provider_id": "turntable",         "params": { "frames": 8 } }
+  ]
+}

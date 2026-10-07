@@ -1,0 +1,9 @@
+# Installed, not written: `npm install` puts them back.
+node_modules/
+# The Studio's notes about this folder (the engine install log and its state).
+.studio/
+# Backups the Studio makes before it first writes a file.
+*.bak
+*.log
+# NOT ignored, on purpose: studio.edits.json. It holds what was moved, hidden and placed in the
+# Studio, and the game applies it at start, so it ships with the code.

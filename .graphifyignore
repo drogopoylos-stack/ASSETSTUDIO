@@ -1,0 +1,26 @@
+# Paths under this workspace that are the Studio's OWN install, not code to be graphed.
+#
+# The graph exists to answer questions about the source somebody is working on. On this folder it
+# was answering about CPython: 27,820 of 39,815 nodes (69.9%) were `runtime/python/Lib`, plus a
+# further ~1,100 from `data/backups` and `data/tmp` — old copies of this very code. The file was
+# 45 MB instead of the ~2 MB the comment above `_GRAPH_CACHE` assumes, and a BOOST prefetch could
+# hand back `_LoopBoundMixin` instead of the symbol the user named, charge tokens for it, and
+# report that it had saved a grep.
+#
+# The real cause is that `D:\Asset Studio` is not a git repo. `graphify_index._git_ignored` asks
+# git what a project calls output, and with no git to ask it falls back to a list of NAMES — and no
+# name list can know that `runtime/` and `data/` HERE are ours, because `runtime` is a perfectly
+# plausible name for a game's own source.
+#
+# `graphify_index.py` has since been taught to skip them by itself (`_own_top_dirs` -> `skip_top`,
+# matched at the top level only), which needs a server restart before it applies. THIS FILE is what
+# makes the skip apply to the build the RUNNING server starts, so the graph comes out right without
+# one. Keep both: the code fix is general and also keeps the text scan's excluded list honest; this
+# file is the workspace-level statement, and it keeps working for anyone who points the Studio at
+# its own folder.
+#
+# Patterns are matched against ANY path segment, so a nested `data/` in a project would be caught
+# too. Harmless here: the only nested ones live under `.venv/Lib/site-packages`, already excluded.
+runtime
+data
+dist.old

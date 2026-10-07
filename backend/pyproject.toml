@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asset-studio"
+version = "0.1.0"
+description = "Local-first studio for generating 2D + 3D game assets (HTML5/Poki)."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "python-multipart>=0.0.20",
+    "websockets>=14",
+    "httpx>=0.28",
+    "psutil>=6",
+    "pillow>=11",
+    "numpy>=2",
+    "keyring>=25",
+    "typer>=0.15",
+    "rich>=13",
+    "aiosqlite>=0.20",
+    "trimesh>=4.5",
+    "python-dotenv>=1",
+]
+
+[project.optional-dependencies]
+heavy = ["rembg>=2", "onnxruntime>=1.20", "mcp>=1.2"]
+
+[project.scripts]
+asset-studio = "asset_studio.cli:app"
+asset-studio-mcp = "asset_studio.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["asset_studio*"]

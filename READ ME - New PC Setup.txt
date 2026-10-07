@@ -1,0 +1,95 @@
+ASSET STUDIO  —  Run it on a new PC
+===================================
+
+There are two ways. The installer is the easy one.
+
+
+WAY 1  —  The installer (one file, everything inside)
+------------------------------------------------------
+  1. On GitHub, open the repository's "Releases" page and download
+     AssetStudio-Setup-<version>.exe (you must be logged in to GitHub: the
+     repository is private).
+  2. Run it. Windows may say "Windows protected your PC", because the file is not
+     code-signed: click "More info", then "Run anyway".
+  3. Keep "Install Claude Code" and "Node.js" ticked. Node.js runs web games and
+     opens compressed game models in the Studio Engine.
+  4. Wait a few minutes. A window shows each step: Python, graphify, the web tools,
+     Claude Code, gltf-transform. It must end with "Setup complete".
+  5. Start Asset Studio from the Start menu or the desktop shortcut.
+  6. Log in to Claude once: the app asks you, or open a terminal and type  claude
+
+  Inside the installer: the app, the UI already built, Electron, a private Python
+  3.12, every Python package (the backend, graphify, Scrapling), the Studio's Claude
+  skills, and the SETTINGS OF THE PC IT WAS BUILT ON. It downloads only Claude Code
+  and the browser the web tools use. It installs for your user only (no admin), in
+  %LOCALAPPDATA%\Programs\Asset Studio.
+
+
+WAY 2  —  Copy the folder (or clone it) and let the setup install everything
+----------------------------------------------------------------------------
+  1. Copy this whole STUDIO folder to the new PC (you do not need backend\.venv or
+     frontend\node_modules - the setup makes them again for the new PC).
+  2. Double-click  "Asset Studio.vbs". The first time, a setup window installs
+     everything (about 3-5 minutes), then the Studio opens.
+  The setup installs Python 3.12 and Node.js LTS with winget when they are missing,
+  Claude Code with Anthropic's own installer, and then the app's packages, the UI,
+  graphify, the web tools and a browser for the Studio Engine.
+  If winget is not on the PC, install Python 3.10+ (tick "Add python.exe to PATH")
+  and Node.js LTS by hand, then run  Setup.bat  again.
+
+
+WHAT COMES WITH IT
+------------------
+  * Your settings. The installer carries this PC's Asset Studio settings, the
+    theme, fonts and status bar of the Studio window, and the model, effort and
+    permission mode of each chat agent. It leaves out what only means
+    something on this PC: the folders you have open here and program paths. On the
+    new PC the Studio opens the projects Claude Code already knows, plus project
+    folders on the Desktop, in Documents and Downloads ("Find my projects..." in the
+    project menu does it again later).
+  * Claude Code's folder. The Studio finds it by itself: %USERPROFILE%\.claude, or
+    the folder in CLAUDE_CONFIG_DIR when that is set.
+  * The code graph (graphify): the package, the /graphify skill for Claude Code, and
+    a  graphify  command in the terminal.
+  * The web tools (Scrapling): a web fetch that gets past pages that block robots,
+    and a web search with no API key.
+  * The Studio Engine: the forge, the Library, the editor and the reviews render with
+    Chrome or Edge (every Windows PC has Edge); a headless Chrome is downloaded only
+    on a PC with neither. Compressed game models (Draco, meshopt) open through
+    gltf-transform, which the setup installs with npm when Node.js is there.
+  * New commands on PATH (claude, graphify, gltf-transform) work at once in the
+    Studio and its agents: the Studio reads the PATH from Windows when it starts.
+
+
+AFTER INSTALLING
+----------------
+  * API keys live in Windows Credential Manager, which does NOT travel with a PC.
+    Enter them again in Settings.
+  * Logs of every setup run: data\logs\ in the Studio's folder.
+  * "Asset Studio - Setup or repair" (Start menu) or Setup.bat runs the setup again
+    at any time; it only fixes what is missing.
+
+
+OPTIONAL  -  Local AI generators (2D/3D)
+----------------------------------------
+The heavy local AI (image generation, upscaling, local 3D) is opt-in because the
+models are big and GPU-specific: run "Install AI Pack.ps1" (right-click -> Run with
+PowerShell). ComfyUI models (TripoSplat, Hunyuan3D, TRELLIS.2, TripoSG, SF3D,
+FLUX/Qwen): install ComfyUI (https://www.comfy.org), set tools.comfyui_url in
+Settings, then add each model's node + workflow. Settings -> "Local generators" lists
+every model, its VRAM, and the workflow filename to save.
+
+
+Tray icon (right-click) gives you:
+  Open Asset Studio · Open in browser · Allow access from my network (LAN) ·
+  Start when I log in · Restart backend · Quit.
+
+
+Troubleshooting
+---------------
+  * "Setup didn't finish" -> read the newest file in data\logs\, or run Setup.bat to
+    see the error on screen.
+  * Claude features don't work -> run  claude  once in a terminal and log in. If it
+    is not installed:  irm https://claude.ai/install.ps1 | iex  in PowerShell.
+  * Want it reachable from your phone/another device -> tray icon ->
+    "Allow access from my network (LAN)"; it shows the URL to open.

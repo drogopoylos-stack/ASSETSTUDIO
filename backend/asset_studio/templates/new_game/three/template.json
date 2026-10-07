@@ -1,0 +1,20 @@
+{
+  "engine": "three",
+  "label": "three.js",
+  "dependencies": { "three": "^0.186.0" },
+  "import_map": {
+    "three": "./node_modules/three/build/three.module.js",
+    "three/addons/": "./node_modules/three/examples/jsm/"
+  },
+  "engine_file": "node_modules/three/build/three.module.js",
+  "handle": "window.__game = { renderer, scene, camera, THREE }",
+  "builders": [
+    { "file": "src/assets.js", "export": "buildCrate", "call": "buildCrate({ size: 1 })",
+      "note": "a wooden crate with a darker frame; size is its width in metres" },
+    { "file": "src/assets.js", "export": "buildTree", "call": "buildTree({ height: 3 })",
+      "note": "a low-poly tree, a trunk and two cones; height in metres" }
+  ],
+  "targets": ["crate", "tree"],
+  "actions": ["jump"],
+  "objects": ["sky-light", "sun", "ground", "crate-1", "crate-2", "tree-1", "tree-2", "player"]
+}
