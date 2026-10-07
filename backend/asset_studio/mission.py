@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from . import fsutil
 from . import perf
+from . import engines
 from .config import DATA_DIR, settings
 
 PROJECT_ACTIVE_WINDOW = 600   # s — project counted "active" if touched within
@@ -2128,9 +2129,8 @@ def project_todos(project_id: str) -> dict:
 
     The feed renders a phase event as it happens, but it scrolls away, so "3/9" in the header had
     nothing behind it. This is the standing list."""
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.todos(project_id)
+    if engines.native(project_id):
+        return engines.native(project_id).todos(project_id)
     root, pdir, _ = project_dir(project_id)
     empty = {"todos": [], "done": 0, "total": 0, "source": "", "ts": "", "earlier": 0}
     try:
@@ -2146,9 +2146,8 @@ def project_todos(project_id: str) -> dict:
     return resolve_phases(project_id, entries, {f.stem for f in jsonls}, transcript=newest)
 
 def project_context(project_id: str) -> dict:
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.context(project_id)
+    if engines.native(project_id):
+        return engines.native(project_id).context(project_id)
     root, pdir, _ = project_dir(project_id)
     try:
         pdir = pdir.resolve()
@@ -2310,9 +2309,8 @@ def slash_commands(project_id: str = "") -> list[dict]:
 def list_sessions(project_id: str) -> list[dict]:
     """All conversations (transcripts) for a project, newest first — so the user can
     clear to a fresh one and reopen previous ones. The active (newest) is flagged."""
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.sessions(project_id)
+    if engines.native(project_id):
+        return engines.native(project_id).sessions(project_id)
     root, pdir, _ = project_dir(project_id)
     try:
         pdir = pdir.resolve()
@@ -2852,18 +2850,16 @@ def project_subagents(project_id: str, session: str = "", with_files: bool = Fal
     the pill, the card and the pane called the Claude module directly, which reads Claude's
     transcript layout and nothing else.
     """
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.subagents(project_id)
+    if engines.native(project_id):
+        return engines.native(project_id).subagents(project_id)
     from . import subagents
     return subagents.list_for(project_id, session=session, with_files=with_files)
 
 
 def project_subagent(project_id: str, agent_id: str, limit: int = 400) -> dict:
     """One agent in full: its own timeline, and what it read, ran and changed."""
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.subagent_detail(project_id, agent_id, limit=limit)
+    if engines.native(project_id):
+        return engines.native(project_id).subagent_detail(project_id, agent_id, limit=limit)
     from . import subagents
     return subagents.detail(project_id, agent_id, limit=limit)
 
@@ -2876,7 +2872,7 @@ def project_subagent_collisions(project_id: str, root: str = "") -> list:
     `codex_app._decorate_sub`), but there is no graph-joined clash report for them yet, so an
     empty list is the honest answer rather than a guessed one.
     """
-    if project_id.startswith("codex--"):
+    if engines.native(project_id):
         return []
     from . import subagents
     return subagents.collisions(project_id, root)
@@ -2887,9 +2883,8 @@ def project_feed(project_id: str, limit: int = 150, session: str = "", kinds: st
     (with token counts), messages, edits (with diffs), commands, todos, and tool
     results — plus live status (working now / active subagents) and any non-claude
     agent's stdout. ``session`` selects a specific conversation; default = newest."""
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.feed(project_id, limit, session, kinds)
+    if engines.native(project_id):
+        return engines.native(project_id).feed(project_id, limit, session, kinds)
     root, pdir, _ = project_dir(project_id)
     try:
         pdir = pdir.resolve()
@@ -3064,7 +3059,7 @@ def project_feed(project_id: str, limit: int = 150, session: str = "", kinds: st
         # The summary bar goes on AFTER the kind filter, so hiding tool rows does not also hide
         # the line that says how many there were.
         "lines": _turn_rows(project_id, _filter_kinds(events, kinds))[-limit:],
-        "working": (cc_session.is_sending(project_id) if project_id.startswith("deepseek-harness--")
+        "working": (cc_session.is_sending(project_id) if engines.for_feed(project_id).reports_working
                     else _is_working(entries, newest.stat().st_mtime, awaiting, project_id)),
         "tokens": _turn_tokens(entries),
         "agents_active": _active_agent_count(pdir, project_id),

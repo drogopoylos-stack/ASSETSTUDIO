@@ -159,7 +159,7 @@ class DeepSeekIntegration(unittest.TestCase):
         from unittest.mock import patch
         import importlib.util
         if importlib.util.find_spec("asset_studio.codex_app"):
-            with patch("asset_studio.codex_app.is_sending", return_value=True), patch("asset_studio.cc_session.is_sending", return_value=False):
+            with patch("asset_studio.codex_app.is_sending", return_value=True), patch("asset_studio.cc_session._claude_is_sending", return_value=False):
                 self.assertFalse(sending("d--fixture-workspace")["sending"])
                 self.assertTrue(sending("codex--d--fixture-workspace")["sending"])
         with patch("asset_studio.cc_session.cancel") as claude_cancel, patch.object(dsh, "cancel", return_value={"ok": True}) as dsh_cancel:

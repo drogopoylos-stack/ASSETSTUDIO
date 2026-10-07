@@ -19,7 +19,7 @@ import json
 import os
 from pathlib import Path
 
-from . import fsutil
+from . import engines, fsutil
 
 
 def _claude_home() -> Path:
@@ -150,8 +150,8 @@ def _project_cwd(project_id: str) -> str:
     then bare — a folder that only DeepSeek or Codex has run in has no Claude project dir under the
     prefixed id, and answering "" there would take the project roots away with it."""
     from . import cc_session
-    for pid in ([project_id, project_id.split("--", 1)[1]] if project_id.startswith(
-            ("codex--", "deepseek-harness--", "kimi--", "qwen--")) else [project_id]):
+    bare = engines.bare_folder(project_id)
+    for pid in ([project_id, bare] if bare != project_id else [project_id]):
         try:
             cwd, _ = cc_session._resolve(pid)
             if cwd:
@@ -197,8 +197,7 @@ def _dsh_roots(project_id: str) -> list[tuple[str, Path]]:
         out.append(("shared", shared))
     try:                       # the per-project dshHome, plus the shared user root
         from . import deepseek_session
-        pid = project_id[len("deepseek-harness--"):] if project_id.startswith("deepseek-harness--") else project_id
-        out.append(("user-dsh", deepseek_session.runtime_home(pid) / "skills"))
+        out.append(("user-dsh", deepseek_session.runtime_home(engines.bare_folder(project_id)) / "skills"))
     except Exception:
         pass
     agents_home = os.environ.get("DSH_AGENTS_HOME") or str(Path.home() / ".agents")
@@ -240,11 +239,7 @@ def _roots_for(project_id: str, agent: str) -> list[tuple[str, Path]]:
     empty list plus the panel's own sentence is the honest answer. Listing Claude's skills there
     would be a lie the user could not see through until one silently failed to load.
     """
-    if agent == "codex":
-        return []
-    if agent == "deepseek-harness":
-        return _dsh_roots(project_id)
-    return _claude_roots(project_id)
+    return engines.for_agent(agent).skill_roots(project_id)
 
 
 _LIST_CACHE: dict = {}          # project_id -> (expires_at, result)

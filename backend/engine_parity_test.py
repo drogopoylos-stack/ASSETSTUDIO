@@ -74,16 +74,18 @@ print("The pre-turn snapshot is taken at one door, for every engine")
 # it sits ABOVE the per-engine dispatch in `send`, so no engine can return past it.
 src = open("asset_studio/cc_session.py", encoding="utf-8").read()
 snapshot_at = src.index("_snapshot_before_turn(project_id, message, engine")
-deepseek_at = src.index('if agent == "deepseek-harness":', src.index("def send("))
-codex_at = src.index('if agent == "codex":', src.index("def send("))
-check("the snapshot runs before the DeepSeek branch", snapshot_at < deepseek_at)
-check("and before the Codex branch", snapshot_at < codex_at)
+# Every engine but Claude now leaves `send` at ONE line: the adapter call (engines.py). Claude's
+# turn is the rest of the function, so "above the dispatch" covers every engine.
+dispatch_at = src.index("eng.start_turn(", src.index("def send("))
+check("the snapshot runs before the engine dispatch", snapshot_at < dispatch_at)
+check("there is one dispatch, not a branch per engine",
+      'if agent == "deepseek-harness":' not in src and 'if agent == "codex":' not in src)
 check("the old per-engine call sites are gone",
       src.count("threading.Thread(target=checkpoints.create") == 1,
       src.count("threading.Thread(target=checkpoints.create"))
 check("it is labelled with the engine that is about to write", '"agent": agent or ""' in src)
 check("the money guard is above the dispatch too (it used to be dead for both)",
-      src.index("over = spend.over_cap()", src.index("def send(")) < deepseek_at)
+      src.index("over = spend.over_cap()", src.index("def send(")) < dispatch_at)
 check("checkpoints record the engine", checkpoints.create.__code__.co_varnames[:4] == ("project_id", "label", "kind", "agent"),
       checkpoints.create.__code__.co_varnames[:4])
 
@@ -182,12 +184,20 @@ check("no transcript is created for it", not (deepseek_session.HOME / "projects"
 print()
 print("Rewind names the engine that owns the conversation")
 rsrc = open("asset_studio/cc_session.py", encoding="utf-8").read()
+from asset_studio import engines
 check("a DeepSeek feed id resends through the DeepSeek adapter",
-      'resend_agent = "deepseek-harness" if deepseek else "claude"' in rsrc)
+      'resend_agent = engines.for_feed(project_id).id' in rsrc
+      and engines.for_feed("deepseek-harness--" + SLUG).id == "deepseek-harness"
+      and engines.for_feed(SLUG).id == "claude")
 check("and the resends use it, not the word claude",
       rsrc.count("agent=resend_agent") == 2, rsrc.count("agent=resend_agent"))
+# RESET, not cancel: cancel only stops a running turn, and an edit is made while idle — which left
+# the idle runtime remembering the messages the edit removed.
+from unittest.mock import patch as _patch
+with _patch.object(deepseek_session, "reset") as _reset:
+    engines.for_feed("deepseek-harness--" + SLUG).reset("deepseek-harness--" + SLUG)
 check("the DSH runtime is closed so the truncated file is re-read",
-      "deepseek_session.cancel(project_id)" in rsrc)
+      "engines.for_feed(project_id).reset(project_id)" in rsrc and _reset.called)
 
 print()
 print("The turn ledger is read and written under the same key")

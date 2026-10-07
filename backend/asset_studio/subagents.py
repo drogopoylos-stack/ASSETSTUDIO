@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import agent_usage
+from . import engines
 from . import mission
 from . import perf
 from . import pricing
@@ -738,9 +739,8 @@ def detail(project_id: str, agent_id: str, limit: int = 400) -> dict:
     like the parent's, because they are drawn by the same code rather than by a second, lesser
     renderer that drifts away from it.
     """
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.subagent_detail(project_id, agent_id, limit)
+    if engines.native(project_id):
+        return engines.native(project_id).subagent_detail(project_id, agent_id, limit)
     f = _file_for(project_id, agent_id)
     if not f:
         return {"ok": False, "error": "no transcript for that agent", "lines": []}
@@ -814,9 +814,8 @@ _list_cache: dict = {}
 
 def list_for(project_id: str, session: str = "", with_files: bool = False) -> dict:
     """Every subagent this project has run, newest first, with its bill and its footprint."""
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.subagents(project_id)
+    if engines.native(project_id):
+        return engines.native(project_id).subagents(project_id)
     key = (project_id, session, with_files)
     hit = _list_cache.get(key)
     now = time.time()

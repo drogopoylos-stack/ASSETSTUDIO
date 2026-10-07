@@ -304,29 +304,25 @@ def checkpoint_restore(project_id: str, cid: str, body: RestoreBody):
 
 @router.get("/projects/{project_id}/sending")
 def sending(project_id: str):
-    from .. import codex_app
-    # A prefixed feed polls only its engine; a Claude pane must not borrow
+    # A prefixed feed polls only its engine (engines.for_feed); a Claude pane must not borrow
     # Codex's busy state just because both engines share the folder.
-    codex = codex_app.is_sending(project_id) if project_id.startswith("codex--") else False
-    return {"sending": cc_session.is_sending(project_id) or codex,
-            "pending": cc_session.pending(project_id) or (1 if codex else 0)}
+    busy = cc_session.is_sending(project_id)
+    return {"sending": busy, "pending": 1 if busy else 0}
 
 
 @router.post("/projects/{project_id}/cancel-send")
 def cancel_send(project_id: str, agent: str = ""):
     """Stop the turn. `agent=codex` stops only Codex; a caller that names no agent stops the
     Claude session as it always did, and a Codex turn in the same folder with it."""
-    from .. import codex_app
-    if agent == "codex":
-        return codex_app.cancel(project_id)
-    if agent == "deepseek-harness":
-        from .. import deepseek_session
-        return deepseek_session.cancel(project_id)
+    from .. import engines
+    eng = engines.for_agent(agent)
+    if eng is not engines.CLAUDE:
+        return eng.cancel(eng.feed_id(engines.bare_folder(project_id)))
     if agent and agent != "claude" and not mission.alt_prefix(project_id):
         project_id = agent + "--" + project_id
     out = cc_session.cancel(project_id)
-    if not agent and codex_app.is_sending(project_id):
-        codex_app.cancel(project_id)
+    if not agent and engines.CODEX.is_sending(project_id):
+        engines.CODEX.cancel(project_id)
     return out
 
 

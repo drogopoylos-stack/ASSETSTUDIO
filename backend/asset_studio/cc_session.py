@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from . import fsutil
+from . import engines, fsutil
 from .config import DATA_DIR, claude_home, settings
 from . import perf
 from . import mission
@@ -298,9 +298,13 @@ def _reap(project_id: str) -> None:
 
 
 def is_sending(project_id: str) -> bool:
-    if project_id.startswith("deepseek-harness--"):
-        from . import deepseek_session
-        return deepseek_session.is_sending(project_id)
+    """Is a turn running in this feed — whichever engine it belongs to (see engines.py)."""
+    return engines.for_feed(project_id).is_sending(project_id)
+
+
+def _claude_is_sending(project_id: str) -> bool:
+    """Claude's own answer: the streaming session, or a one-shot process. Also the alternate
+    engines (Kimi, Qwen…), which run through this same plumbing under their prefix."""
     live = _live.get(project_id)
     if live is not None:
         if live.alive and live.proc.poll() is None:
@@ -401,30 +405,25 @@ def live_status() -> dict:
         if quiet:
             waiting[pid] = quiet
             waiting[bare] = quiet
-    # Codex conversations run in the Codex app-server, not in `_live`; they report the same way,
-    # under "codex--<folder>" and the bare folder id.
-    try:
-        from . import codex_app
-        for bare, busy, n in codex_app.live_rows():
-            out["codex--" + bare] = busy
+    # Codex and DeepSeek conversations do not live in `_live`; each engine reports its own, under
+    # "<prefix><folder>" and the bare folder id, the same way.
+    for eng in engines.ALL:
+        if eng is engines.CLAUDE:
+            continue
+        try:
+            rows = eng.live_rows()
+        except Exception:
+            continue
+        for bare, busy, n in rows:
+            fid = eng.feed_id(bare)
+            out[fid] = busy
             out[bare] = out.get(bare, False) or busy
             if busy or bare not in who:
-                who[bare] = "codex"
+                who[bare] = eng.id
             if n:
-                fanout["codex--" + bare] = n
+                fanout[fid] = n
                 fanout[bare] = fanout.get(bare, 0) + n
                 total_agents += n
-    except Exception:
-        pass
-    try:
-        from . import deepseek_session
-        for bare, busy in deepseek_session.live_rows():
-            out[deepseek_session.PREFIX + bare] = busy
-            out[bare] = out.get(bare, False) or busy
-            if busy or bare not in who:
-                who[bare] = deepseek_session.AGENT
-    except Exception:
-        pass
     # The map is keyed by BOTH ids so either lookup works, which makes summing its values wrong
     # for an alternate engine. The honest total is counted here, where the prefix is known.
     return {"statuses": out, "agents": who, "running_agents": fanout,
@@ -2174,13 +2173,11 @@ def _live_progress(live: "_Live", typ: str, ev: dict) -> None:
 
 def live_state(project_id: str) -> dict:
     """Instant live progress (real-time tokens + current activity + elapsed) read straight
-    from the live session — no transcript parse, so it updates the moment Claude does."""
-    if project_id.startswith("deepseek-harness--"):
-        from . import deepseek_session
-        return deepseek_session.live_state(project_id)
-    if project_id.startswith("codex--"):
-        from . import codex_app
-        return codex_app.live_state(project_id)
+    from the live session — no transcript parse, so it updates the moment the engine does."""
+    return engines.for_feed(project_id).live_state(project_id)
+
+
+def _claude_live_state(project_id: str) -> dict:
     live = _live.get(project_id)
     if live is None or not live.alive:
         return {"working": False, "tokens": 0, "activity": "", "elapsed": 0.0, "text": "", "kind": ""}
@@ -4164,14 +4161,9 @@ def _snapshot_before_turn(project_id: str, message: str, agent: str = "",
 def _engine_busy(project_id: str, agent: str) -> bool:
     """Is a turn already running for THIS engine on this project (so a new message steers it)?"""
     try:
-        if agent == "codex":
-            from . import codex_app
-            return codex_app.is_sending(project_id)
-        if agent == "deepseek-harness":
-            from . import deepseek_session
-            return deepseek_session.is_sending(project_id)
         alt = alt_agent(agent)
-        return is_sending((alt[0] + project_id) if alt else project_id)
+        fid = (alt[0] + project_id) if alt else engines.for_agent(agent).feed_id(project_id)
+        return is_sending(fid)
     except Exception:
         return False
 
@@ -4233,14 +4225,13 @@ def send(
     except Exception:
         boost_info = {"applied": False, "saved_tokens": 0}   # a saving never fails a send
 
-    if agent == "deepseek-harness":
-        from . import deepseek_session
-        res = deepseek_session.send(project_id, message, model=model, permission_mode=permission_mode,
-                images=images, effort=effort, new_session=new_session, session=session, path=path)
-        return {**res, "boost": boost_info} if isinstance(res, dict) else res
-    if agent == "codex":
-        res = _send_codex(project_id, message, model, permission_mode, images, effort,
-                          new_session, session, path)
+    # Every engine but Claude starts its turn through its adapter (engines.py). Everything above —
+    # the money guard, the checkpoint, BOOST — has already run for all of them.
+    eng = engines.for_agent(agent)
+    if eng is not engines.CLAUDE:
+        res = eng.start_turn(project_id, message, model=model, permission_mode=permission_mode,
+                             images=images, effort=effort, new_session=new_session,
+                             session=session, path=path)
         return {**res, "boost": boost_info} if isinstance(res, dict) else res
     if images:
         refs = "\n".join(f"  {i + 1}. {p}" for i, p in enumerate(images))
@@ -4428,9 +4419,11 @@ def _send_codex(project_id: str, message: str, model: str, permission_mode: str,
 
 
 def cancel(project_id: str) -> dict:
-    if project_id.startswith("deepseek-harness--"):
-        from . import deepseek_session
-        return deepseek_session.cancel(project_id)
+    """Stop the turn running in this feed, whichever engine it belongs to."""
+    return engines.for_feed(project_id).cancel(project_id)
+
+
+def _claude_cancel(project_id: str) -> dict:
     live = _live.pop(project_id, None)
     if live is not None:
         _kill_live(live)   # killing ends the turn; next send resumes the same conversation
@@ -4590,16 +4583,9 @@ def _parse_iso_epoch(s: str) -> Optional[float]:
     return None
 
 
-_ENGINE_NAMES = {"": "Claude", "codex--": "Codex", "deepseek-harness--": "DeepSeek"}
-
-
 def engine_name(feed_id: str) -> str:
     """A person's name for the engine behind a feed id: "Claude", "Codex", "DeepSeek", "kimi"…"""
-    for pre in ("codex--", "deepseek-harness--"):
-        if feed_id.startswith(pre):
-            return _ENGINE_NAMES[pre]
-    p = mission.alt_prefix(feed_id)
-    return p[:-2] if p else "Claude"
+    return engines.name_of(feed_id)
 
 
 def folder_busy(project_id: str, exclude: str = "") -> list[str]:
@@ -4610,29 +4596,7 @@ def folder_busy(project_id: str, exclude: str = "") -> list[str]:
     restoring one while the other agent writes puts that agent's files back under it, mid-turn.
     The restore paths ask this first. `exclude` is the caller's own feed, which it has already
     stopped."""
-    from . import codex_app, deepseek_session
-    bare = project_id
-    for pre in ("codex--", "deepseek-harness--"):
-        bare = bare[len(pre):] if bare.startswith(pre) else bare
-    p = mission.alt_prefix(bare)
-    bare = bare[len(p):] if p else bare
-    out: list[str] = []
-    for fid in dict.fromkeys([bare] + [pre + bare for pre in mission.alt_homes()]):
-        if fid == exclude or fid.startswith(("codex--", "deepseek-harness--")):
-            continue
-        try:
-            if is_sending(fid):
-                out.append(fid)
-        except Exception:
-            pass
-    for pre, busy in (("codex--", codex_app.is_sending), ("deepseek-harness--", deepseek_session.is_sending)):
-        fid = pre + bare
-        try:
-            if fid != exclude and busy(bare):
-                out.append(fid)
-        except Exception:
-            pass
-    return out
+    return engines.busy_feeds(project_id, exclude=exclude)
 
 
 def _revert_to_before(project_id: str, msg_ts_iso: str) -> Optional[dict]:
@@ -4660,9 +4624,9 @@ def rewind(project_id: str, msg_uuid: str, message: str, model: str = "default",
     """Rewind the conversation to a past user message and resume from an edited version
     of it — everything after that message is removed (like editing a message on the web).
     The original transcript is backed up first; optionally also revert file changes."""
-    if project_id.startswith("codex--"):
-        return {"ok": False, "error": "Editing a sent message is not available for Codex yet. "
-                                      "Send the corrected message as a new one."}
+    if engines.native(project_id):
+        return {"ok": False, "error": "Editing a sent message is not available for %s yet. "
+                                      "Send the corrected message as a new one." % engine_name(project_id)}
     if not message.strip():
         return {"ok": False, "error": "empty message"}
     # Putting the FILES back is a folder-wide act. If another engine is mid-turn in this folder,
@@ -4681,8 +4645,7 @@ def rewind(project_id: str, msg_uuid: str, message: str, model: str = "default",
     # adapter, which rebuilds its thread from this very transcript. Naming Claude tried to run the
     # Claude CLI against DeepSeek's session home, so editing a DeepSeek prompt either failed or
     # started a second, unrelated conversation.
-    deepseek = project_id.startswith("deepseek-harness--")
-    resend_agent = "deepseek-harness" if deepseek else "claude"
+    resend_agent = engines.for_feed(project_id).id
     permission_mode = forced_mode(permission_mode)
     _, pdir, _ = mission.project_dir(project_id)
     if not pdir.exists():
@@ -4723,18 +4686,11 @@ def rewind(project_id: str, msg_uuid: str, message: str, model: str = "default",
     if blocked:
         return {"ok": False, "error": blocked}
 
-    # kill the live session so the respawn re-reads the file from disk. DeepSeek's turn lives in a
-    # runtime process of its own (`deepseek_session._runtimes`), not in `_live`, and SDK 0.1.5
-    # cannot re-attach a durable session after that process exits — which is exactly what we want
-    # here: the next send rebuilds the thread from the transcript we just truncated.
-    if deepseek:
-        from . import deepseek_session
-        # reset, not cancel: cancel only stops a RUNNING turn, and an edit is made while idle — the
-        # idle runtime would keep the removed messages in its memory.
-        deepseek_session.reset(project_id)
-    live = _live.pop(project_id, None)
-    if live is not None:
-        _kill_live(live)
+    # Drop the engine's in-memory conversation so the next send re-reads the truncated transcript:
+    # Claude's live process is killed and respawns on it; DeepSeek's runtime is closed and the
+    # thread rebuilt from it. `reset`, not `cancel` — cancel only stops a RUNNING turn, and an edit
+    # is made while idle, so an idle DeepSeek runtime used to keep the removed messages.
+    engines.for_feed(project_id).reset(project_id)
 
     def _is_turn(s: str) -> bool:
         try:

@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import DATA_DIR
-from . import fsutil, mission, workspace
+from . import engines, fsutil, mission, workspace
 
 CKPT_DIR = (DATA_DIR / "checkpoints").resolve()
 CKPT_DIR.mkdir(parents=True, exist_ok=True)
@@ -50,15 +50,11 @@ _BIN_EXT = {
 def _bare_id(project_id: str) -> str:
     """The folder id without an engine prefix — "codex--d--x" and "d--x" are the same folder.
 
-    Codex is stripped by name because it is the one engine whose prefix is NOT in
-    `mission.alt_homes()`: it keeps its conversations in its own store, so the whole app
-    special-cases `"codex--"` instead of registering a home. `alt_prefix` therefore answers "" for a
-    Codex id, and relying on it alone left Codex unable to find its own project folder.
+    Asked of the engine registry, which knows every engine's prefix and the alternate engines'.
+    This used to strip Codex by name (its prefix is not in `mission.alt_homes()`), and relying on
+    `alt_prefix` alone had left Codex unable to find its own project folder.
     """
-    if project_id.startswith("codex--"):
-        return project_id[len("codex--"):]
-    p = mission.alt_prefix(project_id)
-    return project_id[len(p):] if p else project_id
+    return engines.bare_folder(project_id)
 
 
 def _norm_folder_id(project_id: str) -> str:
