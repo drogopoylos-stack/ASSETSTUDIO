@@ -985,6 +985,7 @@ class _Conv:
 
     def __init__(self, project_id: str):
         self.project_id = project_id
+        self.billed = True           # updated from account/read when a send is accepted
         # Two locks, on purpose. `lock` guards the fields below and is only ever held for a few
         # lines. `send_lock` keeps two sends from starting two turns, and is held across calls to
         # Codex - which the reader thread must never wait behind, or a notification that arrives
@@ -1269,6 +1270,8 @@ def send(project_id: str, message: str, cwd: str, model: str = "default", effort
         return {"ok": False, "needs_login": True, "agent": "codex",
                 "error": "Codex is not signed in. Sign in from the chat box: ChatGPT, a code, or an API key."}
     conv = _conv(project_id)
+    # Account/read describes the provider selected by this app-server, not Claude's login.
+    conv.billed = not (acct.get("auth") == "chatgpt" and acct.get("requires_auth", True))
     pid = conv.project_id
     conv.cwd = cwd or conv.cwd
     answered = _answer_approval(conv, message) if not images and not steer else None
@@ -1822,7 +1825,8 @@ def _on_main_note(conv: _Conv, tid: str, method: str, p: dict) -> None:
                 _turns.record(conv.project_id, mdl, str(conv.effort or "default"), out_tok,
                               float(rec.get("gen_s") or 0), 0.0, 0, cost, False, 0, basis)
                 if cost > 0:
-                    spend.record(conv.project_id, mdl, cost, out_tok)
+                    spend.record(conv.project_id, mdl, cost, out_tok,
+                                 billed=getattr(conv, "billed", True))
         except Exception:
             pass
 

@@ -31,7 +31,7 @@ type Spend = {
   by_model: Record<string, number>;
   top: { project: string; cost: number; turns: number }[];
   days: Record<string, number>;
-  cap?: { limit: number; spent: number; enabled: boolean; over: boolean };
+  cap?: { limit: number; spent: number; enabled: boolean; over: boolean; unclassified?: number };
   budgets?: { key: string; label: string; used: number; limit: number; percent: number }[];
 };
 
@@ -173,6 +173,13 @@ export default function CostPanel({ spend, onChanged }: { spend: Spend | null; o
             total — so a respawn or a retry cannot double it. On a subscription this is not what
             you pay; it is what makes two models, two efforts or two ways of asking comparable.
             {" "}A model with no rate in the card is listed as <em>not priced</em> rather than $0.
+          </p>
+          <p className="text-[11px] text-muted leading-snug">
+            Estimated API spend recorded this month: {usd(capState?.spent)}.
+            Subscription comparison prices are excluded from the money cap; extra usage and
+            provider adjustments must be checked in the provider's billing page.
+            {!!capState?.unclassified && <> Historical work worth {usd(capState.unclassified)} at
+              list price has no billing classification and is also excluded from the cap.</>}
           </p>
 
           <div className="grid md:grid-cols-2 gap-4">

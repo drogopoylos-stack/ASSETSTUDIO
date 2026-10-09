@@ -1,0 +1,896 @@
+{
+  "last_node_id": 16,
+  "last_link_id": 20,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        30,
+        40
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "UNETLoader",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "CLIPLoader",
+      "pos": [
+        30,
+        480
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "VAELoader",
+      "pos": [
+        30,
+        710
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_video_vae_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "VAELoader",
+      "pos": [
+        30,
+        890
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "MuseMinimaxDirectorV1_4",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        1800,
+        2400
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 3
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 4
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 5
+        },
+        {
+          "name": "model_fl2va",
+          "shape": 7,
+          "type": "MODEL",
+          "link": 2
+        },
+        {
+          "name": "prompt_override",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "compiled_prompt",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "ref_images_used",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "candidate_1_images",
+          "type": "IMAGE",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "candidate_1_audio",
+          "type": "AUDIO",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "candidate_2_images",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        },
+        {
+          "name": "candidate_2_audio",
+          "type": "AUDIO",
+          "links": [
+            13
+          ]
+        },
+        {
+          "name": "candidate_3_images",
+          "type": "IMAGE",
+          "links": [
+            15
+          ]
+        },
+        {
+          "name": "candidate_3_audio",
+          "type": "AUDIO",
+          "links": [
+            16
+          ]
+        },
+        {
+          "name": "candidate_4_images",
+          "type": "IMAGE",
+          "links": [
+            18
+          ]
+        },
+        {
+          "name": "candidate_4_audio",
+          "type": "AUDIO",
+          "links": [
+            19
+          ]
+        },
+        {
+          "name": "candidate_1_latent",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "candidate_2_latent",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "candidate_3_latent",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "candidate_4_latent",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "ref_audio_1_used",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "ref_audio_2_used",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "ref_audio_3_used",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MuseMinimaxDirectorV1_4"
+      },
+      "widgets_values": [
+        "Reference (Omni) — up to 7 images, 3 videos, 3 audio",
+        "16:9 (Widescreen)",
+        0.2,
+        32,
+        "original",
+        3,
+        3,
+        "match",
+        false,
+        0,
+        true,
+        39,
+        42,
+        "fixed",
+        false,
+        false,
+        20,
+        "res_multistep",
+        "simple",
+        false,
+        6,
+        "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
+        0.98,
+        false,
+        12,
+        3,
+        "{\"characters\": [], \"locations\": [{\"chunk\": 1}], \"refVideos\": [], \"refAudios\": [], \"chunks\": [{\"segments\": [{\"prompt\": \"\", \"weight\": 1}], \"generation_mode\": \"Reference\", \"overall_soundscape\": \"\", \"non_diegetic_music\": \"\"}], \"firstFrameImage\": {}, \"lastFrameImage\": {}, \"guideImages\": [], \"shared_assets_v2\": true}",
+        false,
+        "1",
+        false,
+        false,
+        "asset-studio-director",
+        1,
+        1,
+        false,
+        true,
+        ""
+      ],
+      "widgets_values_named": {
+        "mode": "Reference (Omni) — up to 7 images, 3 videos, 3 audio",
+        "aspect_ratio": "16:9 (Widescreen)",
+        "megapixels": 0.2,
+        "multiple": 32,
+        "resize_method": "original",
+        "duration_seconds": 3,
+        "chunk_duration_seconds": 3,
+        "ref_image_size": "match",
+        "hybrid_continuation": false,
+        "seam_interpolation_frames": 0,
+        "vae_reencode_carry_test": true,
+        "vae_reencode_carry_length": 39,
+        "seed": 42,
+        "control_after_generate": "fixed",
+        "seed_hunt": false,
+        "use_prompt_override": false,
+        "steps": 20,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "two_stage_sampling": false,
+        "two_stage_first_pass_steps": 6,
+        "two_stage_latent_upscale_model": "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
+        "two_stage_target_megapixels": 0.98,
+        "two_stage_seed_hunt_latent_only": false,
+        "shift_video": 12,
+        "shift_audio": 3,
+        "timeline_data": "{\"characters\": [], \"locations\": [{\"chunk\": 1}], \"refVideos\": [], \"refAudios\": [], \"chunks\": [{\"segments\": [{\"prompt\": \"\", \"weight\": 1}], \"generation_mode\": \"Reference\", \"overall_soundscape\": \"\", \"non_diegetic_music\": \"\"}], \"firstFrameImage\": {}, \"lastFrameImage\": {}, \"guideImages\": [], \"shared_assets_v2\": true}",
+        "enable_seed_hunt": false,
+        "candidate_count": "1",
+        "vae_reencode_carry_video_only_test": false,
+        "long_form_enabled": false,
+        "long_form_project_id": "asset-studio-director",
+        "render_chunk_start": 1,
+        "render_chunk_end": 1,
+        "two_stage_enable_temporal_chunking": false,
+        "raw_latent_carry_test": true,
+        "mmd_timeline_ui": ""
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 7,
+      "type": "CreateVideo",
+      "pos": [
+        2340,
+        40
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 6
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 7,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 8,
+      "type": "SaveVideo",
+      "pos": [
+        2760,
+        40
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "AssetStudio/Director",
+        "mp4",
+        "h264",
+        "auto"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "CreateVideo",
+      "pos": [
+        2340,
+        830
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 13,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "SaveVideo",
+      "pos": [
+        2760,
+        830
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "AssetStudio/Director-candidate-2",
+        "mp4",
+        "h264",
+        "auto"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "CreateVideo",
+      "pos": [
+        2340,
+        1230
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 15
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 16,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "SaveVideo",
+      "pos": [
+        2760,
+        1230
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "AssetStudio/Director-candidate-3",
+        "mp4",
+        "h264",
+        "auto"
+      ]
+    },
+    {
+      "id": 15,
+      "type": "CreateVideo",
+      "pos": [
+        2340,
+        1630
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 18
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 19,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 16,
+      "type": "SaveVideo",
+      "pos": [
+        2760,
+        1630
+      ],
+      "size": [
+        340,
+        160
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 20
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "AssetStudio/Director-candidate-4",
+        "mp4",
+        "h264",
+        "auto"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      6,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      6,
+      4,
+      "MODEL"
+    ],
+    [
+      3,
+      3,
+      0,
+      6,
+      1,
+      "CLIP"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      2,
+      "VAE"
+    ],
+    [
+      5,
+      5,
+      0,
+      6,
+      3,
+      "VAE"
+    ],
+    [
+      6,
+      6,
+      4,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      7,
+      6,
+      5,
+      7,
+      1,
+      "AUDIO"
+    ],
+    [
+      8,
+      7,
+      0,
+      8,
+      0,
+      "VIDEO"
+    ],
+    [
+      12,
+      6,
+      6,
+      11,
+      0,
+      "IMAGE"
+    ],
+    [
+      13,
+      6,
+      7,
+      11,
+      1,
+      "AUDIO"
+    ],
+    [
+      14,
+      11,
+      0,
+      12,
+      0,
+      "VIDEO"
+    ],
+    [
+      15,
+      6,
+      8,
+      13,
+      0,
+      "IMAGE"
+    ],
+    [
+      16,
+      6,
+      9,
+      13,
+      1,
+      "AUDIO"
+    ],
+    [
+      17,
+      13,
+      0,
+      14,
+      0,
+      "VIDEO"
+    ],
+    [
+      18,
+      6,
+      10,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
+      19,
+      6,
+      11,
+      15,
+      1,
+      "AUDIO"
+    ],
+    [
+      20,
+      15,
+      0,
+      16,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.65,
+      "offset": [
+        -400,
+        20
+      ]
+    }
+  },
+  "version": 0.4
+}

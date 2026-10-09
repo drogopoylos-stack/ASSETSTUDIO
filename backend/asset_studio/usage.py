@@ -64,10 +64,34 @@ def _plan_label(creds: dict) -> str:
     return plan.capitalize() if plan else "Claude"
 
 
+# Read the plan locally; building a launch command must not make an HTTP request.
+_PLAN_TTL = 30.0
+_PLAN: dict = {"tier": None, "at": 0.0}
+
+
+def plan_tier() -> str:
+    """"pro" / "max" / "team" / "enterprise", or "" for an API-key sign-in or no credentials."""
+    now = time.time()
+    if _PLAN["tier"] is not None and now - float(_PLAN["at"]) < _PLAN_TTL:
+        return _PLAN["tier"]
+    tier = (_creds().get("subscriptionType") or "").strip().lower()
+    _PLAN.update(tier=tier, at=now)
+    return tier
+
+
+def on_subscription() -> bool:
+    """Whether local OAuth credentials identify a supported subscription.
+
+    This does not establish the authentication or billing of an alternate API endpoint.
+    """
+    return plan_tier() in ("pro", "max", "team", "enterprise")
+
+
 def invalidate() -> None:
     """Drop the cached usage response so the next poll really refetches. Called right after a
     silent token refresh, so a stale-token 401 is retried at once instead of after the TTL."""
     _CACHE["ts"] = 0.0
+    _PLAN.update(tier=None, at=0.0)
 
 
 def compute(force: bool = False) -> dict:

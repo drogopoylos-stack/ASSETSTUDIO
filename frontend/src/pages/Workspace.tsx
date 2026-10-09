@@ -1117,7 +1117,10 @@ export default function Workspace() {
       // the DeepSeek adapter closes its live runtime so the next message rebuilds from the bounded
       // tail (see `deepseek_session._compact`). This call used to be assumed to be Claude's, which
       // is why the button on a DeepSeek pane asked the model what "/compact" meant.
-      const r: any = await api.sessionSend(root.id, { message: "/compact", ...ccDefaults(root.id, paneId), path: root.path });
+      const mode = sessOf(paneId);
+      if (mode.type === "new") return;
+      const r: any = await api.sessionSend(root.id, { message: "/compact", ...ccDefaults(root.id, paneId), path: root.path,
+        session: mode.type === "session" ? mode.id : "" });
       if (r.ok) {
         toast(r.compacted
           ? `DeepSeek context compacted — the next message carries ~${Math.max(1, Math.round((r.rebuilt_chars || 0) / 4 / 1000))}k tokens instead of the whole session`

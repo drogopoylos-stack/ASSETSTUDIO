@@ -6,7 +6,7 @@ if (!process.versions.electron) {
   const { spawnSync } = require("node:child_process");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "studio-steer-ui-"));
   const html = path.join(dir, "test.html");
-  const bundle = path.resolve(__dirname, "../../data/tmp/steer.test.js");
+  const bundle = path.resolve(__dirname, "../../data/tmp/", process.argv[2] || "steer.test.js");
   fs.writeFileSync(html, '<div id="root"></div><script src="' + require("node:url").pathToFileURL(bundle).href + '"></script>');
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;

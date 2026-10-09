@@ -89,7 +89,7 @@ function MainApp() {
   const effTab = allowed ? tab : "workspace";      // must match the page actually rendered
   const fullWidth = effTab === "mission"; // canvas tab uses the whole window
   // these manage their own full-window layout
-  const fullBleed = effTab === "workspace" || effTab === "chat" || effTab === "workflows" || effTab === "plans";
+  const fullBleed = effTab === "workspace" || effTab === "chat" || effTab === "workflows" || effTab === "plans" || effTab === "video";
   return (
     <div className="h-screen flex flex-col bg-bg text-text">
       <TopNav />

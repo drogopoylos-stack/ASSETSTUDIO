@@ -1391,7 +1391,7 @@ const NOTE_CATALOG: NoteRow[] = [
   { key: "cc_blender_kiln", label: "Blender kiln", group: "studio", default: false, tokens: 215,
     why: "The Blender MCP pipeline: source, generate, clean, texture, export." },
   { key: "cc_1m", label: "1M context", group: "studio", default: true, tokens: 97,
-    why: "Tells the agent its window is a million tokens, so it does not compact early." },
+    why: "Allows 1M context. Off limits new Claude sessions to 200k, including native 1M models." },
   { key: "cc_fable_efficient", label: "Fable token efficiency", group: "studio", default: true, tokens: 163,
     why: "Act on what is known, do not re-derive, lead with the outcome. Fable models only." },
   { key: "cc_force_plan", label: "Force plan mode", group: "studio", default: false, tokens: 174,

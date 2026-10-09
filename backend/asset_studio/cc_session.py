@@ -1064,7 +1064,7 @@ def agent_notes_catalog(cwd: str = "") -> dict:
         {"key": "cc_blender_kiln", "label": "Blender kiln", "group": "studio", "default": dflt("cc_blender_kiln", False),
          "tokens": size(_blender_kiln_note), "why": "The Blender MCP pipeline: source, generate, clean, texture, export."},
         {"key": "cc_1m", "label": "1M context", "group": "studio", "default": dflt("cc_1m", True),
-         "tokens": size(lambda: _context_window_note("claude-fable-5-1[1m]")), "why": "Tells the agent its window is a million tokens, so it does not compact early."},
+         "tokens": size(lambda: _context_window_note("claude-fable-5-1[1m]")), "why": "Allows 1M context. Off limits new Claude sessions to 200k, including native 1M models."},
         {"key": "cc_fable_efficient", "label": "Fable token efficiency", "group": "studio", "default": dflt("cc_fable_efficient", True),
          "tokens": size(_fable_efficiency_note), "why": "Act on what is known, do not re-derive, lead with the outcome. Fable models only."},
         {"key": "cc_force_plan", "label": "Force plan mode", "group": "studio", "default": dflt("cc_force_plan", False),
@@ -1605,10 +1605,10 @@ def _fable_efficiency_note() -> str:
 
 
 def _apply_1m(model: str) -> str:
-    """Pin Claude's 1M-token context window when ``cc_1m`` is on (the ``[1m]`` model
-    suffix). Opus 1M is included on Max/Team/Enterprise at no extra cost, so a blank/
-    ``default`` pick becomes ``opus[1m]`` and any Opus pick gains the suffix. Sonnet's 1M
-    costs usage credits and Haiku has none, so explicit non-Opus picks are left untouched."""
+    """Request extended context for an explicit Opus pick; preserve the CLI default.
+
+    Native 1M models also need the environment gate below when the switch is off.
+    """
     if not settings.get("cc_1m", True):
         return model
     m = (model or "").strip()
@@ -1616,10 +1616,15 @@ def _apply_1m(model: str) -> str:
         return m
     low = m.lower()
     if m in ("", "default"):
-        return "opus[1m]"
+        return m
     if "opus" in low:
         return f"{m}[1m]"
     return m
+
+
+def _claude_context_env() -> dict[str, str]:
+    """Bound native 1M models as well as older explicit [1m] variants."""
+    return {} if settings.get("cc_1m", True) else {"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}
 
 
 _PROMPT_FP = DATA_DIR / "prompt_fingerprints.json"
@@ -1680,13 +1685,25 @@ def _context_window_note(model: str) -> str:
     the number the model believes can never disagree. Returns '' when 1M is not in play —
     better to say nothing than to assert a window we did not verify."""
     ml = (model or "").lower()
-    on_1m = ("[1m]" in ml) or ("fable" in ml) or ("mythos" in ml) or ("kimi-k3" in ml)
+    on_1m = mission.model_window(model) == 1_000_000
     if not on_1m:
         return ""
-    return (
-        "CONTEXT WINDOW: this session holds 1,000,000 tokens, not the 200k default. Convert "
-        "before you judge how full you are — 200k used is 20% of the window, 500k is half. Do "
-        "NOT recommend `/clear`, `/compact`, a fresh session, or a handoff document because the "
+    head = ("CONTEXT WINDOW: this session holds 1,000,000 tokens, not the 200k default. Convert "
+            "before you judge how full you are — 200k used is 20% of the window, 500k is half. ")
+    try:
+        from . import usage as _usage
+        tier = _usage.plan_tier()
+    except Exception:
+        tier = ""
+    if tier == "pro" and (not ml or any(x in ml for x in ("claude", "opus", "sonnet", "haiku", "fable", "mythos"))):
+        return head + (
+            "Long conversations can consume more of this plan's usage quota even when there "
+            "is context space left. Mid-task, keep going — do not interrupt work to suggest "
+            "`/clear`. When the user turns to an UNRELATED task, say in one line that a fresh "
+            "conversation there costs less, and let them decide."
+        )
+    return head + (
+        "Do NOT recommend `/clear`, `/compact`, a fresh session, or a handoff document because the "
         "conversation feels long; recommend it only when you are genuinely near the limit or the "
         "user asks. Long is normal here. Keep working."
     )
@@ -2480,7 +2497,7 @@ def _live_reader(live: "_Live") -> None:
                     from . import spend
                     if not no_work:
                         spend.record(live.project_id, str(turn["model"]), float(turn["cost"]),
-                                     int(turn["tokens"]))
+                                     int(turn["tokens"]), billed=_claude_billed(live.project_id))
                 except Exception:
                     pass
                 # ...and the third consumer, the only one that keeps EVERY turn. `speed` drops a
@@ -2899,6 +2916,8 @@ def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Liv
     alt = mission.alt_prefix(project_id)
     if alt:
         env.update(_alt_env(alt, str(sig[2]) if len(sig) > 2 else "default"))
+    else:
+        env.update(_claude_context_env())
     # stdout goes to the LOG, not a pipe. A pipe dies with this process and takes the session
     # with it; a file does not, so the session survives a restart or a crash and the next backend
     # picks the tail up where this one stopped.
@@ -3732,6 +3751,25 @@ def _btw_sweep_once() -> None:
                 pass
 
 
+def _claude_billed(project_id: str = "") -> bool:
+    """Include API-backed sessions in the pay-as-you-go estimate.
+
+    OAuth plan turns retain their comparison price separately. This is a local estimate,
+    not an invoice or a measurement of subscription extra-usage charges.
+    """
+    if mission.alt_prefix(project_id):
+        return True
+    if any(os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                                      "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
+                                      "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")):
+        return True
+    try:
+        from . import usage
+        return not usage.on_subscription()
+    except Exception:
+        return True
+
+
 def _note_sig() -> tuple:
     """Every setting that decides WHICH notes go into the appended system prompt.
 
@@ -3747,7 +3785,7 @@ def _note_sig() -> tuple:
     """
     keys = ("cc_forge", "cc_live", "cc_ops", "cc_review", "cc_graphify", "cc_web_tools",
             "cc_phases", "cc_memory", "cc_blender_kiln", "cc_fable_efficient",
-            "studio_tools_prompt")
+            "studio_tools_prompt", "cc_1m")
     # BOOST IS NOT IN THIS LIST, ON PURPOSE, and it used to be. Its note is a set of HABITS
     # ("use the local index, do not re-read a file"), not a capability: a live session that never
     # hears it loses a saving and nothing else. Forcing a respawn to deliver it did the opposite
@@ -3785,6 +3823,9 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
     # Nothing else in this backend interrupts a session, so this is the one place it can be
     # prevented. Refuse while background agents are open and say which ones.
     if _is_compact_cmd(message) and not new_session:
+        current = _live.get(project_id)
+        if current is not None and current.alive and current.proc.poll() is None and _stream_busy(current):
+            return {"ok": False, "busy": True, "error": "A turn is still running. Wait for it to finish before compacting."}
         blocked = _agents_block(project_id, "/compact interrupts the current turn, which")
         if blocked:
             return {"ok": False, "error": blocked}
@@ -4385,6 +4426,7 @@ def send(
             stdin=subprocess.DEVNULL, creationflags=flags,
             # same gate as the streaming path, or the subagent instruction is dropped here
             env={**os.environ, "CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT": "1",
+                 **(_claude_context_env() if agent == "claude" else {}),
                  **({"CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"} if settings.get("cc_phases", True) else {})},
         )
     except Exception as e:
@@ -4568,6 +4610,7 @@ def become_terminal(project_id: str, cols: int = 100, rows: int = 30, model: str
     # and the other half rides here. Subagents need the first key to inherit their prompt; the
     # Phases panel needs the second, or the terminal is TOLD about a panel it has no tool to fill.
     env["CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT"] = "1"
+    env.update(_claude_context_env())
     if settings.get("cc_phases", True):
         env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
     # Deliberately NOT ASSET_STUDIO_CC=1: that marker means "a Studio live-stream process", and

@@ -1419,14 +1419,14 @@ def model_window(model: str, used: int = 0) -> int:
         cw = _provider_window(model)   # a custom provider knows its own window
     if cw > 0:
         return cw
-    # auto-detect: Fable/Mythos are 1M-native (the max IS the default, no suffix); Opus reaches
-    # 1M via the [1m] suffix when cc_1m is on; a [1m] suffix or >200k usage also imply it.
+    # Existing turns above 200k prove an older live session still has its large window.
+    # New Claude launches with cc_1m off also bound models whose native default is 1M.
     on_1m = (
-        ("1m" in ml)
-        or ("fable" in ml) or ("mythos" in ml)     # 1M-native — always the big window
-        or ("kimi-k3" in ml)                       # Kimi K3 is 1M-context too
+        ("kimi-k3" in ml)
         or (used > 200_000)
-        or (bool(settings.get("cc_1m", True)) and "opus" in ml)
+        or (bool(settings.get("cc_1m", True)) and (
+            "1m" in ml or "opus" in ml or "fable" in ml or "mythos" in ml
+            or bool(re.search(r"(?:sonnet-[5-9]|haiku-5-5)", ml))))
     )
     return 1_000_000 if on_1m else 200_000
 
@@ -1445,11 +1445,13 @@ def _context_info(entries: list[dict]) -> dict:
     # most recent compaction boundary, if any (a user entry flagged compact-summary)
     boundary = -1
     for i in range(len(entries) - 1, -1, -1):
-        if entries[i].get("isCompactSummary"):
+        if (entries[i].get("isCompactSummary")
+                or (entries[i].get("type") == "system" and entries[i].get("subtype") == "compact_boundary")):
             boundary = i
             break
     model = ""
     used = 0
+    measured_at = 0.0
     cache: dict[str, int] = {}
     # newest assistant usage that lands *after* the boundary (boundary=-1 ⇒ all)
     for i in range(len(entries) - 1, boundary, -1):
@@ -1462,7 +1464,10 @@ def _context_info(entries: list[dict]) -> dict:
             fresh = int(u.get("input_tokens", 0) or 0)
             read = int(u.get("cache_read_input_tokens", 0) or 0)
             write = int(u.get("cache_creation_input_tokens", 0) or 0)
-            used = fresh + read + write
+            measured = fresh + read + write
+            if measured <= 0:
+                continue          # output-only updates do not reset the context window
+            used = measured
             # How much of this turn's input came from the prompt cache. CLI 2.1.251 added the
             # same figure to `/cost`; it is computed here from usage the transcript already
             # carries, so the meter costs nothing to show. A cold turn reads 0 and writes the
@@ -1470,6 +1475,7 @@ def _context_info(entries: list[dict]) -> dict:
             # prompt prefix is moving between requests.
             cache = {"cache_read": read, "cache_write": write, "fresh_in": fresh}
             model = m.get("model", "") or ""
+            measured_at = _iso_epoch(str(o.get("timestamp") or ""))
             break
     just_compacted = False
     if used <= 0 and boundary >= 0:
@@ -1502,6 +1508,8 @@ def _context_info(entries: list[dict]) -> dict:
         "ctx_remaining": round(max(0.0, 100 * (compact_at - frac) / compact_at), 1),
         "just_compacted": just_compacted,
     }
+    if not just_compacted and measured_at:
+        out["context_measured_at"] = measured_at
     if cache:
         billed = cache["cache_read"] + cache["cache_write"] + cache["fresh_in"]
         out.update(cache)
@@ -2174,7 +2182,7 @@ def project_context(project_id: str) -> dict:
         info["compacting"] = bool(cc_session.live_state(project_id).get("compacting"))
     except Exception:
         info["compacting"] = False
-    _apply_compact_hook(info, project_id)
+    _apply_compact_hook(info, project_id, session=newest.stem)
     # The standing instructions this session took on. Billed on every request and visible
     # nowhere else — a CLAUDE.md that imports two more is three files nobody chose to load.
     try:
@@ -2192,7 +2200,7 @@ def project_context(project_id: str) -> dict:
 _COMPACT_GAP = 180.0
 
 
-def _apply_compact_hook(info: dict, project_id: str) -> None:
+def _apply_compact_hook(info: dict, project_id: str, session: str = "") -> None:
     """Correct the meter from the PreCompact/PostCompact record, where there is one.
 
     Three things the transcript alone gets wrong, and one it does not:
@@ -2212,13 +2220,16 @@ def _apply_compact_hook(info: dict, project_id: str) -> None:
     """
     try:
         from . import hook_events
-        cs = hook_events.compact_state(project_id)
+        cs = hook_events.compact_state(project_id, session=session)
     except Exception:
         return
     if not cs:
         return
     if cs.get("trigger"):
         info["compact_trigger"] = cs["trigger"]
+    measured_at = float(info.get("context_measured_at") or 0)
+    if measured_at and measured_at > float(cs.get("ended") or cs.get("started") or 0):
+        return                     # a real post-compact measurement supersedes the hook
     if cs.get("running"):
         info["compacting"] = True
         return
@@ -2231,9 +2242,9 @@ def _apply_compact_hook(info: dict, project_id: str) -> None:
     # The summary IS the new context, plus the fixed system/tools overhead that every session
     # carries. Anything read since lands on the next real turn, which supersedes this.
     used = int(settings.get("compact_base_tokens", 25000) or 25000) + summary
-    if used >= int(info.get("ctx_used") or 0):
+    if info.get("ctx_used") and used >= int(info["ctx_used"]):
         return                     # nothing stale to correct — leave the real figure alone
-    mx = int(info.get("ctx_max") or 0) or model_window(str(info.get("model") or ""))
+    mx = model_window(str(info.get("model") or ""))
     compact_at = float(settings.get("auto_compact_at", 0.92) or 0.92)
     frac = used / mx if mx else 0.0
     info.update({
@@ -2241,7 +2252,10 @@ def _apply_compact_hook(info: dict, project_id: str) -> None:
         "ctx_pct": round(100 * frac, 1),
         "ctx_remaining": round(max(0.0, 100 * (compact_at - frac) / compact_at), 1),
         "just_compacted": True,
+        "compacting": False,
     })
+    for key in ("cache_read", "cache_write", "fresh_in", "cache_pct", "context_measured_at"):
+        info.pop(key, None)
 
 
 # ---------------------------------------------------------------------------

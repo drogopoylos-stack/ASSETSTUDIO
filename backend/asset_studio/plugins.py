@@ -48,7 +48,7 @@ PLUGINS: list[dict[str, Any]] = [
     {"id": "image", "kind": "tab", "group": "Asset generation", "label": "Image",
      "desc": "Text to image with the local ComfyUI presets or a paid API."},
     {"id": "video", "kind": "tab", "group": "Asset generation", "label": "Video",
-     "desc": "Generate videos from prompts or an image with MiniMax H3 and H3 Max."},
+     "desc": "Direct videos with MiniMax H3: timeline, CUTs and image, video or audio references in local ComfyUI."},
     {"id": "studio2d", "kind": "tab", "group": "Asset generation", "label": "2D Studio",
      "desc": "Clean up a 2D image: cut out the background, upscale, SAM2 masks."},
     {"id": "studio3d", "kind": "tab", "group": "Asset generation", "label": "3D Studio",

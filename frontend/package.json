@@ -5,6 +5,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "test:contextmeter": "esbuild tests/contextmeter.test.tsx --bundle --format=iife --platform=browser --outfile=../data/tmp/contextmeter.test.js --log-level=warning && node tests/steer-electron.cjs contextmeter.test.js",
     "test:steer": "esbuild tests/steer.test.tsx --bundle --format=iife --platform=browser --outfile=../data/tmp/steer.test.js --log-level=warning && node tests/steer-electron.cjs",
     "test:agentpanes": "esbuild tests/agentpanes.test.ts --bundle --format=esm --platform=node --outfile=../data/tmp/agentpanes.test.mjs --log-level=warning && node ../data/tmp/agentpanes.test.mjs",
     "dev": "vite",

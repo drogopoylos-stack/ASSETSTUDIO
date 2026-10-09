@@ -45,6 +45,15 @@ def _load() -> dict:
             _state = {}
         _state.setdefault("projects", {})
         _state.setdefault("days", {})
+        # Estimated API spend, separately from subscription comparison prices.
+        _state.setdefault("billed_days", {})
+        if "unclassified_days" not in _state:
+            # The old ledger did not store authentication. Preserve its history without
+            # inventing which turns were charged. Never silently present it as free.
+            _state["unclassified_days"] = {
+                k: round(max(0.0, float(v) - float(_state["billed_days"].get(k, 0))), 6)
+                for k, v in _state["days"].items()
+            }
     return _state
 
 
@@ -60,8 +69,13 @@ def _save() -> None:
         pass
 
 
-def record(project_id: str, model: str, cost: float, tokens: int = 0) -> None:
-    """Bank one finished turn. Called from the result handler, so it runs once per message."""
+def record(project_id: str, model: str, cost: float, tokens: int = 0, billed: bool = True) -> None:
+    """Bank one finished turn. Called from the result handler, so it runs once per message.
+
+    `cost` is a comparison price, not an invoice. `billed=False` keeps a plan-covered
+    turn in comparison totals and out of the estimated pay-as-you-go cap. Provider
+    discounts and subscription extra usage are not measured by this ledger.
+    """
     try:
         cost = float(cost or 0)
     except (TypeError, ValueError):
@@ -80,9 +94,12 @@ def record(project_id: str, model: str, cost: float, tokens: int = 0) -> None:
         p["by_model"][m] = round(p["by_model"].get(m, 0.0) + cost, 6)
         p["last"] = time.time()
         s["days"][day] = round(s["days"].get(day, 0.0) + cost, 6)
-        if len(s["days"]) > _KEEP_DAYS:
-            for k in sorted(s["days"])[:-_KEEP_DAYS]:
-                s["days"].pop(k, None)
+        if billed:
+            s["billed_days"][day] = round(s["billed_days"].get(day, 0.0) + cost, 6)
+        for key in ("days", "billed_days", "unclassified_days"):
+            if len(s[key]) > _KEEP_DAYS:
+                for k in sorted(s[key])[:-_KEEP_DAYS]:
+                    s[key].pop(k, None)
         _save()
 
 
@@ -118,7 +135,7 @@ def totals() -> dict:
         }
     # Taken OUTSIDE the lock: `month_to_date` and the token windows below take it themselves, and
     # a plain re-entrant call here would deadlock the dashboard's poll.
-    out["cap"] = cap_state(month)
+    out["cap"] = cap_state()
     out["budgets"] = budget_state()
     return out
 
@@ -142,17 +159,27 @@ def cap_state(month: Optional[float] = None) -> dict:
         cap = float(settings.get("monthly_spend_cap_usd", 0) or 0)
     except (TypeError, ValueError):
         cap = 0.0
-    spent = month_to_date() if month is None else month
+    # ALWAYS the billed figure, never the caller's: `summary()` passes its list-price month total,
+    # and on a subscription that is not money — a cap checked against it refuses every send.
+    spent = month_to_date()
+    with _lock:
+        prefix = datetime.now().strftime("%Y-%m")
+        unknown = sum(float(v or 0) for k, v in _load()["unclassified_days"].items()
+                      if k.startswith(prefix))
     return {"limit": round(cap, 4), "spent": round(float(spent or 0), 4),
+            "unclassified": round(unknown, 4),
             "enabled": cap > 0, "over": bool(cap > 0 and spent >= cap)}
 
 
-def month_to_date() -> float:
-    """Dollars banked since the 1st of this month — the window the cap guards."""
+def month_to_date(billed_only: bool = True) -> float:
+    """Estimated API dollars recorded since the 1st of this month.
+    `billed_only=False` gives the list-price total the Dashboard
+    compares models with (see `record`)."""
     with _lock:
         s = _load()
         prefix = datetime.now().strftime("%Y-%m")
-        return round(sum(float(v or 0) for k, v in s["days"].items() if k.startswith(prefix)), 4)
+        days = s["billed_days"] if billed_only else s["days"]
+        return round(sum(float(v or 0) for k, v in days.items() if k.startswith(prefix)), 4)
 
 
 def over_cap() -> str:

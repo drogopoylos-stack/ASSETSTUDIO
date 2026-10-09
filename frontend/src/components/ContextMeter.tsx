@@ -69,6 +69,11 @@ export function ContextMeter({ data, projectId, folderId, className, onCompact, 
     );
   }
 
+  if (ctx?.compacting && (!ctx.ctx_max || !ctx.ctx_used)) return (
+    <span className={cls("inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap", className)}>
+      <span className="text-muted">ctx</span><span className="text-warn">· Compacting…</span>
+    </span>
+  );
   if (!ctx || !ctx.ctx_max || !ctx.ctx_used) return null;
   const pct = Math.min(100, ctx.ctx_pct || 0);
   const shown = Math.round(pct);
@@ -116,8 +121,8 @@ export function ContextMeter({ data, projectId, folderId, className, onCompact, 
         ) : est ? (
           <span className="text-ok/70">· {ctx.compact_trigger === "auto" ? "auto-" : ""}compacted</span>
         ) : onCompact ? (
-          <button onClick={onCompact} className="text-muted/70 hover:text-brand"
-            title="Run /compact now to summarize the conversation and free up the context window">
+          <button onClick={onCompact} disabled={ctx.working} className="text-muted/70 hover:text-brand disabled:opacity-50 disabled:cursor-wait"
+            title={ctx.working ? "Wait for the current turn to finish before compacting" : "Run /compact now to summarize the conversation and free up the context window"}>
             · {rem}%<span data-opt="2">{rem < 25 ? " — compact now" : " to compact"}</span>
           </button>
         ) : <span className="text-muted/60">· {rem}%<span data-opt="2"> to compact</span></span>}
@@ -145,9 +150,9 @@ export function ContextMeter({ data, projectId, folderId, className, onCompact, 
         // (a permanent "compact now" reads as "you must clear", which is the pressure a 1M window
         // exists to remove), so the wording and the underline still only arrive in the warn band.
         // The click is always there.
-        <button onClick={onCompact}
-          title="Run /compact now to summarize the conversation and free up the context window"
-          className={cls("text-muted/60 hover:text-brand underline decoration-dotted",
+        <button onClick={onCompact} disabled={ctx.working}
+          title={ctx.working ? "Wait for the current turn to finish before compacting" : "Run /compact now to summarize the conversation and free up the context window"}
+          className={cls("text-muted/60 hover:text-brand underline decoration-dotted disabled:opacity-50 disabled:cursor-wait",
             rem < 25 ? "decoration-muted/40" : "decoration-transparent hover:decoration-muted/40")}>
           · {rem}%<span data-opt="2">{rem < 25 ? " — compact now" : " to compact"}</span>
         </button>
