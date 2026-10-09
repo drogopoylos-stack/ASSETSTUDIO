@@ -50,7 +50,9 @@ def free_port() -> int:
 print("The launcher can find the process that is really serving")
 from asset_studio import main as app_main            # noqa: E402
 
-h = app_main.health()
+import asyncio                                       # noqa: E402
+
+h = asyncio.run(app_main.health())                   # async since 2026-10-09: see main.health
 check("/api/health names a pid", isinstance(h.get("pid"), int) and h["pid"] > 0, h.get("pid"))
 check("...and it is this process", h["pid"] == os.getpid(), "%s vs %s" % (h.get("pid"), os.getpid()))
 check("the old fields are untouched", h.get("ok") is True and "version" in h, sorted(h))

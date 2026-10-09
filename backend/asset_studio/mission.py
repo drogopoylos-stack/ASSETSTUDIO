@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from . import fsutil
 from . import perf
 from . import engines
+from .coalesce import coalesced
 from .config import DATA_DIR, settings
 
 PROJECT_ACTIVE_WINDOW = 600   # s — project counted "active" if touched within
@@ -2145,6 +2146,7 @@ def project_todos(project_id: str) -> dict:
     entries = _tail_entries_cached(newest, kb=512) if newest else []
     return resolve_phases(project_id, entries, {f.stem for f in jsonls}, transcript=newest)
 
+@coalesced(ttl=0)            # one parse serves every pane that asks while it runs
 def project_context(project_id: str) -> dict:
     if engines.native(project_id):
         return engines.native(project_id).context(project_id)
@@ -2878,6 +2880,8 @@ def project_subagent_collisions(project_id: str, root: str = "") -> list:
     return subagents.collisions(project_id, root)
 
 
+# Coalesced: the panes, the rail and the context meter poll this together; see coalesce.py.
+@coalesced(ttl=0)
 def project_feed(project_id: str, limit: int = 150, session: str = "", kinds: str = "") -> dict:
     """Rich, Claude-Code-style event timeline from a project transcript: thinking
     (with token counts), messages, edits (with diffs), commands, todos, and tool

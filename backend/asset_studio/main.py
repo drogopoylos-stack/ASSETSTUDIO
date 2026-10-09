@@ -124,7 +124,12 @@ async def _log_slow(request, call_next):
 
 
 @app.get("/api/health")
-def health():
+async def health():
+    # ASYNC ON PURPOSE. A plain `def` route runs in the worker thread pool, behind every busy
+    # feed parse and every slow provider check waiting there — and the desktop shell KILLS the
+    # backend when this route stops answering. The answer below needs no I/O, so it runs on the
+    # event loop and says "alive" whenever the loop is, however full the pool is.
+    #
     # `pid` IS LOad-BEARING, not diagnostics. On Windows `.venv/Scripts/python.exe` is a
     # virtualenv REDIRECTOR: it launches the real interpreter as a child and stays alive as a
     # parent. The desktop launcher spawns the redirector, so the pid it holds is the stub's —

@@ -479,7 +479,8 @@ def server(start: bool = True) -> Optional[AppServer]:
         _SRV, _SRV_KEY["v"] = srv, key
         _ACCOUNT.clear()
         _MODELS.clear()
-        return srv
+    _start_recycler()
+    return srv
 
 
 def stop_server() -> None:
@@ -488,6 +489,80 @@ def stop_server() -> None:
         if _SRV is not None:
             _SRV.stop()
         _SRV = None
+
+
+# AN IDLE APP-SERVER THAT HAS GROWN IS RECYCLED. The Studio keeps one Codex app-server alive for as
+# long as the backend runs, and Windows flagged it on 2026-10-08 (RADAR_PRE_LEAK_64: codex.exe) —
+# a leak in a process that never restarts only ever grows. When nothing is running in Codex and the
+# server with its children (node runtimes, sandbox helpers) holds more than the limit, it is stopped.
+# Nothing is lost: conversations live on disk, and the next send starts a server and resumes the
+# thread (see `_start_turn`, `thread/resume`). `codex_recycle_mb` changes the limit; 0 disables it.
+_RECYCLE_EVERY_S = 300.0
+_RECYCLE_IDLE_S = 600.0
+_recycler = {"on": False, "idle_since": 0.0}
+
+
+def _tree_mb(pid: int) -> float:
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        procs = [p] + p.children(recursive=True)
+        total = 0
+        for q in procs:
+            try:
+                total += q.memory_info().rss
+            except Exception:
+                pass
+        return total / (1024 * 1024)
+    except Exception:
+        return 0.0
+
+
+def recycle_if_bloated(now: Optional[float] = None) -> bool:
+    """Stop the app-server when it has been idle a while and grown past the limit. True if stopped."""
+    try:
+        limit = float(settings.get("codex_recycle_mb", 2048) or 0)
+    except (TypeError, ValueError):
+        limit = 2048.0
+    now = time.time() if now is None else now
+    srv = _SRV
+    if limit <= 0 or srv is None or not srv.alive():
+        _recycler["idle_since"] = 0.0
+        return False
+    if _busy():
+        _recycler["idle_since"] = 0.0
+        return False
+    if not _recycler["idle_since"]:
+        _recycler["idle_since"] = now
+        return False
+    if now - _recycler["idle_since"] < _RECYCLE_IDLE_S:
+        return False
+    mb = _tree_mb(srv.pid)
+    if mb <= limit:
+        return False
+    with _SRV_LOCK:
+        if _SRV is not srv or _busy():
+            return False
+        print(f"[codex] recycling the idle app-server: {mb:.0f} MB > {limit:.0f} MB")
+        stop_server()
+    _recycler["idle_since"] = 0.0
+    return True
+
+
+def _start_recycler() -> None:
+    with _SRV_LOCK:
+        if _recycler["on"]:
+            return
+        _recycler["on"] = True
+
+    def loop() -> None:
+        while True:
+            time.sleep(_RECYCLE_EVERY_S)
+            try:
+                recycle_if_bloated()
+            except Exception:
+                pass
+    threading.Thread(target=loop, name="codex-recycler", daemon=True).start()
 
 
 def _busy() -> bool:

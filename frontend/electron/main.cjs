@@ -28,6 +28,21 @@ let backendPid = 0;          // the pid that really serves — NOT always backen
 let backendPidAt = 0;        // when that pid was last confirmed, so a stale one is never killed
 let downSince = 0;           // when the watchdog first saw the backend unreachable
 let watchdog = null;
+let quickDeaths = 0;         // backends in a row that died soon after starting (see spawnBackend)
+
+// WHAT THE SHELL DID, AND WHY. The backend log ends mid-line when the backend is killed or crashes,
+// so it cannot tell "the watchdog killed it" from "it crashed" from "the disk vanished" — and on
+// 2026-10-09 it was the last of these (an NVMe drive dropping off the bus), which looked exactly
+// like an unstable app. Every kill, exit and respawn decision is written here with its reason.
+function shellLog(msg) {
+  try {
+    const dir = path.join(path.resolve(__dirname, "..", ".."), "data", "logs");
+    fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, "shell.log");
+    try { if (fs.statSync(f).size > 1_000_000) fs.truncateSync(f, 0); } catch { /* ignore */ }
+    fs.appendFileSync(f, `${new Date().toISOString()}  ${msg}\n`);
+  } catch { /* logging must never take the shell down */ }
+}
 
 // Stable Windows app identity. The taskbar groups a running window under a pinned
 // shortcut ONLY when their AppUserModelIDs match — so we set the same id here that the
@@ -75,7 +90,9 @@ function backendHealth() {
       });
     });
     r.on("error", () => resolve(null));
-    r.setTimeout(800, () => { r.destroy(); resolve(null); });
+    // 2.5 s, not 0.8: the route answers in milliseconds, but a machine busy with a game build or
+    // a big graph load can stall a probe for a second, and one slow answer is not a hang.
+    r.setTimeout(2500, () => { r.destroy(); resolve(null); });
   });
 }
 
@@ -121,12 +138,21 @@ function spawnBackend() {
     });
     backendProc = proc;
     const startedAt = Date.now();
-    proc.on("exit", () => {
+    proc.on("exit", (code, signal) => {
       if (backendProc === proc) backendProc = null;   // only clear if it's still the current one
+      const lived = Date.now() - startedAt;
+      shellLog(`backend exited: code=${code} signal=${signal} after ${Math.round(lived / 1000)}s`
+        + (isQuitting || restarting ? " (intended)" : ""));
       if (isQuitting || restarting) return;
-      // It stopped on its own → bring it straight back. Back off if it died almost instantly so a
-      // genuinely broken build doesn't hot-loop.
-      const delay = Date.now() - startedAt < 4000 ? 4000 : 500;
+      // It stopped on its own → bring it back. A backend that dies within 15 s of starting, again and
+      // again, is not going to be fixed by starting it faster: on 2026-10-09 it was the disk the app
+      // lives on vanishing, and the old fixed 4 s retry crashed it five times in thirty seconds. So
+      // the wait doubles each time, up to a minute, and resets once one survives.
+      quickDeaths = lived < 15000 ? quickDeaths + 1 : 0;
+      const delay = quickDeaths ? Math.min(60000, 2000 * 2 ** quickDeaths) : 500;
+      if (quickDeaths >= 3) shellLog(`backend died ${quickDeaths} times in a row soon after start — `
+        + "check data/backend.log and the Windows System log (disk errors?)");
+      shellLog(`respawning in ${Math.round(delay / 1000)}s`);
       setTimeout(async () => {
         if (isQuitting || restarting || backendProc) return;
         // NEVER ADD A BACKEND TO ONE THAT IS ALREADY SERVING.
@@ -183,9 +209,16 @@ function startWatchdog() {
     // restart always has an up-to-date target and never has to guess.
     if (await backendHealth()) { downSince = 0; return; }
     if (!downSince) { downSince = Date.now(); return; }
-    if (Date.now() - downSince >= 6000) {
+    // 20 s, not 6. The old window was two missed probes: a backend parsing a big transcript or
+    // loading a large code graph for a few seconds was killed as "hung" — and every agent turn in
+    // flight with it. A real hang is still caught; a busy moment no longer is.
+    if (Date.now() - downSince >= 20000) {
+      shellLog(`watchdog: no health answer for ${Math.round((Date.now() - downSince) / 1000)}s — `
+        + `killing backend (stub ${backendProc ? backendProc.pid : 0}, serving pid ${backendPid})`);
       downSince = 0;
-      if (backendProc) { try { backendProc.kill(); } catch { /* ignore */ } backendProc = null; }
+      // killBackend, not backendProc.kill(): the child we hold is the virtualenv STUB, and killing
+      // only the stub left a hung interpreter holding port 8777, so the respawn could not bind.
+      killBackend();
       spawnBackend();
       reloadWhenHealthy();
     }
