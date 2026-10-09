@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from . import engines, fsutil
+from . import engines, fsutil, live_notes
 from .config import DATA_DIR, claude_home, settings
 from . import perf
 from . import mission
@@ -2525,11 +2525,9 @@ def _live_reader(live: "_Live") -> None:
                     live.btw_pending = False
                     try:
                         nf = _btw_note_file(live.project_id)
-                        if nf.exists():
-                            note = nf.read_text(encoding="utf-8").strip()
-                            nf.unlink()
-                            if note:
-                                _write_msg(live, _btw_wrap(note))
+                        note = live_notes.claim(nf)
+                        if note and not _write_msg(live, _btw_wrap(note)):
+                            live_notes.put(nf, note)
                     except OSError:
                         pass
             elif typ in ("assistant", "user", "tool_use", "stream_event"):
@@ -2701,10 +2699,7 @@ def _claim_pending_btw(project_id: str) -> str:
     note = ""
     try:
         nf = _btw_note_file(project_id)
-        if nf.exists():
-            if (time.time() - nf.stat().st_mtime) <= _BTW_CARRY_MAX_AGE:
-                note = nf.read_text(encoding="utf-8").strip()
-            nf.unlink(missing_ok=True)
+        note = live_notes.claim(nf, max_age=_BTW_CARRY_MAX_AGE)
     except OSError:
         pass
     return note
@@ -2961,7 +2956,7 @@ def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Liv
             # the fresh process died before it could take it → put the note BACK so the next
             # spawn (or the next turn's hook) still delivers it. A note is never dropped silently.
             try:
-                _btw_note_file(project_id).write_text(carried_btw, encoding="utf-8")
+                live_notes.put(_btw_note_file(project_id), carried_btw)
             except OSError:
                 pass
     return live
@@ -3553,6 +3548,9 @@ BTW_PREFIX = "↪ Side-note (by the way — sent while you work)"
 
 
 def _btw_wrap(message: str) -> str:
+    # Mailbox entries already carry their own framing, including steering updates.
+    if message.startswith((STEER_PREFIX, BTW_PREFIX)):
+        return message
     note = (f"{BTW_PREFIX} — FYI/awareness while you keep going. Note it, and answer briefly if it's "
             "a question, but do NOT drop, restart, or reprioritize the main task unless this directly "
             "blocks it.")
@@ -3702,9 +3700,12 @@ def _btw_sweep_once() -> None:
     if not _BTW_DIR.exists():
         return
     now = time.time()
-    for nf in list(_BTW_DIR.glob("*.note")):
+    paths = set(_BTW_DIR.glob("*.note"))
+    paths.update(Path(str(p)[:-2]) for p in _BTW_DIR.glob("*.note.d"))
+    for nf in paths:
         try:
-            if now - nf.stat().st_mtime < _BTW_SWEEP_SECS:
+            mailbox = Path(str(nf) + ".d")
+            if now - (mailbox if mailbox.exists() else nf).stat().st_mtime < _BTW_SWEEP_SECS:
                 continue                      # just written — let the hook have it first
         except OSError:
             continue
@@ -3715,11 +3716,8 @@ def _btw_sweep_once() -> None:
             continue                          # no session: _claim_pending_btw carries it on respawn
         if _stream_busy(live):
             continue                          # a turn owns it (hook / turn-end fallback)
-        tmp = nf.parent / (nf.name + ".consuming")
         try:
-            os.replace(nf, tmp)               # atomic claim, byte-identical to btw_hook.py
-            note = tmp.read_text(encoding="utf-8").strip()
-            tmp.unlink(missing_ok=True)
+            note = live_notes.claim(nf)
         except OSError:
             continue
         if not note:
@@ -3729,7 +3727,7 @@ def _btw_sweep_once() -> None:
                 live.btw_pending = False
         else:
             try:                              # write failed — put it back, never drop it
-                nf.write_text(note, encoding="utf-8")
+                live_notes.put(nf, note)
             except OSError:
                 pass
 
@@ -3764,7 +3762,7 @@ def _note_sig() -> tuple:
 
 def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                     permission_mode: str, fork: bool, effort: str, exe: str,
-                    new_session: bool, session: str, newest_session: Optional[str]) -> dict:
+                    new_session: bool, session: str, newest_session: Optional[str], steer: bool = False) -> dict:
     want_sig = (exe, cwd, model or "default", permission_mode or "default",
                 bool(fork), (effort or "default").lower(), bool(settings.get("cc_autolearn")),
                 # the style rides the system prompt, which is fixed for the life of the process —
@@ -3820,6 +3818,8 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
         if live is not None and (not live.alive or live.proc.poll() is not None):
             _live.pop(project_id, None)
             live = None
+        if steer and (live is None or not _stream_busy(live)):
+            return {"ok": False, "error": "The turn has finished. Use Send to start another turn."}
         # WHY the process is being replaced, so the send can say so. A SIG change re-sends the whole
         # conversation under a DIFFERENT request prefix, which is a prompt-cache miss and bills at
         # cache-write instead of cache-read — 5x to 50x on the line a long agent spends most of its
@@ -3885,7 +3885,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
     # If this lands while a turn is already running, inject it live: /btw uses the soft "just be aware,
     # keep going" framing; a bare mid-turn message uses the "adjust course / prioritize" one.
     steering = (not spawned) and _stream_busy(live)
-    if steering and btw and core:
+    if steering and (btw or steer) and core:
         # TRUE mid-turn delivery: stdin would only queue this for the NEXT turn. Write the note
         # file instead — the session's PostToolUse hook injects it into the RUNNING turn at the
         # very next tool boundary. If the turn ends first, the reader queues it normally
@@ -3893,18 +3893,20 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
         try:
             _BTW_DIR.mkdir(parents=True, exist_ok=True)
             nf = _btw_note_file(project_id)
-            prev = (nf.read_text(encoding="utf-8") + "\n\n") if nf.exists() else ""
-            nf.write_text(prev + core, encoding="utf-8")
+            live_notes.put(nf, _steer_wrap(core) if steer else _btw_wrap(core))
             with live.lock:
                 live.btw_pending = True
             return {
                 "ok": True, "agent": "claude", "streams": True, "session_id": live.session_id,
                 "forked": False, "model": model, "permission_mode": permission_mode,
-                "pid": live.proc.pid, "cwd": cwd, "steering": True, "btw_live": True,
-                "btw": True, "btw_mode": "live",   # UI confirms "delivered mid-task"
+                "pid": live.proc.pid, "cwd": cwd, "steering": True,
+                "steer_live": steer, "steer_mode": "live" if steer else "",
+                "btw_live": btw, "btw": btw, "btw_mode": "live" if btw else "",
                 "pending": live.outstanding + (1 if live.turn_active else 0), "respawned": False,
             }
         except OSError:
+            if steer:
+                return {"ok": False, "agent": "claude", "error": "Could not deliver the steering update. Use Send to queue it instead."}
             pass    # can't write the note file — fall through to the queued path
     if steering:
         msg_out = _btw_wrap(core) if btw else _steer_wrap(core)
@@ -3961,6 +3963,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
         "ok": True, "agent": "claude", "streams": True, "session_id": live.session_id,
         "forked": bool(fork and resume), "model": model, "permission_mode": permission_mode,
         "pid": live.proc.pid, "cwd": cwd, "steering": steering,
+        "steer_mode": "queued" if steer else "",
         # a /btw that went down the queued path (idle chat, or the hook file couldn't be written)
         "btw": bool(btw and core), "btw_mode": ("queued" if (btw and core) else ""),
         "pending": live.outstanding + (1 if live.turn_active else 0), "respawned": spawned,
@@ -4182,11 +4185,26 @@ def send(
     path: str = "",
     thinking: bool = False,
     companions: Optional[list[dict]] = None,
+    steer: bool = False,
 ) -> dict:
     from . import agents
     # WHICH ENGINE IS ABOUT TO WRITE, read before the alt remap below renames it to "claude". The
     # turn's checkpoint is labelled with this, not with the engine the plumbing ends up running.
     engine = agent
+    # /steer and the button use the same path. Validate before snapshots/BOOST/companions.
+    command = re.match(r"^\s*/steer(?:\s+|$)", message or "", flags=re.I)
+    if command:
+        steer = True
+        message = message[command.end():]
+    if steer:
+        if agent not in ("claude", "codex"):
+            return {"ok": False, "error": "Steer is available for Claude and Codex.", "agent": agent}
+        if not (message or "").strip() and not images:
+            return {"ok": False, "error": "empty steering update", "agent": agent}
+        if new_session or fork or not _engine_busy(project_id, agent):
+            return {"ok": False, "error": "Steer needs a running turn in this conversation. Use Send instead.", "agent": agent}
+        if agent == "claude" and not settings.get("cc_streaming", True):
+            return {"ok": False, "error": "Claude steering requires streaming mode.", "agent": agent}
 
     # THE MONEY GUARD, and it now covers what its own comment always claimed. Nothing used to stop
     # an agent turn on cost: the app's only cap, `monthly_spend_cap_usd`, was checked in
@@ -4209,7 +4227,7 @@ def send(
     # Not for a message that STEERS a turn already running on this engine — that turn's checkpoint
     # was taken when it started, and the files are mid-edit now — and not for /compact, which edits
     # nothing. (An unchanged folder is also not written twice: see checkpoints.create.)
-    if not _engine_busy(project_id, agent) and not _is_compact_cmd(message or ""):
+    if not steer and not _engine_busy(project_id, agent) and not _is_compact_cmd(message or ""):
         _snapshot_before_turn(project_id, message, engine, has_images=bool(images))
 
     # BOOST, at the one door every engine comes through — the same reason the money guard above
@@ -4231,12 +4249,12 @@ def send(
     if eng is not engines.CLAUDE:
         res = eng.start_turn(project_id, message, model=model, permission_mode=permission_mode,
                              images=images, effort=effort, new_session=new_session,
-                             session=session, path=path)
+                             session=session, path=path, steer=steer)
         return {**res, "boost": boost_info} if isinstance(res, dict) else res
     if images:
         refs = "\n".join(f"  {i + 1}. {p}" for i, p in enumerate(images))
         message = (message.strip() + "\n\nAttached screenshot(s) — please Read these image files:\n" + refs).strip()
-    if thinking and (agent == "claude" or alt_agent(agent)):
+    if thinking and not steer and (agent == "claude" or alt_agent(agent)):
         message = (message.strip() + "\n\nultrathink").strip()  # max extended-thinking budget
     if not message.strip():
         return {"ok": False, "error": "empty message"}
@@ -4312,7 +4330,7 @@ def send(
     # declined, a busy session — and every one of them still bought a full billed turn per
     # co-agent, for a primary turn that never ran. Each companion is its own model run, so a pane
     # with two co-agents paid twice for nothing, repeatedly.
-    comps = [c for c in (companions or []) if isinstance(c, dict) and c.get("id") and c.get("id") != agent]
+    comps = [c for c in (companions or []) if not steer and isinstance(c, dict) and c.get("id") and c.get("id") != agent]
     user_msg = message
     if agent == "claude" and comps:
         ctx = _companion_context(project_id, [c["id"] for c in comps])
@@ -4337,7 +4355,7 @@ def send(
     if agent == "claude" and settings.get("cc_streaming", True):
         return _start_companions(
             _send_streaming(project_id, message, cwd, model, permission_mode, fork,
-                            effort, exe, new_session, session, newest_session))
+                            effort, exe, new_session, session, newest_session, steer=steer))
 
     # one-shot path (non-claude agents, or streaming disabled) — reject if busy
     if is_sending(project_id):
@@ -4387,7 +4405,7 @@ def send(
 
 def _send_codex(project_id: str, message: str, model: str, permission_mode: str,
                 images: Optional[list[str]], effort: str, new_session: bool, session: str,
-                path: str) -> dict:
+                path: str, steer: bool = False) -> dict:
     """Codex goes through its own app-server (codex_app.py): signed in there, its own models,
     one conversation per folder, streamed into the feed under "codex--<folder>". Pictures travel
     as pictures, not as a list of paths to read."""
@@ -4415,7 +4433,8 @@ def _send_codex(project_id: str, message: str, model: str, permission_mode: str,
             pass
     return codex_app.send(project_id, message, cwd, model=model, effort=effort, mode=permission_mode,
                           images=images, new_session=new_session, session=session,
-                          fast=bool(settings.get("codex_fast")), planner=bool(settings.get("codex_planner")))
+                          fast=bool(settings.get("codex_fast")), planner=bool(settings.get("codex_planner")),
+                          steer=steer)
 
 
 def cancel(project_id: str) -> dict:

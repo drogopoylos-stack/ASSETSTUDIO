@@ -211,6 +211,7 @@ class SendBody(BaseModel):
     session: str = ""
     path: str = ""
     thinking: bool = False
+    steer: bool = False
     companions: list[dict] = []   # co-agents to run alongside (each: {id, model, effort, permission_mode})
 
 
@@ -219,7 +220,7 @@ def send_message(project_id: str, body: SendBody):
     return cc_session.send(project_id, body.message, body.model, body.permission_mode,
                            body.fork, body.images, body.effort, body.agent,
                            body.new_session, body.session, body.path, body.thinking,
-                           companions=body.companions)
+                           companions=body.companions, steer=body.steer)
 
 
 @router.get("/attention")

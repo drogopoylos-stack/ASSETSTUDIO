@@ -2721,7 +2721,11 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
       for (let i = 0; i < lines.length; i++) {
         const e = lines[i];
         if (e.kind !== "user" || !isRealPrompt(e.text || "")) continue;
-        if (e.btw) { items.push({ key: `btw-${i}`, text: e.text || "", ts: e.ts, n, answer: "", btw: true }); continue; }
+        if (e.btw || e.steer) {
+          const text = (e.text || "").replace(/^↪ (?:Steering update|Side-note)[^\n]*\n\n/, "");
+          items.push({ key: `btw-${i}`, text, ts: e.ts, n, answer: "", btw: true });
+          continue;
+        }
         n++;
         let answer = "";
         for (let j = i + 1; j < lines.length; j++) {        // my reply = the LAST assistant text
@@ -2771,7 +2775,7 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
         {btwPending && (
           <div className="rounded-md border border-warn/50 bg-warn/10 px-2 py-1.5">
             <div className="flex items-center gap-2 text-[10px] text-warn">
-              <span>↪ side-note</span>
+              <span>↪ live update</span>
               <span className="ml-auto">waiting — goes in at the next tool step</span>
             </div>
             <div className="text-text/85 text-[12px] mt-0.5 leading-snug whitespace-pre-wrap">{btwPending}</div>
@@ -2789,7 +2793,7 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
           // a side-note: not a prompt of its own, so it carries no number and no answer
           <div key={p.key} className="rounded-md border border-accent/40 bg-accent/5 px-2 py-1.5">
             <div className="flex items-center gap-2 text-[10px] text-accent/90">
-              <span>↪ side-note</span><span className="font-mono text-muted">{p.ts}</span>
+              <span>↪ live update</span><span className="font-mono text-muted">{p.ts}</span>
               <span className="ml-auto text-muted/70">delivered</span>
             </div>
             <div className="text-text/85 text-[12px] mt-0.5 leading-snug">{summarize(p.text, 200)}</div>

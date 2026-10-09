@@ -2648,16 +2648,17 @@ def _btw_from_hook(entry: dict) -> str:
     The wrapper text around the note is instruction for the model, not something to show, so
     only the middle — between the marker line and the trailing "— Take it into account" — is kept."""
     att = entry.get("attachment")
-    if not isinstance(att, dict) or str(att.get("hookEvent") or "") != "PostToolUse":
+    if not isinstance(att, dict) or str(att.get("hookEvent") or "") not in ("PreToolUse", "PostToolUse"):
         return ""
     raw = att.get("stdout")
-    if not isinstance(raw, str) or _BTW_HOOK_MARK not in raw.lower():
+    marks = (_BTW_HOOK_MARK, "live update from the user")
+    if not isinstance(raw, str) or not any(mark in raw.lower() for mark in marks):
         return ""
     try:
         ctx = ((json.loads(raw) or {}).get("hookSpecificOutput") or {}).get("additionalContext") or ""
     except (json.JSONDecodeError, TypeError):
         return ""
-    if _BTW_HOOK_MARK not in ctx.lower():
+    if not any(mark in ctx.lower() for mark in marks):
         return ""
     body = ctx.split("\n", 1)[1] if "\n" in ctx else ""
     cut = body.find("\n— Take it into account")
@@ -2934,8 +2935,12 @@ def project_feed(project_id: str, limit: int = 150, session: str = "", kinds: st
         if typ == "attachment":
             note = _btw_from_hook(o)
             if note:
-                events.append({"kind": "user", "ts": ts, "text": note, "btw": True,
-                               "id": o.get("uuid") or ""})
+                # Hook context is not a rewindable user turn. Separate each update
+                # so its framing stays out of the visible text.
+                updates = re.split(r"\n\n(?=↪ (?:Steering update|Side-note))", note)
+                for update in updates:
+                    events.append({"kind": "user", "ts": ts, "text": update,
+                                   "steer": update.startswith("↪ Steering update"), "btw": True})
                 continue
             g = _graph_from_hook(o)
             if g:
@@ -3054,8 +3059,7 @@ def project_feed(project_id: str, limit: int = 150, session: str = "", kinds: st
     try:
         from . import cc_session
         nf = cc_session._btw_note_file(project_id)
-        if nf.exists():
-            btw_pending = nf.read_text(encoding="utf-8").strip()
+        btw_pending = re.sub(r"(?m)^↪ (?:Steering update|Side-note)[^\n]*\n\n", "", cc_session.live_notes.peek(nf))
     except Exception:
         btw_pending = ""
     return {

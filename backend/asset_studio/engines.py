@@ -133,7 +133,7 @@ class _Codex(Engine):
         return cc_session._send_codex(project_id, message, opts.get("model", "default"),
                                       opts.get("permission_mode", ""), opts.get("images"),
                                       opts.get("effort", "default"), bool(opts.get("new_session")),
-                                      opts.get("session", ""), opts.get("path", ""))
+                                      opts.get("session", ""), opts.get("path", ""), bool(opts.get("steer")))
 
     def is_sending(self, project_id: str) -> bool:
         from . import codex_app

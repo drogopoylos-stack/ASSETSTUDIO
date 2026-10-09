@@ -1155,7 +1155,7 @@ function toolIcon(icon?: string) {
 // Your prompt — hover to reveal a ✎ that opens an inline editor. Submitting rewinds the
 // conversation to this message and restarts from the edited text (everything below is removed).
 function UserEvent({ e, onRewind, cli }: { e: FeedEvent; onRewind?: (uuid: string, text: string, restoreFiles: boolean) => void; cli?: boolean }) {
-  const steered = isSteer(e.text || "");
+  const steered = !!e.steer || isSteer(e.text || "");
   const clean = stripSteer(e.text || "");   // hide the steering tag from the visible bubble
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(clean);

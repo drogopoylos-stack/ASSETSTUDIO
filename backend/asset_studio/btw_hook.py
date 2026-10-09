@@ -1,4 +1,4 @@
-"""Claude Code hook: deliver a pending /btw side-note INTO the running turn.
+"""Claude Code hook: deliver pending steering and /btw updates into a running turn.
 
 Registered on BOTH PreToolUse and PostToolUse. PostToolUse alone loses a race that matters:
 a note written while the model is deciding its next action sits on disk through that whole
@@ -11,20 +11,25 @@ Writing to the CLI's stdin mid-turn only QUEUES a message for the NEXT turn — 
 agentic loop never sees it. Hooks are the real mid-turn channel: this fires after every
 tool call, and its `additionalContext` lands in the model's context at that step boundary.
 
-The Studio writes the raw note to a per-project file; this script atomically claims it
-(os.replace beats the turn-end fallback in cc_session, so the note is delivered exactly
-once) and emits it as additionalContext. Standalone on purpose: no package imports, runs
-with any Python. The settings JSON wraps it in `cmd /c if exist ...` so the per-tool-call
-cost when there is NO note is one cmd spawn, no Python.
+The Studio publishes one file per update in a per-project mailbox. The shared
+standard-library reader locks and claims entries against other hooks and turn-end
+fallback, then emits them as additionalContext. The script runs directly under the
+backend's Python, without importing the application or its dependencies.
 """
 import json
 import os
 import sys
+from pathlib import Path
+
+if __package__:
+    from . import live_notes
+else:
+    import live_notes
 
 
 def main() -> int:
     p = sys.argv[1] if len(sys.argv) > 1 else ""
-    if not p or not os.path.exists(p):
+    if not p or not live_notes.peek(Path(p)):
         return 0
     # SUBAGENTS run session hooks too (Task/Workflow agents fire PostToolUse constantly during
     # long orchestrated turns). A subagent consuming the note would inject it into ITS context —
@@ -42,15 +47,18 @@ def main() -> int:
     tp = str(payload.get("transcript_path") or "")
     if os.path.basename(tp).lower().startswith("agent-") or "subagent" in tp.lower().replace("\\", "/"):
         return 0
-    tmp = p + ".consuming"
     try:
-        os.replace(p, tmp)          # atomic claim — the fallback can no longer double-send it
-        with open(tmp, "r", encoding="utf-8") as fh:
-            note = fh.read().strip()
-        os.remove(tmp)
+        note = live_notes.claim(Path(p))
     except OSError:
         return 0
     if not note:
+        return 0
+    if note.startswith(("↪ Steering update", "↪ Side-note")):
+        # Each entry has its own instructions: steer may reprioritize, /btw stays FYI.
+        ctx = ("↪ LIVE update from the user:\n" + note
+               + "\n— Take it into account from this step onward. Acknowledge the update briefly.")
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
+                                                 "additionalContext": ctx}}))
         return 0
     ctx = ("↪ LIVE side-note from the user (sent with /btw while you work — they want you to see it "
            "NOW, mid-task, not after you finish):\n" + note +

@@ -552,11 +552,12 @@ else:
         time.sleep(1.2)
         live = cx.live_state("codex--" + PID)
         check("while it works, the live state says so", live.get("working") and live.get("elapsed", 0) > 0, live)
-        r2 = cx.send(PID, "and one more thing", str(work), mode="full")
-        check("a message sent mid-turn steers it (or waits its turn)", r2.get("ok") and (r2.get("steering") or r2.get("queued")), r2)
+        r2 = cx.send(PID, "and one more thing", str(work), mode="full", steer=True)
+        check("explicit steer reaches the running turn", r2.get("ok") and r2.get("steering") and r2.get("steer_mode") == "live" and not r2.get("queued"), r2)
         _wait_idle(PID, 60)
         L = _lines(PID)
         check("the steering message is in the feed", any(e["kind"] == "user" and e["text"] == "and one more thing" for e in L))
+        check("the steering message carries its UI badge", any(e.get("steer") and e["text"] == "and one more thing" for e in L))
 
         # Stop
         cx.send(PID, "scenario:slow", str(work), mode="full")

@@ -379,6 +379,8 @@ export interface FeedEvent {
   id?: string;   // transcript uuid (user messages) — used to rewind the conversation here
   /** a /btw side-note delivered mid-turn by the hook (recovered from the attachment entry) */
   btw?: boolean;
+  /** an update incorporated into a running turn */
+  steer?: boolean;
   /** kind "graph": the symbol the code graph was asked about */
   symbol?: string;
   /** this shell command was NOT waited for — it runs on past this card */

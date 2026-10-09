@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Clock,
   Copy,
+  CornerDownRight,
   Database,
   ExternalLink,
   FileText,
@@ -484,6 +485,7 @@ export function ChatComposer({
     { name: "/codex", desc: "Run this prompt with Codex — Claude stays idle, watch it live", scope: "builtin" },
     { name: "/claude", desc: "Run this prompt with Claude", scope: "builtin" },
     { name: "/btw", desc: "Live side-note — Claude sees it while working, keeps the main task going", scope: "builtin" },
+    { name: "/steer", desc: "Correct the running Claude or Codex turn at its next step", scope: "builtin" },
   ];
   const slashHits = [...LOCAL_AGENT_SLASH, ...slash].filter((c) => c.name.slice(1).toLowerCase().startsWith((trigger?.query || "").toLowerCase())).slice(0, 10);
   const menuOpen = !!trigger && (trigger.type === "file" ? fileHits.length > 0 : slashHits.length > 0);
@@ -645,21 +647,23 @@ export function ChatComposer({
       mode: readPref("mode", projectId, a, modeFallback(a)),
     };
   }
-  async function dispatch(payload: { full: string; images: string[] }, ov?: { agent: string; model: string; effort: string; mode: string }) {
+  async function dispatch(payload: { full: string; images: string[] }, ov?: { agent: string; model: string; effort: string; mode: string }, steer = false) {
     lastSend.current = Date.now();
     setSending(true); onSendingChange?.(true);
     startPoll();
     const useAgent = ov?.agent || agentId;
+    const useFeed = ov ? (useAgent === "claude" ? projectId : `${useAgent}--${projectId}`) : feedId;
     try {
-      const r = await api.sessionSend(projectId, { message: payload.full, model: ov?.model ?? model, permission_mode: ov?.mode ?? mode, fork, effort: ov?.effort ?? effort, thinking, images: payload.images, agent: useAgent, new_session: newSession, session, path: rootPath || "",
-        companions: companions.filter((c) => c !== useAgent).map((cid) => ({ id: cid, model: compGet(cid, "model", "default"), effort: compGet(cid, "effort", "default"), permission_mode: compGet(cid, "mode", cid === "codex" ? "full" : "default") })) });
+      const r = await api.sessionSend(projectId, { message: payload.full, model: ov?.model ?? model, permission_mode: ov?.mode ?? mode, fork: steer ? false : fork, effort: ov?.effort ?? effort, thinking, steer, images: payload.images, agent: useAgent, new_session: newSession, session, path: rootPath || "",
+        companions: steer ? [] : companions.filter((c) => c !== useAgent).map((cid) => ({ id: cid, model: compGet(cid, "model", "default"), effort: compGet(cid, "effort", "default"), permission_mode: compGet(cid, "mode", cid === "codex" ? "full" : "default") })) });
       if (!r.ok) {
         toast(r.error || "send failed", "danger");
         // Codex's own banner above the box says what is missing and fixes it; the agent menu
         // only has a command to copy
         if (r.agent === "codex" && (r.needs_login || r.needs_install)) refreshCodex(true);
         else if (r.needs_install) setAgentMenu(true);
-        dropInflight(feedId, payload);   // pull the failed one back out
+        dropInflight(useFeed, payload);
+        if (steer) { setMsg((m) => m.trim() ? payload.full + "\n\n" + m : payload.full); setImages((im) => [...new Set([...im, ...payload.images])]); }
         return;
       }
       // A RESPAWN THAT COSTS MONEY, SAID OUT LOUD. Changing the model, the effort, the permission
@@ -671,11 +675,16 @@ export function ChatComposer({
       if ((r as any).respawn_reason === "settings") {
         toast("Setting changed mid-conversation — this answer re-sent the whole context as a cache miss, which bills like a fresh start. Change model / effort / mode between turns, not during one.", "warn");
       }
-      if ((r as any).btw_live) {
+      if (steer || (r as any).steer_mode) {
+        if ((r as any).steer_live) dropInflight(useFeed, payload);
+        toast((r as any).steer_mode === "live"
+          ? `Steer accepted — ${useAgent === "codex" ? "Codex" : "Claude"} picks it up at its next step`
+          : "Steer queued — picked up on the next turn", "ok");
+      } else if ((r as any).btw_live) {
         // delivered INTO the running turn via the hook (not stdin) — it never echoes back as a
         // user message in the transcript, so drop the optimistic bubble and confirm instead
-        dropInflight(feedId, payload);
-        toast("Side-note delivered live — Claude sees it at its next step (watch for the acknowledgment)", "ok");
+        dropInflight(useFeed, payload);
+        toast("Side-note accepted — Claude sees it at its next step (watch for the acknowledgment)", "ok");
       } else if ((r as any).btw) {
         // queued path (idle chat, or the hook file couldn't be written): it DOES echo back as a
         // bubble, but confirm it landed AS a side-note so a lost one can never be mistaken for a
@@ -695,10 +704,11 @@ export function ChatComposer({
       onSent?.();
     } catch (e: any) {
       toast(e.message, "danger");
-      dropInflight(feedId, payload);
+      dropInflight(useFeed, payload);
+      if (steer) { setMsg((m) => m.trim() ? payload.full + "\n\n" + m : payload.full); setImages((im) => [...new Set([...im, ...payload.images])]); }
     }
   }
-  function send() {
+  function send(steer = false) {
     let text = msg.trim();
     // "/codex …" or "/claude …" runs THIS prompt on that agent (one-shot). For /codex, Claude
     // stays idle — Codex does the work and you watch it stream live in the feed below.
@@ -716,6 +726,11 @@ export function ChatComposer({
       }
     }
     if (!text && images.length === 0 && files.length === 0) return;
+    if (/^\/steer(?:\s|$)/i.test(text)) {
+      steer = true;
+      text = text.replace(/^\/steer(?:\s+|$)/i, "");
+      if (!text && images.length === 0 && files.length === 0) return;
+    }
     const effAgent = ov?.agent || agentId;
     if (effAgent === "deepseek-harness" && agents.find((a) => a.id === effAgent)?.needs_key) {
       toast("Add the DeepSeek Harness key in Settings → API Keys, then send your prompt.", "warn");
@@ -744,7 +759,7 @@ export function ChatComposer({
     // Commands the stream cannot run. Verified against the CLI: sent headlessly, /subtask comes
     // back "/subtask isn't available in this environment." — so sending it would spend a turn to
     // be told no. Hand it to the terminal, which runs the same session and can.
-    if (onTerminalCommand && /^\/(subtask|fork)/.test(text)) {
+    if (!steer && onTerminalCommand && /^\/(subtask|fork)/.test(text)) {
       // WHICH ENGINE, THOUGH. This used to run for every engine, and the handler switched the pane
       // to `term:claude` — so typing /subtask on a Codex or DeepSeek pane SILENTLY CHANGED the
       // engine the user had chosen, and the answer arrived in a conversation they were not looking
@@ -761,7 +776,7 @@ export function ChatComposer({
       onTerminalCommand(text);
       return;
     }
-    if ((text === "/clear" || text === "/new") && onClear) {
+    if (!steer && (text === "/clear" || text === "/new") && onClear) {
       setMsg(""); setImages([]); setFiles([]); setTrigger(null);
       onClear();
       return;
@@ -771,8 +786,8 @@ export function ChatComposer({
     const payload = { full, images: [...images] };
     snapshot(msg, true);      // Ctrl+Z after sending brings the message back to edit or re-send
     setMsg(""); setImages([]); setFiles([]); setTrigger(null);   // clear instantly — keep typing
-    pushInflight(ov?.agent && ov.agent !== "claude" ? `${ov.agent}--${projectId}` : feedId, payload);
-    dispatch(payload, ov);   // fire now — Claude queues it; no waiting for the previous turn
+    pushInflight(ov ? (ov.agent === "claude" ? projectId : `${ov.agent}--${projectId}`) : feedId, payload);
+    dispatch(payload, ov, steer);
   }
   // Is a CLI process alive for this workspace, whoever started it? `sending` only knows about
   // turns THIS tab sent, so after a reload — or when a turn has wedged and stopped reporting
@@ -1623,13 +1638,21 @@ export function ChatComposer({
                            : "Stop the session running in this workspace"}><Square size={15} /></button>
         )}
         {/* schedule this prompt to send later */}
+        {(agentId === "claude" || agentId === "codex") && (
+          <button className={cls(btn, "!w-auto !px-2 gap-1 !text-accent border border-accent/40 bg-accent/10")}
+            aria-label="Steer" onClick={() => send(true)}
+            disabled={!sending || !agentAvail || newSession || (!msg.trim() && images.length === 0 && files.length === 0)}
+            title={`Steer ${agent?.name || agentId}: send this correction into the running turn at its next step`}>
+            <CornerDownRight size={15} /><span className="text-[10px] font-semibold">Steer</span>
+          </button>
+        )}
         <button className={cls(btn, "relative", schedOpen && "!text-brand !border-brand/50 !bg-brand/10")} title="Schedule this prompt to send later"
           onClick={() => { setSchedOpen((v) => !v); setCfg(false); setAgentMenu(false); if (!schedOpen) { loadRoots(); loadSched(); } }}>
           <Clock size={15} />
           {pendingCount > 0 && <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand text-[9px] text-white flex items-center justify-center font-semibold">{pendingCount}</span>}
         </button>
-        <button className={cls(sendBtn, "composer-send")} onClick={send} disabled={!msg.trim() && images.length === 0 && files.length === 0}
-          title={!agentAvail ? `Install ${agent?.name} first` : sending ? "Send now (Claude picks it up after the current step)" : "Send"}><Send size={15} /></button>
+        <button className={cls(sendBtn, "composer-send")} onClick={() => send()} disabled={!msg.trim() && images.length === 0 && files.length === 0}
+          title={!agentAvail ? `Install ${agent?.name} first` : sending ? (agentId === "codex" ? "Send into the running turn (or queue if unavailable)" : "Queue for the next turn; use Steer to correct the running turn") : "Send"}><Send size={15} /></button>
       </div>
 
       {/* Dictation reports itself here, under the box: you speak without watching the screen, so

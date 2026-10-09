@@ -1249,7 +1249,7 @@ def _answer_input(conv: _Conv, text: str) -> Optional[dict]:
 
 def send(project_id: str, message: str, cwd: str, model: str = "default", effort: str = "default",
          mode: str = "", images: Optional[list[str]] = None, new_session: bool = False,
-         session: str = "", fast: bool = False, planner: bool = False) -> dict:
+         session: str = "", fast: bool = False, planner: bool = False, steer: bool = False) -> dict:
     """A chat message to Codex: answers a waiting approval, steers a running turn, or starts one."""
     info = find_codex()
     if not info:
@@ -1271,14 +1271,14 @@ def send(project_id: str, message: str, cwd: str, model: str = "default", effort
     conv = _conv(project_id)
     pid = conv.project_id
     conv.cwd = cwd or conv.cwd
-    answered = _answer_approval(conv, message) if not images else None
+    answered = _answer_approval(conv, message) if not images and not steer else None
     if answered is not None:
         return answered
-    answered = _answer_input(conv, message) if not images and not new_session and (not session or session == conv.thread_id) else None
+    answered = _answer_input(conv, message) if not images and not steer and not new_session and (not session or session == conv.thread_id) else None
     if answered is not None:
         return answered
     text = (message or "").strip()
-    if text.lower() in ("/compact",):
+    if not steer and text.lower() in ("/compact",):
         return _compact(conv, srv)
     inputs = _inputs(text, images)
     if not inputs:
@@ -1292,6 +1292,8 @@ def send(project_id: str, message: str, cwd: str, model: str = "default", effort
             busy = bool(conv.working and conv.turn_id and conv.thread_id)
             cur_tid, cur_turn = conv.thread_id, conv.turn_id
         switching = bool(new_session or (session and session != cur_tid))
+        if steer and not busy:
+            return {"ok": False, "agent": "codex", "error": "The turn has finished. Use Send to start another turn."}
         if busy and switching:
             # A new or another conversation while this one works. This used to interrupt the
             # running turn silently — and with two panes on one folder, "new chat" in one pane
@@ -1304,7 +1306,7 @@ def send(project_id: str, message: str, cwd: str, model: str = "default", effort
         if busy:
             # Steer cannot change collaboration mode. Let the next turn apply the saved choice.
             with conv.lock:
-                if conv.planner != planner:
+                if conv.planner != planner and not steer:
                     conv.queue.append(job)
                     return {"ok": True, "agent": "codex", "streams": True, "session_id": cur_tid,
                             "queued": True, "model": model, "permission_mode": mode_of(mode)}
@@ -1314,8 +1316,10 @@ def send(project_id: str, message: str, cwd: str, model: str = "default", effort
                 _log(cur_tid, {**user_rec, "steer": True})
                 _publish(conv, force=True)
                 return {"ok": True, "agent": "codex", "streams": True, "session_id": cur_tid,
-                        "steering": True, "model": model, "permission_mode": mode_of(mode)}
-            except RpcError:
+                        "steering": True, "steer_mode": "live", "model": model, "permission_mode": mode_of(mode)}
+            except RpcError as e:
+                if steer:
+                    return {"ok": False, "agent": "codex", "error": f"Codex could not steer this turn: {e.message}. Use Send to queue the update."}
                 with conv.lock:
                     still = conv.working
                     if still:
@@ -2791,7 +2795,7 @@ def events_for(thread_id: str, pid: str, root: str = "", tail_bytes: int = 0) ->
                 text = (text + "\n\n" + "\n".join(rels)).strip()
             # no "id": that is what offers "edit & retry from here", a rewind Codex does not have yet
             ev.append({"kind": "user", "ts": ts, "at": at, "text": text,
-                       **({"btw": True} if r.get("steer") else {})})
+                       **({"steer": True} if r.get("steer") else {})})
             tools = files = added = removed = 0
             fileset = set()
             thought_in_turn = False
