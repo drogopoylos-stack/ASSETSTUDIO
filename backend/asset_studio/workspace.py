@@ -1190,9 +1190,11 @@ def run(path: str) -> dict:
     return {"ok": True, "action": "ran", "ext": ext}
 
 
-# Folders that are never somebody's project, and opening one as a workspace only ever goes wrong.
+# System trees that cannot be opened as workspaces. Installed application folders are
+# useful workspaces too; only the Program Files container itself is excluded.
 _NEVER_OPEN = {"windows", "winnt", "program files", "program files (x86)", "programdata",
                "$recycle.bin", "system volume information", "recovery", "perflogs", "$windows.~ws"}
+_APP_CONTAINERS = {"program files", "program files (x86)"}
 
 
 def openable(p: Path) -> bool:
@@ -1202,13 +1204,19 @@ def openable(p: Path) -> bool:
     project, and the old rule — home, Downloads, Desktop, Documents, or beside an open project —
     answered that with "location not allowed" and nothing else to try.
 
-    Two things are still refused, because neither is ever a project: a drive root (opening `C:\\`
-    means walking the whole machine) and Windows' own folders.
+    Drive roots and Windows system trees are refused. A specific application folder
+    inside Program Files can be opened; normal filesystem permissions still apply.
     """
     parts = [x.strip("\\/").lower() for x in p.parts]
     if len(parts) <= 1:
         return False
-    return not any(seg in _NEVER_OPEN for seg in parts)
+    for i, seg in enumerate(parts):
+        if seg in _APP_CONTAINERS:
+            if i == len(parts) - 1:
+                return False
+        elif seg in _NEVER_OPEN:
+            return False
+    return True
 
 
 def add_root(path: str) -> dict:
@@ -1219,7 +1227,7 @@ def add_root(path: str) -> dict:
     # The old allowances stay, so nothing that opened before stops opening.
     if not (openable(p) or _within(p, _project_roots()) or _within(p, _create_bases())):
         raise PermissionError("that folder cannot be opened as a workspace — it is a drive root or "
-                              "one of Windows' own folders. Open the project folder itself.")
+                              "a system folder. Open a specific project or application folder instead.")
     sp = str(p)
     cur = list(settings.get("workspace_roots") or [])
     if sp not in cur:
