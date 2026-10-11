@@ -103,6 +103,14 @@ export function SubAgentCard({ agent, cli, onOpen, compact }: {
             )}
           </span>
 
+          {/* Work sent to ANOTHER engine, not a Task agent: say which, because the cost and the
+              minutes on this card are that engine's, and the file it produced is the result. */}
+          {a.source === "studio" && (
+            <span className="shrink-0 text-[10px] px-1 rounded bg-accent/15 text-accent/90"
+              title={`Delegated to ${a.agent_type || "another engine"} through the Studio's job queue`}>
+              {a.agent_type || "studio"}
+            </span>
+          )}
           {a.background && !a.running && (
             <span className="shrink-0 text-[10px] px-1 rounded bg-panel2 text-muted/70">bg</span>
           )}

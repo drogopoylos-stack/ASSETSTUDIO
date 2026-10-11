@@ -151,7 +151,13 @@ class _Codex(Engine):
         from . import codex_app
         return [(b, bool(busy), int(n or 0)) for b, busy, n in codex_app.live_rows()]
 
-    # Codex's skills equivalent is AGENTS.md, read as standing instructions — see skills._roots_for.
+    def skill_roots(self, project_id: str) -> list:
+        # Codex has no skill loader, so the Studio delivers the enabled ones as the thread's
+        # standing instructions (skills.briefing -> codex_app._skills_note). Same library, same
+        # switch — see skills._codex_roots.
+        from . import skills
+        return skills._codex_roots(project_id)
+
 
     def feed(self, project_id, limit=150, session="", kinds=""):
         from . import codex_app

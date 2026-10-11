@@ -458,6 +458,15 @@ export interface SubAgent {
     added: number; removed: number; other: number;
   };
   touched?: { edited: { path: string; times: number }[]; read: { path: string; times: number }[]; commands: number };
+  /** "studio" when this is not a Task agent at all but work the conversation handed to another
+   *  engine through the Studio's job queue - a GPT image, a 3D model, a texture. Same card, so it
+   *  can be watched and opened like any other delegation; the chip says where it ran. */
+  source?: string;
+  /** the queue job behind a `source: "studio"` card, for the Jobs page */
+  job_id?: string;
+  /** 0..1 while that job runs */
+  progress?: number;
+  step?: string;
 }
 
 export interface SubAgentDetail {

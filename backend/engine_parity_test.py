@@ -33,7 +33,7 @@ from pathlib import Path
 sys.path.insert(0, ".")
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from asset_studio import cc_session, checkpoints, deepseek_session, mission, skills   # noqa: E402
+from asset_studio import cc_session, checkpoints, deepseek_session, mission, skills, workspace   # noqa: E402
 
 ok = fail = 0
 
@@ -48,7 +48,10 @@ def check(label, cond, extra=""):
         print("  FAIL  " + label + "   " + str(extra))
 
 
-SLUG = "d--UserFiles-Desktop-kapow-Asset-Studio"
+# A folder the workspace really has open, so this reads the same on any PC. It used to be one
+# machine's id, and four checks below failed everywhere else for no reason but that.
+_open = [r["id"] for r in (workspace.roots() or []) if r.get("id")]
+SLUG = _open[0] if _open else "d--UserFiles-Desktop-kapow-Asset-Studio"
 
 print("Checkpoints find the folder, whichever way the id is spelled")
 # The four spellings the app actually produces for one folder: the workspace's id, Mission
@@ -135,7 +138,14 @@ shared = skills._claude_home() / "skills"
 check("Claude reads its own home", "personal" in claude_roots, list(claude_roots))
 check("DeepSeek reads its project roots",
       "project-dsh" in ds_roots and "project-agents" in ds_roots, list(ds_roots))
-check("Codex reads nothing, on purpose", skills._roots_for("codex--" + SLUG, "codex") == [])
+# Codex reads the shared library too, now. It has no skill loader, so the Studio lists the enabled
+# ones in the thread's standing instructions (codex_app._skills_note) - the panel and its switches
+# therefore mean the same thing on a Codex pane as on the other two.
+codex_roots = dict((sc, d) for sc, d in skills._roots_for("codex--" + SLUG, "codex"))
+check("Codex reads the shared library, and this project's own",
+      "shared" in codex_roots and "project-codex" in codex_roots, list(codex_roots))
+check("...and the shared folder is the SAME one Claude loads from",
+      str(codex_roots.get("shared")) == str(shared), (codex_roots.get("shared"), shared))
 # Kimi and Qwen run the SAME claude CLI with their own CLAUDE_CONFIG_DIR (`cc_session._alt_env`), so
 # their skills live in their own home. Handed the bare folder id they showed Claude's library.
 kimi = dict((s, d) for s, d in skills._roots_for("kimi--" + SLUG, "kimi"))

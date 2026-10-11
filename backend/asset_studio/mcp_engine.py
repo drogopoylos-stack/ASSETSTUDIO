@@ -32,6 +32,10 @@ import urllib.request
 
 BASE = (os.environ.get("STUDIO_BASE") or "http://127.0.0.1:8777").rstrip("/")
 CWD = os.environ.get("STUDIO_CWD") or os.getcwd()
+# Which conversation this server was started for. Sent as `x-studio-feed` on every call, so work
+# the agent hands to another engine - a GPT image job, say - is filed against it and shows up as
+# its own subagent (see delegates.owner_for).
+FEED = os.environ.get("STUDIO_FEED") or ""
 VERSION = "1.0"
 # The picture keys an answer may carry, at its top level or under "look" (edit, place).
 PICTURE_KEYS = ("sheet", "detail_sheet", "peak", "shot", "picture", "image")
@@ -65,6 +69,8 @@ def _http(method: str, path: str, args: dict | None, timeout: float) -> tuple[in
     url = BASE + path
     data = None
     headers = {"content-type": "application/json"}
+    if FEED:
+        headers["x-studio-feed"] = FEED
     if method == "GET":
         q = {k: ("true" if v is True else "false" if v is False else v)
              for k, v in (args or {}).items() if v is not None}

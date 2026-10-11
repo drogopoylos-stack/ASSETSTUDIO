@@ -88,9 +88,12 @@ async function send<T>(path: string, init?: Init): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
       ...(ctl ? { signal: ctl.signal } : {}),
       ...rest,
+      // `x-studio-origin: ui` says a PERSON asked for this. The backend files a job started by an
+      // agent against that agent so it shows up as its subagent, and this header is what keeps
+      // pressing Generate here from being filed as some running agent's delegation.
+      headers: { "Content-Type": "application/json", "x-studio-origin": "ui", ...(rest.headers || {}) },
     });
   } catch (e: any) {
     // Name the failure. "AbortError" tells the user nothing; the timeout is the finding.
@@ -166,7 +169,10 @@ export const api = {
   loadErrors: () => req<Record<string, string>>("/api/providers/errors"),
   comfyCatalog: () => req<{ generators: import("../types").Generator[]; comfyui: boolean }>("/api/providers/comfy-catalog"),
   // `agent` picks WHOSE skill library: Claude's home, the DeepSeek Harness runtime's roots (which
-  // the Studio mounts its shared library into), or nothing for Codex, which has no skill mechanism.
+  // the Studio mounts its shared library into), or - for Codex, which has no skill loader of its
+  // own - the shared library plus the project's `.agents/skills` and `.codex/skills`. The enabled
+  // ones are delivered to a Codex thread as standing instructions (`codex_app._skills_note`), so
+  // the list and its switches mean the same thing on every engine.
   skillsList: (projectId = "", agent = "") =>
     req<{ skills: import("../types").Skill[]; agent: string }>(
       `/api/skills?project_id=${encodeURIComponent(projectId)}&agent=${encodeURIComponent(agent)}`),

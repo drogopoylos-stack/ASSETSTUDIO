@@ -128,11 +128,15 @@ with patch.object(codex_app, "feed", return_value={"lines": ["codex"]}), \
     check("...and one subagent", mission.project_subagent("codex--" + F, "x") == {"d": 1})
     check("...and has no collision report to guess at", mission.project_subagent_collisions("codex--" + F) == [])
 
+# Codex used to answer with nothing here, because it has no skill loader. It now answers with its
+# own roots, and the Studio delivers the enabled ones as the thread's standing instructions
+# (codex_app._skills_note), so the Skills panel means the same thing on all three panes.
 with patch.object(skills, "_claude_roots", return_value=["claude-roots"]), \
+        patch.object(skills, "_codex_roots", return_value=["codex-roots"]), \
         patch.object(skills, "_dsh_roots", return_value=["dsh-roots"]):
     check("skill roots: each engine answers for itself",
           [skills._roots_for(F, a) for a in ("claude", "codex", "deepseek-harness")]
-          == [["claude-roots"], [], ["dsh-roots"]])
+          == [["claude-roots"], ["codex-roots"], ["dsh-roots"]])
 
 with patch.object(deepseek_session, "reset") as dr:
     engines.for_feed("deepseek-harness--" + F).reset("deepseek-harness--" + F)

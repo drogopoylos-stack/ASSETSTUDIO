@@ -336,7 +336,13 @@ srv.shutdown()
 
 # ---------------------------------------------------------------- the session flag
 print("\nEvery Studio session gets the server")
-args = cc._claude_stream_args("claude", None, "default", "default", False, "default", project_id="mcptest", cwd=str(tmp))
+# The switch is forced ON here. Read from the real settings instead, this check failed on any PC
+# where the user had Studio tools over MCP switched off - which says nothing about the code.
+settings.get = with_settings(cc_mcp=True)
+try:
+    args = cc._claude_stream_args("claude", None, "default", "default", False, "default", project_id="mcptest", cwd=str(tmp))
+finally:
+    settings.get = orig_get
 ok("--mcp-config is on the command line", "--mcp-config" in args, args[:12])
 if "--mcp-config" in args:
     cfgp = Path(args[args.index("--mcp-config") + 1])
@@ -344,6 +350,9 @@ if "--mcp-config" in args:
     st = cfg["mcpServers"]["studio"]
     ok("...naming this backend's Python and mcp_engine.py", st["command"] == sys.executable and st["args"][0].endswith("mcp_engine.py"), st)
     ok("...with the backend's origin and the session folder", st["env"]["STUDIO_BASE"].startswith("http://") and st["env"]["STUDIO_CWD"] == str(tmp), st["env"])
+    # STUDIO_FEED names the conversation, so a job the agent starts through a Studio tool is filed
+    # against it and shows up as its own delegated subagent (delegates.owner_for).
+    ok("...and the conversation it serves", st["env"].get("STUDIO_FEED") == "mcptest", st["env"])
 settings.get = with_settings(cc_mcp=False)
 try:
     args_off = cc._claude_stream_args("claude", None, "default", "default", False, "default", project_id="mcptest", cwd=str(tmp))

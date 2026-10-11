@@ -4,10 +4,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import db
+from .. import db, delegates
 from ..models import Job, JobRequest, JobStatus
 from ..jobs.queue import queue
 
@@ -15,12 +15,22 @@ router = APIRouter(prefix="/api", tags=["jobs"])
 
 
 @router.post("/jobs", response_model=Job)
-def submit_job(req: JobRequest):
+def submit_job(req: JobRequest, request: Request):
     from ..providers.registry import get_provider
 
     if get_provider(req.provider_id) is None:
         raise HTTPException(400, f"unknown provider '{req.provider_id}'")
-    return queue.submit(req)
+    # WHOSE JOB IS THIS. An agent that asks the Studio to draw something has delegated work to
+    # another model, and that is what the Subagents panel is for — but only the request knows it
+    # came from an agent. `owner` (the agent notes ask for it), else the Studio MCP server's
+    # header, else the one conversation that is mid-turn. A job the app's own UI submitted is
+    # never filed as a delegation: pressing Generate is the user's own work. See delegates.py.
+    h = request.headers
+    req.owner = delegates.owner_for(req.owner, h.get("x-studio-feed", ""),
+                                    (h.get("x-studio-origin", "") or "").lower() == "ui")
+    job = queue.submit(req)
+    delegates.note_job(req.owner, job)
+    return job
 
 
 @router.get("/jobs")
@@ -70,6 +80,7 @@ class PipelineRequest(BaseModel):
     target_game: str = ""
     tags: list[str] = []
     label: str = "pipeline"
+    owner: str = ""        # the conversation that asked for the chain - see delegates.py
 
 
 async def _await_job(job_id: str, timeout: float = 1800.0) -> Optional[Job]:
@@ -85,10 +96,17 @@ async def _await_job(job_id: str, timeout: float = 1800.0) -> Optional[Job]:
 
 
 @router.post("/pipeline")
-async def run_pipeline(req: PipelineRequest):
+async def run_pipeline(req: PipelineRequest, request: Request):
     """Run steps sequentially, feeding each step's output assets into the next."""
     from ..providers.registry import get_provider
 
+    # Decided ONCE, before the first step: a chain runs for many minutes and the turn that asked
+    # for it may end while step three is still going, so asking again per step would file the
+    # later steps under nobody. Every step is one card, which is how the panel shows a chain
+    # moving from image to 3D model to texture.
+    h = request.headers
+    owner = delegates.owner_for(req.owner, h.get("x-studio-feed", ""),
+                                (h.get("x-studio-origin", "") or "").lower() == "ui")
     cur_inputs = list(req.inputs)
     job_ids: list[str] = []
     results = []
@@ -99,7 +117,9 @@ async def run_pipeline(req: PipelineRequest):
             stage=step.stage, provider_id=step.provider_id, params=step.params,
             inputs=cur_inputs, target_game=req.target_game, tags=req.tags,
             label=f"{req.label} [{i+1}/{len(req.steps)}] {step.stage}",
+            owner=owner,
         ))
+        delegates.note_job(owner, job)
         job_ids.append(job.id)
         done = await _await_job(job.id)
         results.append(done)

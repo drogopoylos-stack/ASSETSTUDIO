@@ -3,7 +3,8 @@
 Not "Claude Code skills": the DeepSeek Harness runtime discovers `SKILL.md` from its own roots and
 honours the same `disable-model-invocation` frontmatter flag, so the Studio mounts its shared
 library into that runtime (see `deepseek_session._skill_dirs`) and this one panel manages both.
-Codex has no per-task skill mechanism and honestly answers with nothing.
+Codex has no skill loader of its own, so it answers with the shared library and the
+project's own roots; the enabled ones reach the engine as the thread's standing instructions.
 """
 from __future__ import annotations
 

@@ -62,6 +62,7 @@ class JobQueue:
             label=req.label,
             target_game=req.target_game,
             tags=req.tags,
+            owner=req.owner,
             step="queued",
         )
         self._jobs[job.id] = job

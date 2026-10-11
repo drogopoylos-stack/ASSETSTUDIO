@@ -1152,7 +1152,7 @@ export default function Workspace() {
     catch (e: any) { toast(e.message, "danger"); }
   }
   async function openFolder() {
-    const path = await askInput("Open folder", { placeholder: "full path inside home / Downloads / Desktop / Documents" });
+    const path = await askInput("Open folder", { placeholder: "full path to a project or application folder on any drive" });
     if (!path) return;
     try { const r = await api.wsAddRoot(path.trim()); selectRoot(r); toast(`Opened ${r.name}`, "ok"); }
     catch (e: any) { toast(e.message, "danger"); }
@@ -2230,9 +2230,7 @@ ${text.trim()}`;
             <button className="p-2 rounded text-muted hover:text-text" title="Inspect — click an element in the running page and send it to the agent" onClick={openInspect}><Crosshair size={20} /></button>
           )}
           <button className="p-2 rounded text-muted hover:text-text"
-            title={activeAgent === "codex"
-              ? "Skills — Codex has no skill mechanism; it takes standing instructions from AGENTS.md"
-              : `Skills — enable/disable what ${activeAgentName} loads (game-dev, UI/UX…). Claude and DeepSeek share one library.`}
+            title={`Skills — enable/disable what ${activeAgentName} loads (game-dev, UI/UX…). One library, every engine.`}
             onClick={openSkills}><Wand2 size={20} /></button>
           {/* Agents. The bottom bar has carried this count for a while, and the bottom bar is
               the one strip people hide. It belongs here, beside the phases badge, in the same
@@ -2953,8 +2951,11 @@ function ConversationControl({ root, feedId, mode, setMode }: {
 // `customSkillDirs` adds — and the Studio mounts its own `~/.claude/skills` library into that
 // runtime as a custom root (see `deepseek_session._skill_dirs`). Its on/off switch is the same
 // `disable-model-invocation` frontmatter key, so this one panel drives both engines: same files,
-// same switch. Codex has no per-task skill mechanism and the panel says so instead of showing
-// another engine's list.
+// same switch. Codex has no skill loader at all, so the backend takes the other half of the job:
+// the enabled skills are listed in the thread's standing instructions, by name and by path, and
+// Codex reads one when a task matches it (`codex_app._skills_note`). The panel therefore shows the
+// same library on a Codex pane - it used to show a sentence saying it could not - and its switches
+// decide what that engine is offered.
 // The `feedId` is the ENGINE-PREFIXED id, not the folder: each engine keeps its skills in its own
 // home (Kimi and Qwen run the same CLI with their own CLAUDE_CONFIG_DIR), and the backend resolves
 // "whose library" from that prefix. Handed the bare folder id, a Kimi or Qwen pane listed Claude's.
@@ -2989,13 +2990,6 @@ function SkillsPanel({ feedId, agent, agentName }: { feedId: string; agent: stri
       <div className="flex-1 min-h-0 overflow-auto p-2 space-y-1.5">
         {loading ? (
           <div className="text-muted text-xs px-1 py-3">loading…</div>
-        ) : codex ? (
-          <div className="text-muted/60 text-xs px-1 py-3 leading-relaxed">
-            <span className="text-text">Codex has no skill mechanism</span> — it takes standing
-            instructions from <span className="font-mono text-text">AGENTS.md</span> in the project
-            rather than selecting a skill per task. Switch this pane to Claude or DeepSeek to use
-            skills; the same library is on both.
-          </div>
         ) : skills.length === 0 ? (
           <div className="text-muted/60 text-xs px-1 py-3 leading-relaxed">
             No skills installed. Add them under{" "}
@@ -3032,6 +3026,7 @@ function SkillsPanel({ feedId, agent, agentName }: { feedId: string; agent: stri
       </div>
       <div className="shrink-0 px-2 py-1 border-t border-line text-[10px] text-muted/70">
         New skills arrive <span className="text-muted">off</span> — enable the ones you want. Applies to your next message, every project. Newest added first.
+        {codex && <> Codex gets the enabled ones as standing instructions, from the <span className="text-muted">next conversation</span> on.</>}
       </div>
     </div>
   );

@@ -2867,14 +2867,23 @@ def project_subagents(project_id: str, session: str = "", with_files: bool = Fal
     the pill, the card and the pane called the Claude module directly, which reads Claude's
     transcript layout and nothing else.
     """
+    from . import delegates
     if engines.native(project_id):
-        return engines.native(project_id).subagents(project_id)
+        return delegates.merge(project_id, engines.native(project_id).subagents(project_id))
     from . import subagents
-    return subagents.list_for(project_id, session=session, with_files=with_files)
+    return delegates.merge(project_id,
+                           subagents.list_for(project_id, session=session, with_files=with_files))
 
 
 def project_subagent(project_id: str, agent_id: str, limit: int = 400) -> dict:
     """One agent in full: its own timeline, and what it read, ran and changed."""
+    from . import delegates
+    # A job this conversation handed to another engine (a GPT image model, ComfyUI, Tripo) is a
+    # delegation with no transcript of its own; its timeline is the job's log. `None` means the
+    # id is not one of those, and the engine's own reader answers.
+    own = delegates.detail(project_id, agent_id, limit=limit)
+    if own is not None:
+        return own
     if engines.native(project_id):
         return engines.native(project_id).subagent_detail(project_id, agent_id, limit=limit)
     from . import subagents

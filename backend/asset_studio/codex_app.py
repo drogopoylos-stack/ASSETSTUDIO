@@ -1116,7 +1116,44 @@ def _read_log(thread_id: str, tail_bytes: int = 0) -> list[dict]:
     return out
 
 
-def _developer_notes() -> str:
+# How much of the skill library one thread is told about. A name and a line of description is
+# enough for the model to match a task against; the file itself is read only when it matches, so a
+# library of forty skills still costs a few hundred tokens here.
+_SKILLS_CHARS = 2200
+
+
+def _skills_note(project_id: str) -> str:
+    """The enabled skills, as standing instructions - Codex's half of the Skills panel.
+
+    Claude loads a skill by itself from its own library. Codex has no loader, so the panel used to
+    show an empty list on a Codex pane and the switch did nothing. The same library is listed here
+    instead, enabled ones only, with the path to read, which makes the panel and its toggle mean
+    the same thing on both engines.
+    """
+    try:
+        from . import skills
+        rows = skills.briefing(project_id, "codex")
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    lines = ["SKILLS: the user keeps procedures for this machine in skill files. These are the "
+             "enabled ones (the Studio's Skills panel is the switch; anything not listed here is "
+             "off and must not be used):"]
+    used = 0
+    for r in rows:
+        desc = r.get("description") or ""
+        block = "  - %s%s\n    %s" % (r.get("name"), (": " + desc) if desc else "", r.get("path"))
+        used += len(block)
+        if used > _SKILLS_CHARS:
+            break
+        lines.append(block)
+    lines.append("Read a skill's file when the task matches its name, then follow it. Do not read "
+                 "one that does not apply.")
+    return "\n".join(lines)
+
+
+def _developer_notes(project_id: str = "") -> str:
     """What a Codex thread is told about the Studio. Codex has no --append-system-prompt; the
     thread's developer instructions are the channel, sent once and cached, where the old path put
     the Claude graph note in front of every single message."""
@@ -1142,6 +1179,9 @@ def _developer_notes() -> str:
                 parts.append(_bd)
     except Exception:
         pass                       # a saving never fails a send
+    note = _skills_note(project_id)
+    if note:
+        parts.append(note)
     return "\n\n".join(parts)
 
 
@@ -1161,17 +1201,27 @@ def _mcp_config() -> Optional[dict]:
         return None
 
 
-def _thread_params(cwd: str, mode: str, model: str) -> dict:
+def _thread_params(cwd: str, mode: str, model: str, project_id: str = "") -> dict:
     approval, _pol = _policy(mode)
     p: dict = {"cwd": cwd, "approvalPolicy": approval, "sandbox": MODES[mode_of(mode)][1]}
     if model and model != "default":
         p["model"] = model
-    notes = _developer_notes()
+    notes = _developer_notes(project_id)
     if notes:
         p["developerInstructions"] = notes
     mcp = _mcp_config()
     if mcp:
-        mcp["env"] = {**mcp["env"], "STUDIO_CWD": cwd}
+        # STUDIO_FEED is how a tool call made BY this thread is attributed back to it: the MCP
+        # server sends it as `x-studio-feed`, so a job started that way shows up as this
+        # conversation's own delegated subagent (see delegates.owner_for).
+        feed = ""
+        if project_id:
+            try:
+                from . import engines
+                feed = engines.for_agent("codex").feed_id(project_id)
+            except Exception:
+                feed = ""
+        mcp["env"] = {**mcp["env"], "STUDIO_CWD": cwd, "STUDIO_FEED": feed}
         p["config"] = {"mcp_servers": {"studio": mcp}}
     # BOOST: cap how much of one tool output stays in the thread (see boost.codex_tool_tokens).
     try:
@@ -1362,7 +1412,7 @@ def _start_turn(conv: _Conv, srv: AppServer, inputs: list[dict], user_rec: dict,
     model, model_note = fit_model(model)
     idx = _index(pid)
     tid = "" if new_session else (session or idx.get("active") or "")
-    tp = _thread_params(conv.cwd, mode, model)
+    tp = _thread_params(conv.cwd, mode, model, pid)
     if tid and tid not in srv.loaded:
         _OWNER[tid] = pid
         try:
@@ -1459,7 +1509,7 @@ def _compact(conv: _Conv, srv: AppServer) -> dict:
         return {"ok": False, "agent": "codex", "error": "Nothing to compact yet."}
     try:
         if conv.thread_id not in srv.loaded:
-            srv.request("thread/resume", {"threadId": conv.thread_id, **_thread_params(conv.cwd, conv.mode, "")}, timeout=60)
+            srv.request("thread/resume", {"threadId": conv.thread_id, **_thread_params(conv.cwd, conv.mode, "", conv.project_id)}, timeout=60)
             srv.loaded.add(conv.thread_id)
         srv.request("thread/compact/start", {"threadId": conv.thread_id}, timeout=60)
     except RpcError as e:

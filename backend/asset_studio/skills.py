@@ -231,15 +231,61 @@ def _claude_roots(project_id: str) -> list[tuple[str, Path]]:
     return out
 
 
-def _roots_for(project_id: str, agent: str) -> list[tuple[str, Path]]:
-    """Which skill library the panel is showing, chosen by the engine the pane is set to.
+def _codex_roots(project_id: str) -> list[tuple[str, Path]]:
+    """(scope, dir) for the Codex engine: the shared library, plus this project's own roots.
 
-    Codex answers with nothing ON PURPOSE: it has no per-task skill mechanism (its equivalent is
-    AGENTS.md, which the agent reads as standing instructions rather than selecting a skill), and an
-    empty list plus the panel's own sentence is the honest answer. Listing Claude's skills there
-    would be a lie the user could not see through until one silently failed to load.
+    Codex has no skill LOADER of its own — no frontmatter it honours, no per-task selection. What
+    it has is a thread's standing instructions, so the Studio delivers the enabled skills there:
+    `briefing()` below lists them by name, one line each, with the file to read, and
+    `codex_app._skills_note` puts that in the thread's developer instructions. The toggle in the
+    panel therefore means the same thing on a Codex pane as on a Claude one — this skill is
+    offered to the engine, that one is not — which is why the panel used to show nothing here and
+    now shows the same library.
+
+    The project roots are the vendor-neutral `.agents/skills` (shared with the DeepSeek runtime)
+    and `.codex/skills`, so a skill written for this project alone is picked up without being
+    copied into the user's home.
     """
+    out: list[tuple[str, Path]] = [("shared", _claude_home() / "skills")]
+    cwd = _project_cwd(project_id) if project_id else ""
+    if cwd:
+        out.append(("project-agents", Path(cwd) / ".agents" / "skills"))
+        out.append(("project-codex", Path(cwd) / ".codex" / "skills"))
+    return out
+
+
+def _roots_for(project_id: str, agent: str) -> list[tuple[str, Path]]:
+    """Which skill library the panel is showing, chosen by the engine the pane is set to."""
     return engines.for_agent(agent).skill_roots(project_id)
+
+
+# The skills an engine with no loader of its own is told about, and how much of each. One line per
+# skill: a name the model can match a task against, and the path it reads when it matches. The
+# caps are what keeps a library of forty skills from becoming a page of standing instructions.
+_BRIEF_MAX = 24
+_BRIEF_DESC = 180
+
+
+def briefing(project_id: str, agent: str, max_items: int = _BRIEF_MAX) -> list[dict]:
+    """The ENABLED skills with the file to read — for an engine that loads none by itself.
+
+    Only the enabled ones, because the switch has to mean something: a skill turned off in the
+    panel must not be offered to the engine. The path is resolved the same way the toggle resolves
+    it, through the roots the list came from, so a project skill is named where it lives.
+    """
+    out: list[dict] = []
+    for it in list_skills(project_id, agent):
+        if not it.get("enabled"):
+            continue
+        md = _find_skill_md(str(it.get("id") or ""), project_id, agent)
+        if md is None:
+            continue
+        out.append({"id": it.get("id"), "name": it.get("name") or it.get("id"),
+                    "description": " ".join(str(it.get("description") or "").split())[:_BRIEF_DESC],
+                    "path": str(md)})
+        if len(out) >= max_items:
+            break
+    return out
 
 
 _LIST_CACHE: dict = {}          # project_id -> (expires_at, result)

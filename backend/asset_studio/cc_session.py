@@ -424,6 +424,21 @@ def live_status() -> dict:
                 fanout[fid] = n
                 fanout[bare] = fanout.get(bare, 0) + n
                 total_agents += n
+    # WORK HANDED TO ANOTHER ENGINE counts too. A GPT image job or a ComfyUI build started by a
+    # turn is a delegation the rail should show while it runs, exactly like a Task agent — it is
+    # the same question ("is anything of mine working right now") and the same badge.
+    try:
+        from . import delegates
+        # The COUNT only. Not the busy flag: the turn that ordered the picture may well have
+        # finished, and calling the conversation busy would hold back the composer and the
+        # "open a second agent here" check for work that is not the agent's own thread.
+        for fid, n in delegates.running_by_feed().items():
+            bare = engines.bare_folder(fid)
+            for key in {fid, bare}:
+                fanout[key] = fanout.get(key, 0) + n
+            total_agents += n
+    except Exception:
+        pass
     # The map is keyed by BOTH ids so either lookup works, which makes summing its values wrong
     # for an alternate engine. The honest total is counted here, where the prefix is known.
     return {"statuses": out, "agents": who, "running_agents": fanout,
@@ -473,17 +488,28 @@ def _resolve_node_shim(exe: str) -> Optional[list[str]]:
     return [node, str(js)]
 
 
-def _studio_note() -> str:
-    """System-prompt note so Claude knows it can drive the studio's 2D/3D generators."""
+def _studio_note(project_id: str = "") -> str:
+    """System-prompt note so Claude knows it can drive the studio's 2D/3D generators.
+
+    `project_id` is this conversation's own id, written into the curl recipe as `owner` so a
+    generation shows up as this agent's delegated work in the Subagents panel (delegates.py).
+    Empty when the note is only being MEASURED for the Settings page token count.
+    """
     port = int(settings.get("port", 8777) or 8777)
     base = f"http://127.0.0.1:{port}"
+    owner = project_id or "<this session's id>"
     return (
         f"You're running inside Asset Studio (a local creative app) at {base}. Besides coding, you can "
         f"GENERATE 2D images and 3D models on demand by calling its local HTTP API with curl: "
         f"GET {base}/api/providers?stage=image2d (also stages gen3d, process2d, texture, rig, optimize, qa) "
         f"lists the engines and which are available; "
         f'POST {base}/api/jobs with JSON {{"stage":"image2d","provider_id":"<id>","params":{{"prompt":"..."}},'
-        f'"inputs":["<absolute input file path>"]}} starts a generation; '
+        f'"inputs":["<absolute input file path>"],"owner":"{owner}"}} starts a generation; '
+        # OWNER IS NOT BOOKKEEPING. It is what puts the job in the Subagents panel as YOUR
+        # delegated work, so the user can watch the model you called, what it cost and what it
+        # wrote. Without it the generation is a row on the Jobs page that names nobody.
+        f'always send "owner" exactly as written above — it is how the user sees which of your '
+        f'steps called out to another model; '
         f"GET {base}/api/jobs/<id> until \"status\":\"succeeded\" — the result file is outputs[0].path. "
         f"Prefer providers with available=true (e.g. the ComfyUI presets for local 2D/3D). "
         # OPT-IN, and firmly. The old wording ended "...or game assets", which in a game project
@@ -1831,7 +1857,7 @@ def _launch_problem(args: list) -> str:
 
 
 def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
-                 permission_mode: str, fork: bool, effort: str) -> list[str]:
+                 permission_mode: str, fork: bool, effort: str, project_id: str = "") -> list[str]:
     args: list[str] = [exe, "-p", message, "--output-format", "text"]
     if session_id:
         args += ["--resume", session_id]
@@ -1846,7 +1872,7 @@ def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
     # generator is actually switched on. Turning the tabs off used to hide the buttons while
     # still telling the agent the API was there.
     if settings.get("studio_tools_prompt", True) and plugins.generation_available():
-        notes.append(_studio_note())
+        notes.append(_studio_note(project_id))
     if web_tools.enabled():
         notes.append(_web_note())
     if settings.get("cc_autolearn"):
@@ -1935,7 +1961,7 @@ def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
     # generator is actually switched on. Turning the tabs off used to hide the buttons while
     # still telling the agent the API was there.
     if settings.get("studio_tools_prompt", True) and plugins.generation_available():
-        notes.append(_studio_note())
+        notes.append(_studio_note(project_id))
     if web_tools.enabled():
         notes.append(_web_note())
     if settings.get("cc_autolearn"):
@@ -3601,7 +3627,8 @@ def _mcp_config_file(project_id: str, cwd: str = "") -> Path:
     script = Path(__file__).resolve().parent / "mcp_engine.py"
     cfg = {"mcpServers": {"studio": {
         "type": "stdio", "command": sys.executable, "args": [str(script)],
-        "env": {"STUDIO_BASE": _base_url(), "STUDIO_CWD": str(cwd or ""), "PYTHONIOENCODING": "utf-8"},
+        "env": {"STUDIO_BASE": _base_url(), "STUDIO_CWD": str(cwd or ""),
+                "STUDIO_FEED": str(project_id or ""), "PYTHONIOENCODING": "utf-8"},
     }}}
     path = _MCP_DIR / f"{project_id}.json"
     text = json.dumps(cfg, indent=1)
@@ -4403,7 +4430,7 @@ def send(
         return {"ok": False, "error": "a turn is already running for this project"}
 
     if agent == "claude":
-        args = _claude_args(exe, message, session_id, model, permission_mode, fork, effort)
+        args = _claude_args(exe, message, session_id, model, permission_mode, fork, effort, project_id)
     else:
         # Codex / Gemini / Cursor have no --append-system-prompt, so the graph instruction has to
         # ride in the message. Without this, switching agent silently dropped it and that agent

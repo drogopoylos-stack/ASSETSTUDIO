@@ -120,6 +120,10 @@ class JobRequest(BaseModel):
     label: str = ""
     target_game: str = ""
     tags: list[str] = Field(default_factory=list)
+    # The conversation that asked for this job, so it shows as that agent's own delegated work
+    # in the Subagents panel (see delegates.py). The agent notes tell the agent to send it; left
+    # out, the backend attributes the job only when exactly one conversation is mid-turn.
+    owner: str = ""
 
 
 class Job(BaseModel):
@@ -135,6 +139,7 @@ class Job(BaseModel):
     label: str = ""
     target_game: str = ""
     tags: list[str] = Field(default_factory=list)
+    owner: str = ""                 # the conversation this job was delegated by, if any
     outputs: list[Asset] = Field(default_factory=list)
     cost: float = 0.0
     error: str = ""
