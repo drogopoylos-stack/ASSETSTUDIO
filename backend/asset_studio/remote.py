@@ -78,6 +78,7 @@ _state: dict = {}
 _busy: dict[str, bool] = {}          # feed id -> was it working on the last tick
 _start: dict[str, float] = {}        # feed id -> when this turn started
 _asked: dict[str, float] = {}        # feed id -> when "needs your answer" was last sent
+_owed: dict[str, float] = {}         # feed id -> when the PHONE started this turn
 _IMG = re.compile(r"(?:[A-Za-z]:[\\/]|/)[^\s\"'`<>|*?\n]+\.(?:png|jpe?g|webp|gif|bmp)",
                   re.IGNORECASE)
 
@@ -306,24 +307,190 @@ def _route(msg: dict) -> tuple[Optional[dict], str]:
     st = _load()
     routes = list(st.get("routes") or [])
     if not routes:
-        return None, "nothing has been sent yet"
+        # Nothing has been sent yet, so there is no reply to follow - but a message that NAMES a
+        # project and an engine is a whole instruction on its own, and starts the turn.
+        named, _clean = _address(str(msg.get("content") or ""))
+        return (named, "named") if named else (None, "nothing has been sent yet")
     ref = str(((msg.get("message_reference") or {}).get("message_id")) or "")
     if ref:
         for r in reversed(routes):
             if r.get("m") == ref:
                 return r, "reply"
     text = str(msg.get("content") or "").strip()
+    # A PROJECT NAMED BY HAND WINS over "the conversation that engine last had": writing the
+    # project is the one way to say which folder, and it would be useless if the last route
+    # could override it.
+    named, _clean = _address(text)
+    if named and _flat(str(named.get("name") or "")) in _flat(text):
+        return named, "named"
     m = re.match(r"^@([A-Za-z0-9_-]+)\b", text)
     if m:
         want = m.group(1).lower()
         for r in reversed(routes):
             if str(r.get("agent") or "").lower() == want or str(r.get("engine") or "").lower() == want:
                 return r, "@" + want
+    if named:
+        return named, "named"
     return routes[-1], "newest"
 
 
 def _strip_address(text: str) -> str:
     return re.sub(r"^@[A-Za-z0-9_-]+[\s,:]*", "", text or "", count=1)
+
+
+def _engine_words() -> dict[str, str]:
+    """{the word a person writes: the agent id the chat box sends}. Every engine, plus the
+    alternate ones (Kimi, Qwen, a chat provider), so a message can ask for any of them by name."""
+    out: dict[str, str] = {}
+    for e in engines.ALL:
+        out[e.id.lower()] = e.id
+        out[e.name.lower()] = e.id
+    out["deepseek"] = engines.DEEPSEEK.id        # nobody types "deepseek-harness" on a phone
+    out["dsh"] = engines.DEEPSEEK.id
+    try:
+        from . import mission
+        for pfx in mission.alt_homes():
+            out[pfx[:-2].lower()] = pfx[:-2]
+    except Exception:
+        pass
+    return out
+
+
+def _flat(name: str) -> str:
+    """A name as a person types it: lower case, dashes and underscores as spaces."""
+    return " ".join(re.sub(r"[-_]+", " ", str(name or "")).lower().split())
+
+
+def _engine_target(agent: str, bare: str) -> dict:
+    """The conversation to talk to, named by engine and folder rather than by a message. An
+    alternate engine has a session universe of its own, so its prefix is put back on here."""
+    e = engines.for_agent(agent)
+    feed = e.feed_id(bare)
+    if e is engines.CLAUDE and agent != "claude":
+        try:
+            from . import mission
+            for pfx in mission.alt_homes():
+                if pfx[:-2] == agent:
+                    feed = pfx + bare
+                    break
+        except Exception:
+            pass
+    return {"feed": feed, "bare": bare, "agent": agent,
+            "engine": engines.name_of(feed), "name": _project_name(bare)}
+
+
+def _address(text: str) -> tuple[Optional[dict], str]:
+    """A message that NAMES where it goes, so a turn can be STARTED from the phone without
+    replying to anything: "@codex add a jump" and "in Asset Studio ask deepseek for the weather"
+    both land. The project is matched against the names of the open workspaces.
+
+    It only wins when it is unambiguous: a project is named, or an engine is written with an "@".
+    A message that merely mentions an engine in passing still follows the reply it answers, which
+    is why "yes, claude, go on" cannot start a second conversation by accident."""
+    body = str(text or "")
+    low = _flat(body)
+    words = _engine_words()
+    agent = at = ""
+    m = re.search(r"@([A-Za-z0-9_-]+)", body)
+    if m and m.group(1).lower() in words:
+        agent, at = words[m.group(1).lower()], m.group(0)
+    if not agent:
+        for w in sorted(words, key=len, reverse=True):
+            if re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(_flat(w)), low):
+                agent = words[w]
+                break
+    bare = ""
+    try:
+        from . import workspace
+        best = 0
+        for r in workspace.roots():
+            nm = _flat(r.get("name") or "")
+            if nm and len(nm) > best and nm in low:
+                bare, best = str(r.get("id") or ""), len(nm)
+    except Exception:
+        pass
+    if not bare and not at:
+        return None, body                   # nothing certain was named: follow the reply instead
+    routes = list(_load().get("routes") or [])
+    if not bare:                            # "@codex do x": the project it last wrote about...
+        for r in reversed(routes):
+            if (not agent) or str(r.get("agent") or "") == agent:
+                bare = str(r.get("bare") or "")
+                break
+    if not bare and routes:                 # ...or, for an engine that has not written yet, the
+        bare = str(routes[-1].get("bare") or "")    # folder the last message was about, which is
+                                            # the one the person is thinking about
+    if not bare:                            # ...or the only workspace there is
+        try:
+            from . import workspace
+            rs = workspace.roots()
+            if len(rs) == 1:
+                bare = str(rs[0].get("id") or "")
+        except Exception:
+            pass
+    if not bare:
+        return None, body
+    if not agent:                           # a project named with no engine: the one already
+        for r in reversed(routes):          # talking about it, else Claude
+            if str(r.get("bare") or "") == bare:
+                agent = str(r.get("agent") or "")
+                break
+        agent = agent or "claude"
+    clean = body.replace(at, "", 1).strip() if at else body
+    clean = re.sub(r"(?<![A-Za-z0-9])#([A-Za-z0-9_-]+)", r"\1", clean).strip()
+    return _engine_target(agent, bare), clean
+
+
+_HELP = (
+    "**REMOTE** - what you can write here:\n"
+    "• **reply** to one of my messages: that same agent gets your text, and a turn that is "
+    "still running is steered\n"
+    "• `@codex add a jump to the player`: that engine, in the project it last wrote about\n"
+    "• `in <project> ask deepseek for the weather tonight`: names the project and the engine, "
+    "and starts the turn even when nothing is running\n"
+    "• a photo on your message is given to the agent as an image\n"
+    "• `/projects` the workspaces · `/status` what is working · `/stop` cancel the turn you "
+    "reply to · `/help` this\n"
+    "Any other slash word is passed to the agent, so `/compact` still works.")
+
+
+def _command(word: str, tgt: Optional[dict]) -> bool:
+    """The few words answered HERE instead of being sent to an agent. Anything else is not one of
+    them and goes through, so an engine's own slash commands keep working from the phone."""
+    if word in ("/help", "/h", "/?"):
+        _post(_HELP)
+        return True
+    if word in ("/projects", "/p", "/ls"):
+        try:
+            from . import workspace
+            rows = ["• %s" % (r.get("name") or r.get("id")) for r in workspace.roots()[:20]]
+        except Exception:
+            rows = []
+        _post("**Workspaces**\n" + ("\n".join(rows) or "none are open")
+              + "\n_write: in <name> <what to do>, and name @claude, @codex or @deepseek_")
+        return True
+    if word in ("/status", "/s"):
+        rows = []
+        for feed, busy in sorted(_busy_now().items()):
+            if busy:
+                t = _target(feed)
+                rows.append("• %s · %s · %s" % (
+                    t["name"], t["engine"], _dur(time.time() - _start.get(feed, time.time()))))
+        _post("**Working now**\n" + ("\n".join(rows) or "nothing is working"))
+        return True
+    if word == "/stop":
+        if not tgt:
+            _post("⚠️ Reply to the message of the agent you want to stop.")
+            return True
+        feed = str(tgt.get("feed") or "")
+        try:
+            engines.for_feed(feed).cancel(engines.bare_folder(feed))
+            _owed.pop(feed, None)
+            _post("⏹ %s · %s stopped." % (tgt.get("engine"), tgt.get("name")))
+        except Exception as e:
+            _post("⚠️ could not stop it: %s" % str(e)[:120])
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -455,8 +622,19 @@ def _save_attachments(msg: dict) -> list[str]:
 
 
 def _deliver(msg: dict) -> None:
+    raw = str(msg.get("content") or "").strip()
     tgt, why = _route(msg)
-    text = _strip_address(str(msg.get("content") or "")) if why.startswith("@") else str(msg.get("content") or "")
+    # The handful of words REMOTE answers itself (/help, /projects, /status, /stop). Everything
+    # else that starts with a slash belongs to the agent, so /compact and /steer still work.
+    word = raw.split()[0].lower() if raw.startswith("/") else ""
+    if word and _command(word, tgt):
+        _react(str(msg.get("id") or ""))
+        return
+    text = raw
+    if why.startswith("@"):
+        text = _strip_address(raw)
+    elif why == "named":
+        _again, text = _address(raw)        # the same parse, with the @engine / #project removed
     text = text.strip()
     images = _save_attachments(msg)
     if not tgt:
@@ -473,6 +651,9 @@ def _deliver(msg: dict) -> None:
         _post("⚠️ %s is still working and cannot take a message mid-turn. Try again when it stops."
               % tgt.get("engine"))
         return
+    if not feed:
+        _post("⚠️ that conversation is gone. Write: in <project> <what to do>.")
+        return
     try:
         from . import cc_session
         res = cc_session.send(bare, text or "(see the attached image)", agent=agent,
@@ -486,6 +667,11 @@ def _deliver(msg: dict) -> None:
     st["replies"] = int(st.get("replies") or 0) + 1
     st["last_reply"] = time.time()
     _save()
+    # A TURN THE PHONE STARTED IS ALWAYS REPORTED BACK, however short it was. The length floor
+    # exists so working at the PC does not buzz the phone for every ten-second turn; a question
+    # asked FROM the phone is the opposite case - an answer that never arrives is the one failure
+    # a remote user cannot work around.
+    _owed[feed] = time.time()
     _react(str(msg.get("id") or ""), "✅" if not steer else "⚡")
     # Only say where it went when the choice was not obvious from the reply itself.
     if why != "reply":
@@ -551,7 +737,7 @@ def tick() -> None:
         elif was and not busy:
             took = time.time() - _start.pop(feed, time.time())
             _asked.pop(feed, None)
-            if took >= min_turn:
+            if took >= min_turn or _owed.pop(feed, 0):
                 _notify_done(feed, took)
         if busy:
             q = _awaiting(feed)
@@ -565,8 +751,16 @@ def tick() -> None:
     for feed in [f for f, b in _busy.items() if b and f not in now]:
         took = time.time() - _start.pop(feed, time.time())
         _asked.pop(feed, None)
-        if took >= min_turn:
+        if took >= min_turn or _owed.pop(feed, 0):
             _notify_done(feed, took)
+    # ...and a turn the phone started can begin AND finish between two looks (a short question, a
+    # cached answer, a refusal). Nothing above would ever see it as busy, so it is swept here.
+    for feed, at in list(_owed.items()):
+        if now.get(feed) or _busy.get(feed):
+            continue
+        if time.time() - at >= 8:
+            _owed.pop(feed, None)
+            _notify_done(feed, time.time() - at)
     _busy.clear()
     _busy.update(now)
 
@@ -690,7 +884,9 @@ def test() -> dict:
         return {"ok": False, "error": "Set the bot token and the channel first."}
     mid = _post("\U0001f4e1 **Asset Studio** is connected.\n"
                 "You get a message when a turn finishes, with any pictures it made. "
-                "Reply to that message and your answer goes to that agent.")
+                "Reply to that message and your answer goes to that agent.\n"
+                "You can also start work from here: `in <project> ask deepseek for the weather`. "
+                "Write `/help` for the rest.")
     if not mid:
         return {"ok": False, "error": _load().get("last_error") or "Discord did not take the message."}
     return {"ok": True, "id": mid, **status()}

@@ -283,12 +283,91 @@ check("6b then only what was written after that point", "after=500" in CALLS[-1]
 check("6c and never a bot's own message, which would be a loop",
       [m["id"] for m in msgs] == ["501"], msgs)
 
-print("\n[7] The agent behind a feed id")
-check("7a a bare folder is Claude", rm._agent_for(BARE) == "claude")
-check("7b a codex-- feed is Codex", rm._agent_for(CX) == "codex")
-check("7c and the folder id is the same for both",
+print("\n[7] Speaking from the phone - a turn STARTED there, not only answered")
+rm.forget()
+SENT.clear()
+SEND.clear()
+BUSY.clear()
+GREEK = ("στο workspace %s βαλε εναν deepseek agent "
+         "να μου πει τι καιρο "
+         "θα εχει το βραδυ" % PROJ.name)
+tgt, why = rm._route({"content": GREEK})
+check("7a a sentence that names the project and the engine is a whole instruction",
+      why == "named" and tgt and tgt["agent"] == "deepseek-harness" and tgt["bare"] == BARE,
+      (why, tgt))
+check("7b even with nothing sent yet, so the first word of the day can be work",
+      rm._load().get("routes") == [], rm._load().get("routes"))
+rm._deliver({"id": "p1", "content": GREEK})
+check("7c the turn is started on that engine, in that folder",
+      len(SEND) == 1 and SEND[0]["project_id"] == BARE
+      and SEND[0]["agent"] == "deepseek-harness" and SEND[0]["steer"] is False, SEND)
+check("7d and the phone is told where it went", any("→" in m["text"] for m in SENT), SENT)
+DS = "deepseek-harness--" + BARE               # DeepSeek files its own conversation
+check("7e the answer is OWED, whatever the turn's length", DS in rm._owed, dict(rm._owed))
+
+SENT.clear()
+BUSY[DS] = True
+rm.tick()
+rm._start[DS] = time.time() - 4            # four seconds: under the floor for a turn started here
+BUSY[DS] = False
+rm.tick()
+check("7f a short turn the PHONE started is still reported", len(SENT) == 1, SENT)
+check("7g and the debt is cleared", DS not in rm._owed, dict(rm._owed))
+
+SENT.clear()
+BUSY.clear()
+rm._owed[DS] = time.time() - 9             # it began and ended between two looks
+rm.tick()
+check("7h a turn too fast to be seen working is reported too", len(SENT) == 1, SENT)
+check("7i and only once", (rm.tick() or len(SENT)) == 1, SENT)
+
+SEND.clear()
+SENT.clear()
+tgt, why = rm._route({"content": "@codex add a jump to the player"})
+check("7j an engine alone is enough when it has written before",
+      tgt and tgt["agent"] == "codex", (why, tgt))
+addr, clean = rm._address("@codex #%s add a jump" % PROJ.name)
+check("7k the address is not part of what the agent is told",
+      clean == "%s add a jump" % PROJ.name and addr["agent"] == "codex", (clean, addr))
+rm._remember("900", rm._target(BARE))      # a Claude message to reply to
+tgt, why = rm._route({"content": "yes claude, go on", "message_reference": {"message_id": "900"}})
+check("7l a reply still wins over an engine named in passing", why == "reply", (why, tgt))
+tgt, why = rm._route({"content": "yes claude, go on"})
+check("7m and a mention with no project starts nothing new", why == "newest", (why, tgt))
+
+print("\n[8] The words REMOTE answers itself")
+SENT.clear()
+SEND.clear()
+rm._deliver({"id": "c1", "content": "/help"})
+check("8a /help answers on the phone and starts no turn",
+      SEND == [] and len(SENT) == 1 and "reply" in SENT[0]["text"], (SEND, SENT))
+SENT.clear()
+rm._deliver({"id": "c2", "content": "/projects"})
+check("8b /projects names the workspaces", SEND == [] and PROJ.name in SENT[0]["text"], SENT)
+SENT.clear()
+BUSY.clear()
+rm._deliver({"id": "c3", "content": "/status"})
+check("8c /status is honest when nothing is working",
+      "nothing is working" in SENT[0]["text"], SENT)
+SENT.clear()
+STOPPED: list[str] = []
+from asset_studio import engines as eng_mod               # noqa: E402
+eng_mod.CODEX.cancel = lambda pid: STOPPED.append(pid)
+rm._remember("950", rm._target(CX))                  # a Codex message to reply to
+rm._deliver({"id": "c4", "content": "/stop", "message_reference": {"message_id": "950"}})
+check("8d /stop cancels the turn you replied to", STOPPED == [BARE], (STOPPED, SENT))
+SENT.clear()
+SEND.clear()
+rm._deliver({"id": "c5", "content": "/compact", "message_reference": {"message_id": "900"}})
+check("8e an engine's own slash command is passed through, not swallowed",
+      len(SEND) == 1 and SEND[0]["message"] == "/compact", (SEND, SENT))
+
+print("\n[9] The agent behind a feed id")
+check("9a a bare folder is Claude", rm._agent_for(BARE) == "claude")
+check("9b a codex-- feed is Codex", rm._agent_for(CX) == "codex")
+check("9c and the folder id is the same for both",
       rm._target(CX)["bare"] == rm._target(BARE)["bare"] == BARE)
-check("7d the project is named as the user named it", rm._target(CX)["name"] == PROJ.name)
+check("9d the project is named as the user named it", rm._target(CX)["name"] == PROJ.name)
 
 print("\n%d passed, %d failed" % (ok, fail))
 sys.exit(1 if fail else 0)

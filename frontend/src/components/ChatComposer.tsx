@@ -1256,7 +1256,7 @@ export function ChatComposer({
           {/* REMOTE - every engine too, and the one place the Discord token is entered. */}
           <button className="w-full flex items-center gap-2 rounded-md border border-line bg-panel2/40 px-2 py-1.5 hover:bg-panel2"
             disabled={remoteBusy} onClick={toggleRemote}
-            title="Leave the PC working and take the phone. A turn that finishes sends you the project, the engine, how long it took and what the agent said, with any pictures it made attached. Reply to that Discord message and the text reaches that same agent - steered mid-turn for Claude and Codex, a new turn when it is idle.">
+            title="Leave the PC working and take the phone. A turn that finishes sends you the project, the engine, how long it took and what the agent said, with any pictures it made attached. Reply to that Discord message and the text reaches that same agent - steered mid-turn for Claude and Codex, a new turn when it is idle. You can also START work from there: write &quot;in &lt;project&gt; ask deepseek for the weather&quot; or &quot;@codex add a jump&quot;, and /help, /projects, /status, /stop are answered on the phone.">
             <Smartphone size={14} className={cls("shrink-0", remote ? "text-brand" : "text-muted/60")} />
             <span className="text-left min-w-0">
               <span className={cls("block text-xs font-medium", !remote && "text-muted")}>REMOTE - the Studio on your phone</span>
@@ -1266,7 +1266,7 @@ export function ChatComposer({
                   : remote
                     ? `${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "Discord"} · ${remoteSt?.sent || 0} sent · ${remoteSt?.replies || 0} replies`
                       + ((remoteSt?.watching || 0) ? ` · watching ${remoteSt?.watching}` : "")
-                    : `${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "connected"} · finished turns, pictures, and your reply back to that agent`}
+                    : `${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "connected"} · finished turns, pictures, your reply back to that agent, and /help on the phone`}
               </span>
             </span>
             <span className={cls("ml-auto flex items-center h-5 w-9 rounded-full transition-colors px-0.5 shrink-0", remote ? "bg-brand-600 justify-end" : "bg-line justify-start")}>
@@ -1687,7 +1687,9 @@ export function ChatComposer({
                 + `${remoteSt?.sent || 0} sent, ${remoteSt?.replies || 0} replies delivered. A turn that `
                 + "finishes sends the project, the engine, the time it took and what the agent said, with "
                 + "any pictures attached. Reply on the phone and it reaches that same agent — steered "
-                + "mid-turn for Claude and Codex. Leave the PC on. Click to switch off."
+                + "mid-turn for Claude and Codex. You can also start a turn from there by naming it: "
+                + "\"in <project> ask deepseek for the weather\". Write /help on the phone for the rest. "
+                + "Leave the PC on. Click to switch off."
               : "REMOTE off. On: your phone gets each finished turn and its pictures over Discord, and "
                 + "your reply goes to the agent that sent it — Claude or Codex, whichever one wrote."}
           onClick={toggleRemote}>
