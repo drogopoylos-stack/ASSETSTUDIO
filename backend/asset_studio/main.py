@@ -347,6 +347,14 @@ async def _startup():
         from . import gpu_memory  # noqa: F401 - importing it is what starts the thread
     except Exception:
         pass
+    # REMOTE: if the switch was left on, the phone keeps getting the turns and the replies keep
+    # reaching the right agent across a restart of the backend. Primary backend only - two
+    # watchers on one channel would send everything twice (see the SECONDARY return above).
+    try:
+        from . import remote
+        remote.resume()
+    except Exception:
+        pass
     await queue.start()
     app.state._stats_task = asyncio.create_task(_stats_broadcaster())
     app.state._avail_task = asyncio.create_task(_availability_warmer())

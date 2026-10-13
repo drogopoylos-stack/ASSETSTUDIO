@@ -6,6 +6,7 @@ import type {
   AgentRun,
   Asset,
   BoostStatus,
+  RemoteStatus,
   ChatProvider,
   ChatProviderInput,
   Job,
@@ -234,6 +235,19 @@ export const api = {
           before_chars: number; after_chars: number; reasons: Record<string, number> }>(
       "/api/boost/preview", { method: "POST", body: JSON.stringify({ text }) }),
   boostForget: () => req<BoostStatus>("/api/boost/forget", { method: "POST" }),
+  // REMOTE — the button above BOOST. Its own endpoint for the same reason BOOST has one: the
+  // switch starts and stops the watcher thread that notifies the phone and routes the replies,
+  // which a plain settings write cannot do.
+  remoteStatus: () => req<RemoteStatus>("/api/remote"),
+  remoteSet: (on: boolean) =>
+    req<RemoteStatus>("/api/remote", { method: "PUT", body: JSON.stringify({ on }) })
+      .then((r) => { announceSettings({ remote: on }); return r; }),
+  /** Store the Discord bot token and channel id. The backend checks both before saving that they
+   *  work, so a wrong id is reported here and not discovered hours later on the phone. */
+  remoteConfig: (p: { token?: string; channel?: string; images?: boolean; min_turn_s?: number; poll_s?: number }) =>
+    req<RemoteStatus>("/api/remote/config", { method: "PUT", body: JSON.stringify(p) }),
+  remoteTest: () => req<RemoteStatus & { id?: string }>("/api/remote/test", { method: "POST" }),
+  remoteForget: () => req<RemoteStatus>("/api/remote/forget", { method: "POST" }),
   graphifyStatus: () =>
     req<{ available: boolean; installing: boolean; error: string; venv: string }>("/api/graphify/status"),
   webStatus: () =>

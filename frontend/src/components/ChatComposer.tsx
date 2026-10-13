@@ -24,12 +24,12 @@ import {
   SquareTerminal,
   Terminal,
   X,
-  Zap, Globe,} from "lucide-react";
+  Zap, Globe, Smartphone,} from "lucide-react";
 import { api } from "../api/client";
 import { useStore } from "../store/useStore";
 import { notesToPrompt } from "./diffNotes";
 import { FEED_DETAILS, detailSummary } from "./feedDetail";
-import type { AgentInfo, BoostStatus, ScheduledJob, SearchEntry, SlashCommand, WorkspaceRoot } from "../types";
+import type { AgentInfo, BoostStatus, RemoteStatus, ScheduledJob, SearchEntry, SlashCommand, WorkspaceRoot } from "../types";
 import { cls, pollWhileVisible } from "./ui";
 import { agentKey, folderAgent, modeFallback, pinnedAgent, readEffort, readPref, writeEffort, writePref } from "./sendPrefs";
 import { VoiceButton, type VoiceState } from "./VoiceButton";
@@ -217,6 +217,14 @@ export function ChatComposer({
   const [boost, setBoost] = useState(() => localStorage.getItem("cc-boost") === "1");
   const [boostSt, setBoostSt] = useState<BoostStatus | null>(null);
   const [boostBusy, setBoostBusy] = useState(false);
+  // REMOTE - the same shape as BOOST, and for the same reason: the backend owns the truth,
+  // because the switch starts a watcher thread that notifies the phone and routes the replies.
+  const [remote, setRemote] = useState(false);
+  const [remoteSt, setRemoteSt] = useState<RemoteStatus | null>(null);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteSetup, setRemoteSetup] = useState(false);   // the token/channel form is open
+  const [rToken, setRToken] = useState("");
+  const [rChannel, setRChannel] = useState("");
   const [memory, setMemory] = useState(() => localStorage.getItem("cc-memory") !== "0");
   const [graphify, setGraphify] = useState(() => localStorage.getItem("cc-graphify") === "1");
   const [webTools, setWebTools] = useState(() => localStorage.getItem("cc-web-tools") !== "0");
@@ -378,6 +386,9 @@ export function ChatComposer({
     api.boostStatus()
       .then((b) => { setBoostSt(b); setBoost(b.on); localStorage.setItem("cc-boost", b.on ? "1" : "0"); })
       .catch(() => {});          // an older backend has no BOOST; the button then just reads "off"
+    api.remoteStatus()
+      .then((r) => { setRemoteSt(r); setRemote(r.on); setRChannel(r.channel || ""); })
+      .catch(() => {});          // an older backend has no REMOTE; the button then reads "off"
     api.missionAgents().then((r) => setAgents(r.agents)).catch(() => {});
     api.claudeStatus().then((s) => setNoAccess(s.model_access || {})).catch(() => {});
     api.terminalAgents().then((r) => setTermAgents(r.agents || [])).catch(() => {});
@@ -889,6 +900,49 @@ export function ChatComposer({
       })
       .finally(() => setBoostBusy(false));
   }
+  /** The REMOTE button. Not configured yet means OPEN THE FORM instead of switching something on
+   *  that cannot send anything - a switch that silently does nothing is the bug this avoids. */
+  function toggleRemote() {
+    if (remoteBusy) return;
+    if (!remoteSt?.ready) { setRemoteSetup(true); setCfg(true); setAgentMenu(false); return; }
+    const v = !remote;
+    setRemote(v); setRemoteBusy(true);
+    api.remoteSet(v)
+      .then((r) => {
+        setRemoteSt(r); setRemote(r.on);
+        toast(r.on
+          ? `REMOTE on - ${r.channel_name ? "#" + r.channel_name : "Discord"} gets a message when a turn `
+            + "finishes, with any pictures it made. Reply to that message and your answer goes to that "
+            + "agent - Claude or Codex, steered if it is still working. Leave the PC on."
+          : "REMOTE off - nothing more is sent to your phone.", r.on ? "ok" : "info");
+      })
+      .catch((e: any) => { setRemote(!v); toast(`REMOTE could not be switched: ${e?.message || e}`, "danger"); })
+      .finally(() => setRemoteBusy(false));
+  }
+  /** Save the Discord bot token and channel id. The backend checks both against Discord before it
+   *  reports ready, so a wrong id is said here and not discovered hours later from a phone. */
+  function saveRemote() {
+    if (remoteBusy) return;
+    setRemoteBusy(true);
+    api.remoteConfig({ token: rToken.trim(), channel: rChannel.trim() })
+      .then((r) => {
+        setRemoteSt(r); setRemote(r.on); setRToken("");
+        if (r.ok === false) { toast(r.error || "Discord refused that.", "danger"); return; }
+        toast(`Connected to ${r.channel_name ? "#" + r.channel_name : "the channel"} as ${r.bot || "the bot"}.`
+              + " Switch REMOTE on, then send a test.", "ok");
+      })
+      .catch((e: any) => toast(`Could not save: ${e?.message || e}`, "danger"))
+      .finally(() => setRemoteBusy(false));
+  }
+  function testRemote() {
+    if (remoteBusy) return;
+    setRemoteBusy(true);
+    api.remoteTest()
+      .then((r) => { setRemoteSt({ ...(remoteSt as RemoteStatus), ...r });
+                     toast(r.ok ? "Sent. Check your phone." : (r.error || "Discord did not take it."), r.ok ? "ok" : "danger"); })
+      .catch((e: any) => toast(`Test failed: ${e?.message || e}`, "danger"))
+      .finally(() => setRemoteBusy(false));
+  }
   function toggleMemory() {
     const v = !memory;
     setMemory(v); localStorage.setItem("cc-memory", v ? "1" : "0");
@@ -1199,6 +1253,58 @@ export function ChatComposer({
               <span className="h-4 w-4 rounded-full bg-white shadow" />
             </span>
           </button>
+          {/* REMOTE - every engine too, and the one place the Discord token is entered. */}
+          <button className="w-full flex items-center gap-2 rounded-md border border-line bg-panel2/40 px-2 py-1.5 hover:bg-panel2"
+            disabled={remoteBusy} onClick={toggleRemote}
+            title="Leave the PC working and take the phone. A turn that finishes sends you the project, the engine, how long it took and what the agent said, with any pictures it made attached. Reply to that Discord message and the text reaches that same agent - steered mid-turn for Claude and Codex, a new turn when it is idle.">
+            <Smartphone size={14} className={cls("shrink-0", remote ? "text-brand" : "text-muted/60")} />
+            <span className="text-left min-w-0">
+              <span className={cls("block text-xs font-medium", !remote && "text-muted")}>REMOTE - the Studio on your phone</span>
+              <span className="block text-[10px] text-muted/70 leading-tight truncate">
+                {!remoteSt?.ready
+                  ? "not connected yet - a Discord bot token and a channel id"
+                  : remote
+                    ? `${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "Discord"} · ${remoteSt?.sent || 0} sent · ${remoteSt?.replies || 0} replies`
+                      + ((remoteSt?.watching || 0) ? ` · watching ${remoteSt?.watching}` : "")
+                    : `${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "connected"} · finished turns, pictures, and your reply back to that agent`}
+              </span>
+            </span>
+            <span className={cls("ml-auto flex items-center h-5 w-9 rounded-full transition-colors px-0.5 shrink-0", remote ? "bg-brand-600 justify-end" : "bg-line justify-start")}>
+              <span className="h-4 w-4 rounded-full bg-white shadow" />
+            </span>
+          </button>
+          <button className="self-start text-[10px] text-muted/70 hover:text-fg underline decoration-dotted"
+            onClick={() => setRemoteSetup((v) => !v)}>
+            {remoteSetup ? "hide the Discord setup" : remoteSt?.ready ? "change the Discord channel" : "connect Discord"}
+          </button>
+          {remoteSetup && (
+            <div className="rounded-md border border-line bg-panel2/40 p-2 flex flex-col gap-1.5">
+              <span className="text-[10px] text-muted/80 leading-snug">
+                1. discord.com/developers → New Application → Bot → Reset Token, and copy it.
+                2. Turn on MESSAGE CONTENT INTENT for that bot, or your replies arrive empty.
+                3. Invite the bot to your own server with the bot scope.
+                4. In Discord, User Settings → Advanced → Developer Mode, then right-click the
+                channel → Copy Channel ID.
+              </span>
+              <input className="input !py-1 text-xs" type="password" autoComplete="off" placeholder="bot token"
+                value={rToken} onChange={(e) => setRToken(e.target.value)} />
+              <input className="input !py-1 text-xs" placeholder="channel id (numbers only)"
+                value={rChannel} onChange={(e) => setRChannel(e.target.value)} />
+              <div className="flex items-center gap-1.5">
+                <button className="px-2 py-1 rounded-md border border-line text-[10px] hover:bg-panel2"
+                  disabled={remoteBusy} onClick={saveRemote}>Save and check</button>
+                <button className="px-2 py-1 rounded-md border border-line text-[10px] hover:bg-panel2"
+                  disabled={remoteBusy || !remoteSt?.ready} onClick={testRemote}>Send a test</button>
+                {remoteSt?.bot && <span className="text-[10px] text-muted/70 truncate">as {remoteSt.bot}</span>}
+              </div>
+              {remoteSt?.last_error && <span className="text-[10px] text-danger leading-snug">{remoteSt.last_error}</span>}
+              <span className="text-[10px] text-muted/60 leading-snug">
+                The token is stored in this PC's data/settings.json and is never sent to the browser.
+                WhatsApp is not offered: it needs a verified Meta business number, templates approved
+                by Meta, and it only lets a service answer inside 24 hours of your message.
+              </span>
+            </div>
+          )}
           {(agentId === "claude" || isAltEngine(agent)) && <>
             <div><label className="label !mb-0.5 flex items-center gap-1">Effort <span className="text-muted/60 font-normal normal-case">· thinking depth</span></label>
               <select className="input !py-1 text-xs" value={effort} onChange={(e) => pickEffort(e.target.value)}>
@@ -1564,6 +1670,35 @@ export function ChatComposer({
         </button>
         {/* (the Claude|Codex quick-switch lived here — removed: the agent button above already
             picks the agent, and it cost the input ~90px of width for a duplicate control) */}
+        {/* REMOTE — beside BOOST, because it is the other switch you flip for a whole session:
+            this one lets you walk away from the PC and keep working from the phone. Every engine,
+            one channel, and a reply that goes back to the agent that wrote to you. */}
+        <button
+          className={cls(btn, "relative gap-1", remote
+            ? "!text-brand !border-brand/60 !bg-brand/10"
+            : "opacity-65 hover:opacity-100")}
+          disabled={remoteBusy}
+          title={!remoteSt?.ready
+            ? "REMOTE — get a Discord message on your phone when a turn here finishes, with the "
+              + "pictures it made, and reply to it to answer that agent. Click to connect a bot "
+              + "token and a channel (one minute, no WhatsApp business account needed)."
+            : remote
+              ? `REMOTE on — ${remoteSt?.channel_name ? "#" + remoteSt.channel_name : "Discord"}: `
+                + `${remoteSt?.sent || 0} sent, ${remoteSt?.replies || 0} replies delivered. A turn that `
+                + "finishes sends the project, the engine, the time it took and what the agent said, with "
+                + "any pictures attached. Reply on the phone and it reaches that same agent — steered "
+                + "mid-turn for Claude and Codex. Leave the PC on. Click to switch off."
+              : "REMOTE off. On: your phone gets each finished turn and its pictures over Discord, and "
+                + "your reply goes to the agent that sent it — Claude or Codex, whichever one wrote."}
+          onClick={toggleRemote}>
+          <Smartphone size={15} className={cls(remoteBusy && "animate-pulse")} />
+          {!compact && <span className="text-[10px] font-semibold tracking-wider">REMOTE</span>}
+          {remote && (remoteSt?.watching || 0) > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand text-[9px] text-white flex items-center justify-center font-semibold">
+              {remoteSt?.watching}
+            </span>
+          )}
+        </button>
         {/* BOOST — the money switch, in the row rather than buried in the popover, because it is
             the one control you flip for a whole session and the number it carries is the point.
             It reports what this PC has ACTUALLY removed so far, never a promise. */}

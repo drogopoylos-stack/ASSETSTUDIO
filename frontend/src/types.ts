@@ -947,6 +947,32 @@ export interface BoostRecommend {
   cost: string;
 }
 
+/** REMOTE — the Studio on a phone over Discord (backend/asset_studio/remote.py). The bot token
+ *  is never sent to the client: `token_set` is all the UI is told about it. */
+export interface RemoteStatus {
+  on: boolean;
+  /** A token AND a channel are set, so something can actually be sent. */
+  ready: boolean;
+  transport: string;
+  token_set: boolean;
+  channel: string;
+  channel_name: string;
+  bot: string;
+  images: boolean;
+  poll_s: number;
+  min_turn_s: number;
+  sent: number;
+  replies: number;
+  last_sent: number;
+  last_reply: number;
+  last_error: string;
+  /** Conversations working right now, which is what REMOTE will report when they finish. */
+  watching: number;
+  running: boolean;
+  ok?: boolean;
+  error?: string;
+}
+
 export interface BoostStatus {
   on: boolean;
   /** Tokens the one constant system-prompt note costs. It rides the prompt, so it is paid once. */

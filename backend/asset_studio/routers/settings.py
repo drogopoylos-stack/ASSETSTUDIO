@@ -117,6 +117,14 @@ def _side_effects(patch: dict[str, Any]) -> None:
             boost.set_enabled(bool(patch["boost"]))
         except Exception:
             pass
+    # REMOTE the same way: the switch alone is a stored boolean, and the watcher thread that
+    # sends to the phone and reads the replies is what makes it mean anything.
+    if "remote" in patch:
+        try:
+            from .. import remote
+            remote.set_enabled(bool(patch["remote"]))
+        except Exception:
+            pass
 
 
 @router.get("/boost")
@@ -154,6 +162,57 @@ def boost_forget():
     """Reset the running total, for a number that starts counting again."""
     from .. import boost
     return boost.forget()
+
+
+# ---------------------------------------------------------------------------
+# REMOTE - the Studio on your phone (see remote.py)
+# ---------------------------------------------------------------------------
+
+@router.get("/remote")
+def remote_status():
+    """Everything the REMOTE button shows. The bot token is never returned, only that one is set."""
+    from .. import remote
+    return remote.status()
+
+
+class RemoteBody(BaseModel):
+    on: bool
+
+
+@router.put("/remote")
+def set_remote(body: RemoteBody):
+    """The ON/OFF button. The watcher thread lives in remote.py and survives a backend restart."""
+    from .. import remote
+    return remote.set_enabled(body.on)
+
+
+class RemoteConfig(BaseModel):
+    token: str = ""
+    channel: str = ""
+    images: bool | None = None
+    min_turn_s: int = 0
+    poll_s: int = 0
+
+
+@router.put("/remote/config")
+def remote_config(body: RemoteConfig):
+    """Store the Discord bot token and channel id, after checking that both work."""
+    from .. import remote
+    return remote.configure(body.token, body.channel, body.images, body.min_turn_s, body.poll_s)
+
+
+@router.post("/remote/test")
+def remote_test():
+    """Send one message to the phone now, so it is proved before the user walks away."""
+    from .. import remote
+    return remote.test()
+
+
+@router.post("/remote/forget")
+def remote_forget():
+    """Reset the counters and the reply-routing table. The token and channel are kept."""
+    from .. import remote
+    return remote.forget()
 
 
 @router.put("/settings")
