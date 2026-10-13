@@ -2927,9 +2927,13 @@ def project_subagents(project_id: str, session: str = "", with_files: bool = Fal
     from . import delegates
     if engines.native(project_id):
         return delegates.merge(project_id, engines.native(project_id).subagents(project_id))
-    from . import subagents
-    return delegates.merge(project_id,
-                           subagents.list_for(project_id, session=session, with_files=with_files))
+    from . import cli_agents, subagents
+    data = subagents.list_for(project_id, session=session, with_files=with_files)
+    # And the third kind: another model's CLI, launched by the agent from the shell. The /studio
+    # skill draws every panel that way, so without this the panel stays empty for the whole of a
+    # comic — the longest-running delegation the Studio has.
+    data = cli_agents.merge(project_id, data, session=session)
+    return delegates.merge(project_id, data)
 
 
 def project_subagent(project_id: str, agent_id: str, limit: int = 400) -> dict:
@@ -2939,6 +2943,10 @@ def project_subagent(project_id: str, agent_id: str, limit: int = 400) -> dict:
     # delegation with no transcript of its own; its timeline is the job's log. `None` means the
     # id is not one of those, and the engine's own reader answers.
     own = delegates.detail(project_id, agent_id, limit=limit)
+    if own is not None:
+        return own
+    from . import cli_agents
+    own = cli_agents.detail(project_id, agent_id, limit=limit)
     if own is not None:
         return own
     if engines.native(project_id):

@@ -1158,6 +1158,7 @@ def running_everywhere() -> dict:
         delegating = set(delegates.running_by_feed())
     except Exception:
         pass
+    from . import cli_agents
     rows: list[dict] = []
     for fid in _feed_universe():
         eng = engines.for_feed(fid)
@@ -1166,13 +1167,24 @@ def running_everywhere() -> dict:
             # label and reads each agent's own ledger, and it must not be paid for a folder where
             # nothing is going on. An engine with its own index answers from the index, which is
             # one small file, so that one is simply asked.
+            shell_only = False
             if not eng.native_feed and fid not in delegating                     and not running(fid, window=OPEN_WINDOW):
-                continue
-            # Through `mission`, which is where the engine dispatch and the delegated job cards
-            # live. Asking the Claude module straight is the mistake that made a Codex fan-out
-            # invisible in the first place.
-            got = [a for a in (mission.project_subagents(fid).get("agents") or [])
-                   if a.get("running") or a.get("open")]
+                # Nothing from the Task tool here. One more question before giving up, because a
+                # conversation can be two minutes into `codex exec` with no agent file at all:
+                # has it written recently? That is one stat, and only a yes costs a read.
+                if not cli_agents.fresh(fid):
+                    continue
+                shell_only = True
+            if shell_only:
+                # The cheap half only: a transcript tail, not the full join of every agent this
+                # project has ever run — which is what the mtime check above already ruled out.
+                got = [a for a in cli_agents.cards(fid) if a.get("running") or a.get("open")]
+            else:
+                # Through `mission`, which is where the engine dispatch and the delegated job
+                # cards live. Asking the Claude module straight is the mistake that made a Codex
+                # fan-out invisible in the first place.
+                got = [a for a in (mission.project_subagents(fid).get("agents") or [])
+                       if a.get("running") or a.get("open")]
         except Exception:
             continue
         for a in got:

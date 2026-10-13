@@ -389,6 +389,16 @@ def live_status() -> dict:
                     quiet += 1
         except Exception:
             pass
+        # AND THE MODEL THE AGENT LAUNCHED ITSELF. A `/studio` panel is `codex exec` inside a
+        # Bash call: GPT is drawing for two minutes, the parent is blocked waiting for it, and
+        # there is no agent file anywhere — so the pill said the conversation was doing nothing
+        # for the whole of it. Counted as moving, not quiet: the call is open, which is more than
+        # a transcript mtime can say about a Task agent.
+        try:
+            from . import cli_agents
+            moving += cli_agents.running_count(pid)
+        except Exception:
+            pass
         n = moving + quiet
         busy = stream or n > 0
         out[pid] = busy

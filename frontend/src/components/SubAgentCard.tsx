@@ -111,6 +111,15 @@ export function SubAgentCard({ agent, cli, onOpen, compact }: {
               {a.agent_type || "studio"}
             </span>
           )}
+          {/* A CLI the agent launched itself — the way /studio draws every comic panel. The
+              minutes are that model's, and there are no tokens to show because the Studio never
+              saw the call: only the command, the prompt it was given and the file it produced. */}
+          {a.source === "cli" && (
+            <span className="shrink-0 text-[10px] px-1 rounded bg-accent/15 text-accent/90"
+              title={`Launched from the shell: ${a.command || a.agent_type || "another model's CLI"}`}>
+              {a.agent_type || "cli"}
+            </span>
+          )}
           {a.background && !a.running && (
             <span className="shrink-0 text-[10px] px-1 rounded bg-panel2 text-muted/70">bg</span>
           )}

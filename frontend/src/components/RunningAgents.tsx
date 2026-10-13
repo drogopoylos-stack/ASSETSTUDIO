@@ -67,7 +67,8 @@ export function RunningAgents({ rows, err, onOpen, onClose, nameOf }: {
           <div className="px-3 py-4 text-muted">
             Nothing is delegated right now. This looks in every folder and asks every engine —
             Claude, Codex and DeepSeek — so an agent shows up here whichever one started it, and
-            whether or not the Studio was running when it did.
+            whether or not the Studio was running when it did. A model the agent launched from the
+            shell counts as well, which is how /studio draws a comic panel with GPT.
           </div>
         )}
 
