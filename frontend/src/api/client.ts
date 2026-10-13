@@ -646,6 +646,13 @@ export const api = {
   missionUsage: (provider = "auto", force = false) =>
     req<import("../types").UsageSummary>(`/api/mission/usage?provider=${encodeURIComponent(provider)}${force ? "&force=true" : ""}`,
       { timeoutMs: 60_000 }),
+  /** The Dashboard's plan panel: the two subscriptions and what the turn ledger says about the
+   *  work. Separate from `missionUsage` because it asks BOTH accounts at once and adds the
+   *  renewal dates and the per-model / per-project counts. Newer than some backends - the caller
+   *  falls back to a dash on a 404. */
+  planDashboard: (days = 7, force = false) =>
+    req<import("../types").PlanDashboard>(
+      `/api/mission/dashboard?days=${days}${force ? "&force=true" : ""}`, { timeoutMs: 60_000 }),
   usageAccounts: () => req<{ accounts: import("../types").UsageAccount[] }>("/api/mission/usage/accounts", { timeoutMs: 60_000 }),
   missionContext: (projectId: string) =>
     req<import("../types").ContextInfo>(`/api/mission/projects/${encodeURIComponent(projectId)}/context`, { timeoutMs: 12_000 }),

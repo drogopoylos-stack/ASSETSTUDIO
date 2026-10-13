@@ -543,6 +543,55 @@ export interface UsageSummary {
   generated_at?: number;
 }
 
+/** One paid subscription on the Dashboard: the plan, when it renews, and its live windows.
+ *  Claude and Codex only - the two plans that are paid for by the month rather than per token. */
+export interface PlanSub {
+  id: "claude" | "codex" | string;
+  name: string;
+  plan: string;
+  available: boolean;
+  windows: UsageWindow[];
+  extra_usage?: { enabled: boolean; used_credits?: number | null; monthly_limit?: number | null; currency?: string | null } | null;
+  stale?: boolean;
+  note?: string;
+  /** ISO date of the next renewal, or null when nobody knows it */
+  renews_at?: string | null;
+  renews_in_days?: number | null;
+  /** "account" = the provider states it; "you" = a date set in Settings; "" = unknown */
+  renewal_source?: "account" | "you" | "";
+  /** why the date has to be typed (Claude), shown where the date would be */
+  renewal_hint?: string;
+  /** the settings key that holds it, so the panel can offer to set it inline */
+  setting?: string;
+  email?: string;
+}
+
+export interface PlanWorkRow {
+  turns: number;
+  tokens: number;
+  share: number;
+  last?: number;
+}
+
+export interface PlanWork {
+  days: number;
+  turns: number;
+  tokens: number;
+  models: (PlanWorkRow & { model: string })[];
+  model_count: number;
+  projects: (PlanWorkRow & { id: string; name: string; harness?: string })[];
+  project_count: number;
+  efforts: { effort: string; turns: number }[];
+  by_day: { day: string; turns: number; tokens: number }[];
+  busiest_day?: { day: string; turns: number; tokens: number } | null;
+}
+
+export interface PlanDashboard {
+  subscriptions: PlanSub[];
+  work: PlanWork;
+  generated_at: number;
+}
+
 export interface ContextInfo {
   model?: string;
   ctx_used?: number;

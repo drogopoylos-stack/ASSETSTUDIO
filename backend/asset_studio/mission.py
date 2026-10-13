@@ -97,6 +97,7 @@ class CCProject(BaseModel):
     ctx_pct: float = 0.0             # % of context window used
     ctx_remaining: float = 0.0       # % of headroom left until auto-compact
     just_compacted: bool = False     # ctx is an estimate right after /compact (no real turn yet)
+    context_measured_at: float = 0.0  # when that usage was recorded (the context panel ages it)
     # prompt-cache split of the last turn's billed input (CLI 2.1.251 shows the same in /cost)
     cache_read: int = 0              # input served from the cache — the cheap part
     cache_write: int = 0             # input written INTO the cache this turn
@@ -700,6 +701,18 @@ def project_index(fresh: bool = False) -> list[dict]:
     return _IDX_ALL.get("all", build)
 
 
+def _apply(proj: CCProject, info: dict) -> None:
+    """Copy only the keys the model declares.
+
+    _context_info and _git_info also return keys the per-project endpoints use but the
+    card does not carry. pydantic refuses an undeclared field, and one refusal used to
+    take the whole /overview down with a 500.
+    """
+    for k, v in info.items():
+        if k in CCProject.model_fields:
+            setattr(proj, k, v)
+
+
 def _scan_one_project(pdir: Path) -> Optional[CCProject]:
     jsonls = list(pdir.glob("*.jsonl"))
     sess_dirs = [d for d in pdir.iterdir() if d.is_dir() and d.name != "memory"]
@@ -751,12 +764,10 @@ def _scan_one_project(pdir: Path) -> Optional[CCProject]:
         proj.todo_in_progress = st["todo_in_progress"]
         proj.awaiting_input = _awaiting_input(tail)
         proj.working = _is_working(tail, last_mtime, proj.awaiting_input, proj.id)
-        for k, v in _context_info(tail).items():
-            setattr(proj, k, v)
+        _apply(proj, _context_info(tail))
 
     if proj.exists:
-        for k, v in _git_info(cwd).items():
-            setattr(proj, k, v)
+        _apply(proj, _git_info(cwd))
 
     return proj
 

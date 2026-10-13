@@ -126,6 +126,15 @@ def tokens_since(seconds: float) -> int:
     return sum(int(r.get("tokens") or 0) for r in _all() if float(r.get("ts") or 0) >= cutoff)
 
 
+def since(seconds: float) -> list:
+    """Every finished turn from the last `seconds`, oldest first.
+
+    The window the Dashboard reads. `tokens_since` already walks this file for one number; this
+    hands back the rows so one read can answer models, projects and days together."""
+    cutoff = time.time() - max(0.0, float(seconds or 0))
+    return [r for r in _all() if float(r.get("ts") or 0) >= cutoff]
+
+
 def for_project(project_id: str, since: float = 0.0, limit: int = 400) -> list:
     """This project's finished turns, oldest first."""
     rows = [r for r in _all()

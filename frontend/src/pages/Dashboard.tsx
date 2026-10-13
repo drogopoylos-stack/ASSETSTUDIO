@@ -27,8 +27,9 @@ import type { TabId } from "../store/useStore";
 import type { Asset, ProviderInfo, StageType } from "../types";
 import { STAGES } from "../types";
 import AssetCard from "../components/AssetCard";
-import { Bar, Empty, Section, Spinner, cls, fmtCost, pollWhileVisible } from "../components/ui";
+import { Bar, Empty, Section, Spinner, cls, fmtCost, pollWhileVisible, useSticky } from "../components/ui";
 import CostPanel from "../components/CostPanel";
+import PlanPanel from "../components/PlanPanel";
 
 interface Summary {
   total_assets: number;
@@ -140,6 +141,8 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorsOpen, setErrorsOpen] = useState(true);
+  // Closed by default: those dollars are an estimate of a bill nobody sends.
+  const [costOpen, setCostOpen] = useSticky("dash.cost", false);
 
   // System info + providers load once.
   useEffect(() => {
@@ -226,41 +229,25 @@ export default function Dashboard() {
 
       {/* Headline stats.
 
-          "Total cost" used to be the only money on this screen, and it reads the asset catalog:
-          image and mesh generations. On this machine that is under two dollars, while the agent
-          work beside it runs to two orders of magnitude more — one project's fifteen subagents
-          came to $46. The landing screen was leading with the smallest number it had. The two are
-          kept apart rather than added: they are different scales, and a sum hides the larger one
-          inside the smaller one's label. */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          THE MONEY USED TO BE HERE, AND IT WAS THE WRONG HEADLINE. Two of the five cards were
+          dollars: the asset catalog's generation cost, and a list price for every agent turn.
+          The second one is not billed at all on a Claude Max or a ChatGPT Plus plan, so the
+          screen opened with a large number that nobody pays. What a subscription actually raises
+          is when it renews and how much of the window is left — the panel below. The dollars are
+          still computed and still exact; they now sit in a section that says what they are. */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           icon={Package}
           label="Total assets"
           value={loading && !summary ? <Spinner size={20} /> : (summary?.total_assets ?? 0).toLocaleString()}
-        />
-        <StatCard
-          icon={Coins}
-          label="Generation cost"
-          value={loading && !summary ? <Spinner size={20} /> : fmtCost(summary?.total_cost)}
-          tone="text-accent"
-          sub="images & meshes"
-        />
-        <StatCard
-          icon={Bot}
-          label="Agent spend"
-          value={spend ? fmtCost(spend.total) : spendErr ? <span className="text-muted/50">—</span> : <Spinner size={20} />}
-          tone={spend ? "text-brand" : "text-muted"}
-          sub={spend
-            ? [`$${(spend.month ?? spend.total).toFixed(2)} this month`,
-               spend.turns ? `${spend.turns} turns` : ""].filter(Boolean).join(" · ")
-            : spendErr || "list price of every turn"}
+          sub="images & meshes in the catalog"
         />
         <StatCard
           icon={Loader2}
           label={agentsRunning ? "Agents running" : "Jobs running"}
           value={agentsRunning || (summary?.jobs_running ?? 0)}
           tone={(agentsRunning || (summary?.jobs_running ?? 0)) > 0 ? "text-brand" : undefined}
-          sub={agentsRunning ? "delegated right now" : undefined}
+          sub={agentsRunning ? "delegated right now" : "nothing queued"}
         />
         <StatCard
           icon={AlertTriangle}
@@ -277,10 +264,38 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Cost & policy. The card above is the headline; this is the detail behind it — what the
-          money bought (per tool, per kind of round trip, and where the context sat) and the cap
-          that stops it. See CostPanel.tsx for why a project total was never enough. */}
-      <CostPanel spend={spend} />
+      {/* The two subscriptions, and what the turns actually went on. The real headline. */}
+      <PlanPanel days={14} />
+
+      {/* Cost estimate. Kept, collapsed, and labelled for what it is.
+
+          Every figure in here is a rate card applied to measured tokens. On a subscription none
+          of it is charged: it is what the same work would have cost through the API, which is
+          useful for comparing one model against another and misleading as a bill. It opens
+          closed for that reason, and the cap inside it still works — a user on API keys wants
+          it, and a user on a plan should not be shown a total they do not owe. See CostPanel.tsx
+          for what the detail covers. */}
+      <div className="card p-0 overflow-hidden">
+        <button className="w-full flex items-center gap-2 p-4 text-left" onClick={() => setCostOpen(!costOpen)}>
+          {costOpen ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted" />}
+          <Coins size={16} className="text-muted" />
+          <span className="font-semibold">Cost estimate</span>
+          <span className="text-xs text-muted hidden sm:inline">
+            list price of the work · not billed on a subscription
+          </span>
+          <span className="ml-auto flex items-center gap-2 text-xs">
+            {summary?.total_cost ? <span className="chip">assets {fmtCost(summary.total_cost)}</span> : null}
+            {spend ? <span className="chip">agents {fmtCost(spend.total)}</span>
+                   : spendErr ? <span className="chip text-muted">{spendErr}</span> : null}
+            {spend?.cap?.over ? <span className="chip text-warn border-warn/40">over cap</span> : null}
+          </span>
+        </button>
+        {costOpen && (
+          <div className="px-4 pb-4">
+            <CostPanel spend={spend} />
+          </div>
+        )}
+      </div>
 
       {/* Machine */}
       <Section

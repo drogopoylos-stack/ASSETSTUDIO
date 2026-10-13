@@ -31,6 +31,14 @@ def project_sessions(project_id: str):
     return {"id": project_id, "sessions": mission.list_sessions(project_id)}
 
 
+@router.get("/dashboard")
+async def dashboard(days: int = 7, force: bool = False):
+    """The two subscriptions (plan, renewal, live windows) plus what the turns ledger says about
+    the work: models, projects and a per-day bar. No money - see `/spend` for that."""
+    from .. import subscriptions as subs
+    return await run_in_threadpool(subs.dashboard, days=days, force=force)
+
+
 @router.get("/usage/accounts")
 async def usage_accounts():
     """Every account the Plan usage bar can show, whether it is connected, and how to connect it."""
