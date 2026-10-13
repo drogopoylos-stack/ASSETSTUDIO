@@ -97,6 +97,28 @@ def project_subagents(project_id: str, session: str = "", files: bool = False):
     return mission.project_subagents(project_id, session=session, with_files=files)
 
 
+@router.get("/agents/running")
+def agents_running():
+    """Every subagent working right now, across every folder and every engine.
+
+    The panel behind this used to be handed a list of projects to ask about — the live poll's
+    count, filtered to the registered workspaces — so it could not show an agent the poll had
+    missed, and after a restart the poll has missed all of them. This asks the disk instead.
+    """
+    from .. import subagents as sa
+    return sa.running_everywhere()
+
+
+@router.get("/projects/{project_id}/engine-feeds")
+def project_engine_feeds(project_id: str):
+    """Which engines have a conversation in this folder — Claude, Codex, DeepSeek, an alternate.
+
+    What the prompt history offers as tabs, so the history of all three is reachable from one
+    pane instead of only the engine the chat box happens to be set to.
+    """
+    return {"id": project_id, "feeds": mission.folder_feeds_summary(project_id)}
+
+
 @router.get("/projects/{project_id}/subagents/collisions")
 def project_subagent_collisions(project_id: str, root: str = ""):
     """Files that more than one RUNNING subagent has edited — parallel work about to go wrong."""

@@ -410,6 +410,16 @@ export const api = {
   subagent: (projectId: string, agentId: string) =>
     req<SubAgentDetail>(
       `/api/mission/projects/${encodeURIComponent(projectId)}/subagents/${encodeURIComponent(agentId)}`),
+  /** EVERY subagent working right now, wherever it is. Asked of the disk by the backend, so it
+   *  holds agents this process never streamed — the ones a restart used to hide — and agents in
+   *  folders that are not registered workspaces. */
+  agentsRunning: () =>
+    req<{ rows: import("../types").RunningAgent[]; total: number; moving: number; at: number }>(
+      "/api/mission/agents/running"),
+  /** Which engines have a conversation in this folder, for the prompt history's tabs. */
+  engineFeeds: (projectId: string) =>
+    req<{ id: string; feeds: import("../types").EngineFeed[] }>(
+      `/api/mission/projects/${encodeURIComponent(projectId)}/engine-feeds`),
   subagentClashes: (projectId: string, root: string) =>
     req<{ collisions: SubAgentClash[] }>(
       `/api/mission/projects/${encodeURIComponent(projectId)}/subagents/collisions?root=${encodeURIComponent(root)}`),

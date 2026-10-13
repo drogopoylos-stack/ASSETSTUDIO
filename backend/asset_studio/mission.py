@@ -2333,6 +2333,52 @@ def slash_commands(project_id: str = "") -> list[dict]:
     return cmds
 
 
+def folder_feeds_summary(project_id: str) -> list[dict]:
+    """Every engine that has a conversation in THIS folder, with enough to offer it as a choice.
+
+    One folder holds one conversation per engine, each under its own feed id, and a panel bound to
+    a single id can only ever show one of them. The prompt history was bound that way: on a Claude
+    pane it listed Claude, and the Codex and DeepSeek conversations in the same folder — which the
+    user had been working in all along — were unreachable without switching the chat's engine
+    first. So the panel is given the whole list and picks.
+
+    Cheap on purpose: a session count and a date, from one scandir per engine. No transcript is
+    opened — the history itself is loaded only for the engine the user actually clicks.
+    """
+    bare = engines.bare_folder(project_id)
+    out: list[dict] = []
+    for fid in engines.folder_feeds(bare):
+        eng = engines.for_feed(fid)
+        n, last = 0, 0.0
+        try:
+            if eng.native_feed:
+                rows = eng.sessions(fid) or []
+                n = len(rows)
+                for r in rows:
+                    for k in ("ts", "at", "updated", "mtime"):
+                        v = r.get(k)
+                        if isinstance(v, (int, float)) and v:
+                            last = max(last, float(v))
+                            break
+            else:
+                _root, pdir, _b = project_dir(fid)
+                with os.scandir(pdir) as it:
+                    for e in it:
+                        if e.name.endswith(".jsonl") and e.is_file():
+                            n += 1
+                            try:
+                                last = max(last, e.stat().st_mtime)
+                            except OSError:
+                                pass
+        except Exception:
+            pass
+        out.append({"id": fid, "engine": eng.id, "name": engines.name_of(fid),
+                    "sessions": n, "last": last})
+    # The engine that said something most recently first, and one with nothing to show last.
+    out.sort(key=lambda r: (r["sessions"] > 0, r["last"]), reverse=True)
+    return out
+
+
 def list_sessions(project_id: str) -> list[dict]:
     """All conversations (transcripts) for a project, newest first — so the user can
     clear to a fresh one and reopen previous ones. The active (newest) is flagged."""

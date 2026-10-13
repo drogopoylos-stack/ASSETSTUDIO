@@ -64,6 +64,17 @@ class Engine:
         """(bare folder id, busy, running subagents) for every conversation this engine holds."""
         return []
 
+    def folders(self) -> list[str]:
+        """Every bare folder id this engine has a conversation for, read FROM DISK.
+
+        `live_rows` answers about the conversations this process is holding in memory, which is a
+        different question with a much smaller answer: after a restart it is empty, and an agent
+        that is still working is then invisible to every count that starts from it. An engine that
+        keeps its own index answers this from the index; the ones that write a Claude-format
+        transcript are found by their project folders instead (subagents._feed_universe).
+        """
+        return []
+
     def reset(self, project_id: str) -> None:
         """Forget the in-memory conversation, so the next send rebuilds it from the transcript on
         disk. Needed after the transcript is edited (edit-and-resend)."""
@@ -175,6 +186,10 @@ class _Codex(Engine):
         from . import codex_app
         return codex_app.todos(project_id)
 
+    def folders(self) -> list[str]:
+        from . import codex_app
+        return codex_app.folders()
+
     def subagents(self, project_id):
         from . import codex_app
         return codex_app.subagents(project_id)
@@ -211,8 +226,19 @@ class _DeepSeek(Engine):
         return deepseek_session.live_state(project_id)
 
     def live_rows(self) -> list[tuple[str, bool, int]]:
-        from . import deepseek_session
-        return [(b, bool(busy), 0) for b, busy in deepseek_session.live_rows()]
+        # THE COUNT, NOT A ZERO. DeepSeek writes a Claude-format transcript, so its subagents are
+        # on disk exactly like Claude's — but this reported 0 for every conversation, so a DeepSeek
+        # fan-out was never added to `running_agents` and the rail, the bar and the agents panel
+        # all said nothing was delegated while it worked. One mtime scan per live conversation.
+        from . import deepseek_session, subagents
+        out: list[tuple[str, bool, int]] = []
+        for b, busy in deepseek_session.live_rows():
+            try:
+                n = len(subagents.working(self.feed_id(b)))
+            except Exception:
+                n = 0
+            out.append((b, bool(busy), n))
+        return out
 
     def reset(self, project_id: str) -> None:
         from . import deepseek_session

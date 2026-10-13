@@ -45,7 +45,7 @@ import {
 } from "lucide-react";
 import { api } from "../api/client";
 import { useStore } from "../store/useStore";
-import type { Checkpoint, CheckpointChange, EntryInfo, FileResult, Session, Skill, TreeEntry, WorkspaceRoot } from "../types";
+import type { Checkpoint, CheckpointChange, EngineFeed, EntryInfo, FileResult, RunningAgent, Session, Skill, TreeEntry, WorkspaceRoot } from "../types";
 import { cls, pollWhileVisible, timeAgo, useSetting } from "../components/ui";
 import { folderAgent, paneAgent, writePaneAgent, sendSettings } from "../components/sendPrefs";
 import { WorktreeDialog } from "../components/WorktreeDialog";
@@ -330,6 +330,19 @@ export default function Workspace() {
   // Of that fan-out, how many are quiet rather than typing. The badge counts every agent
   // still owed a result; this only feeds the tooltip that explains the number.
   const [quiet, setQuiet] = useState<Record<string, number>>({});
+  // EVERY AGENT WORKING RIGHT NOW, from the backend's own sweep of the disk.
+  //
+  // `fanout` above comes from the live poll, which walks the sessions the backend process is
+  // streaming — so it is empty for anything dispatched before the last restart or started by the
+  // CLI outside the Studio, and the agents panel, which was built from it, then said "No agents
+  // running" while they worked. The sweep asks every folder and every engine instead; the badge
+  // and the panel both read it, which is also the only way the two can agree.
+  const [agentRows, setAgentRows] = useState<RunningAgent[]>([]);
+  const [agentErr, setAgentErr] = useState("");
+  useEffect(() => pollWhileVisible(() => api.agentsRunning().then((r) => {
+    setAgentRows(r.rows || []);
+    setAgentErr("");
+  }).catch((e: any) => setAgentErr(e?.message || "could not read the agent list")), 4000), []);
   // The panels the activity bar opens. Both are popovers rather than tabs: they are a glance,
   // not a place you work, and a tab for either would push a pane off the grid.
   const [agentsPanel, setAgentsPanel] = useState(false);
@@ -470,13 +483,15 @@ export default function Workspace() {
   // folder id reads Claude's transcripts instead — the panel would then say "no agents" beside a
   // badge that says two. The bare id stays, because that is what names the row and finds the root
   // to switch to.
-  const agentBusy = useMemo(() => {
-    const known = new Set(roots.map((r) => r.id));
-    return Object.entries(fanout)
-      .filter(([id, n]) => n > 0 && known.has(id))
-      .map(([id, count]) => ({ id, count, feed: altFeedPrefix(busyAgent[id] || "", customAgents) + id }));
-  }, [fanout, roots, busyAgent, customAgents]);
-  const agentCount = agentBusy.reduce((a, b) => a + b.count, 0);
+  const agentCount = agentRows.length;
+  // Per folder, from the sweep — and never less than the live poll says, so a count cannot drop
+  // in the seconds between an agent starting and the next sweep.
+  const sweepPerFolder = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const a of agentRows) m[a.folder] = (m[a.folder] || 0) + 1;
+    return m;
+  }, [agentRows]);
+  const fanoutOf = (id: string) => Math.max(fanout[id] || 0, sweepPerFolder[id] || 0);
 
   // Every workspace, with the folders of its repository under it. A root is only a HEAD when no
   // primary checkout of the same repository exists — otherwise it is one of that head's children
@@ -2261,18 +2276,20 @@ ${text.trim()}`;
           <NewGameButton variant="rail" current={activeRoot} onCreated={selectRoot} />
 
           {agentsPanel && (
-            <RunningAgents busy={agentBusy} onClose={() => setAgentsPanel(false)}
+            <RunningAgents rows={agentRows} err={agentErr} onClose={() => setAgentsPanel(false)}
               nameOf={(pid) => roots.find((r) => r.id === pid)?.name || pid}
-              onOpen={(pid, agentId) => {
+              onOpen={(pid, agentId, engine) => {
                 // Switch to the workspace that owns it first, or the pane would open an agent
-                // whose transcript belongs to a project this window is not looking at.
+                // whose transcript belongs to a project this window is not looking at. A folder
+                // that is not a registered workspace stays where it is — the pane is given the
+                // folder id regardless, which is what its transcript is filed under.
                 const r = roots.find((x) => x.id === pid);
                 if (r && r.path !== activeRoot?.path) openInPane(r);
-                // AND CARRY THE ENGINE. `pid` is the bare folder id; `busyAgent` is the engine the
-                // live poll says is working there, which is who the agent belongs to. Without it a
-                // Codex agent opened in a pane that read Claude's transcripts and drew nothing —
-                // the count said 2, the list said 2, and the pane said "no record".
-                openAgentPane(agentId, r?.id || pid || activeRoot?.id || "", busyAgent[pid] || "");
+                // AND CARRY THE ENGINE, which the sweep states per agent rather than leaving the
+                // window to infer it. Without it a Codex agent opened in a pane that read Claude's
+                // transcripts and drew nothing — the count said 2, the list said 2, and the pane
+                // said "no record".
+                openAgentPane(agentId, r?.id || pid || activeRoot?.id || "", engine);
               }} />
           )}
 
@@ -2327,7 +2344,7 @@ ${text.trim()}`;
                     rows={wsFiltered} activePath={activeRoot?.path} open={wsOpen} onToggle={togglePinOpen}
                     onSelect={(r) => { openInPane(r); setWsPanel(false); }}
                     onContext={(r, x, y) => { setWsPanel(false); openRootMenu(r, x, y); }}
-                    statusOf={wsStatus} fanoutOf={(id) => fanout[id] || 0}
+                    statusOf={wsStatus} fanoutOf={fanoutOf}
                     quietOf={(id) => quiet[id] || 0}
                     agentOf={(id) => busyAgent[id] || ""} colourOf={workingColour}
                     // Dragging a project into a pane worked from the old picker, so it has to work
@@ -2414,7 +2431,7 @@ click to switch workspace` : "choose a workspace"}>
               <WorkspaceTree
                 rows={pinnedRows} activePath={activeRoot?.path} open={pinOpen} onToggle={togglePinOpen}
                 onSelect={openInPane} onContext={(r, x, y) => openRootMenu(r, x, y)}
-                statusOf={wsStatus} fanoutOf={(id) => fanout[id] || 0}
+                statusOf={wsStatus} fanoutOf={fanoutOf}
                 quietOf={(id) => quiet[id] || 0}
                 agentOf={(id) => busyAgent[id] || ""} colourOf={workingColour}
                 drag={{
@@ -2703,6 +2720,16 @@ interface PromptItem { key: string; text: string; ts: string; n: number; answer:
 
 function PromptHistory({ feedId, agentName }: { feedId: string; agentName: string }) {
   const [prompts, setPrompts] = useState<PromptItem[]>([]);
+  // EVERY ENGINE'S HISTORY, FROM ONE PANE.
+  //
+  // One folder holds one conversation per engine, each under its own feed id, and this panel was
+  // bound to exactly one: the engine the chat box happened to be set to. So on a Claude pane it
+  // listed Claude, and the Codex and DeepSeek conversations in the same folder — the ones the user
+  // had also been working in — could not be reached without switching the chat's engine first.
+  // The backend lists the folder's feeds; `pick` is the one on screen, and it starts as the pane's
+  // own so nothing changes until the user asks for another.
+  const [feeds, setFeeds] = useState<EngineFeed[]>([]);
+  const [pick, setPick] = useState(feedId);
   // a /btw already sent but not yet picked up by the hook — listed at once, so a side-note is
   // never invisible between the moment you send it and the moment Claude reaches a tool boundary
   const [btwPending, setBtwPending] = useState("");
@@ -2710,10 +2737,18 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
   const jumpToPrompt = useStore((s) => s.jumpToPrompt);
   const listRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { setPick(feedId); }, [feedId]);
   useEffect(() => {
-    if (!feedId) { setPrompts([]); return; }
+    if (!feedId) { setFeeds([]); return; }
     let alive = true;
-    const load = () => api.missionFeed(feedId, 2000, "", "user,text").then((r) => {
+    api.engineFeeds(feedId).then((r) => { if (alive) setFeeds(r.feeds || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [feedId]);
+
+  useEffect(() => {
+    if (!pick) { setPrompts([]); return; }
+    let alive = true;
+    const load = () => api.missionFeed(pick, 2000, "", "user,text").then((r) => {
       if (!alive) return;
       setBtwPending((r.btw_pending || "").trim());
       const lines = r.lines || [];
@@ -2741,7 +2776,7 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
     load();
     const iv = window.setInterval(() => { if (!document.hidden) load(); }, 5000);
     return () => { alive = false; window.clearInterval(iv); };
-  }, [feedId]);
+  }, [pick]);
 
   function toggleAnswers() {
     setShowAnswers((v) => { const n = !v; localStorage.setItem("ph-answers", n ? "1" : "0"); return n; });
@@ -2751,6 +2786,11 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
     return s.length > max ? s.slice(0, max) + "…" : s;
   };
   const latest = prompts[prompts.length - 1];
+  // The pane's own engine is always offered, even before the folder list arrives, so the panel
+  // never appears with no tab at all.
+  const tabs: EngineFeed[] = feeds.length ? feeds
+    : [{ id: feedId, engine: "", name: agentName, sessions: 0, last: 0 }];
+  const shown = tabs.find((f) => f.id === pick)?.name || agentName;
 
   return (
     <div className="h-full flex flex-col bg-bg">
@@ -2758,16 +2798,26 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
         <History size={13} className="text-brand" />
         <span className="font-semibold">Your prompts</span>
         <span className="text-muted">· {prompts.length}</span>
-        {/* WHOSE PROMPTS. The panel is per-engine now, so it says which engine — otherwise the same
-            panel on a Codex pane and a DeepSeek pane is indistinguishable at a glance. */}
-        <span className="chip !py-0 text-[9px] text-muted" title={`This list is ${agentName}'s conversation in this folder`}>{agentName}</span>
+        {/* WHOSE PROMPTS — and the switch. One button per engine that has a conversation in this
+            folder, with how many of them it has. An engine with nothing to show is still listed,
+            greyed, because its absence is an answer too. */}
+        {tabs.map((f) => (
+          <button key={f.id} onClick={() => setPick(f.id)}
+            className={cls("chip !py-0 text-[9px]",
+                           f.id === pick ? "border-brand text-brand" : "text-muted hover:text-text",
+                           !f.sessions && f.id !== pick && "opacity-50")}
+            title={f.sessions ? `${f.name}: ${f.sessions} conversation${f.sessions > 1 ? "s" : ""} in this folder`
+                              : `${f.name} has no conversation in this folder yet`}>
+            {f.name}{f.sessions > 1 ? ` ·${f.sessions}` : ""}
+          </button>
+        ))}
         <button className={cls("ml-auto chip hover:text-text", showAnswers && "border-brand text-brand")}
           onClick={toggleAnswers} title="Show a summary of my answer under each prompt">
           {showAnswers ? "Answers: on" : "Show answers"}
         </button>
         {latest && (
           <button className="chip hover:border-brand hover:text-brand"
-            onClick={() => jumpToPrompt(feedId, "u:" + latest.text.slice(0, 120))} title="Jump to your latest prompt">
+            onClick={() => jumpToPrompt(pick, "u:" + latest.text.slice(0, 120))} title="Jump to your latest prompt">
             ↓ latest
           </button>
         )}
@@ -2784,10 +2834,10 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
         )}
         {prompts.length === 0 && !btwPending && (
           <div className="text-muted/60 text-xs px-1 py-3 leading-relaxed">
-            No prompts in this conversation yet.
+            No prompts in <span className="text-text">{shown}</span>'s conversation in this folder yet.
             <br />
-            This lists <span className="text-text">{agentName}</span>'s conversation in this folder — switch the
-            chat's engine (the model button beside the prompt) and this follows it.
+            Every engine with a conversation here is a button at the top of this panel — Claude,
+            Codex and DeepSeek each keep their own, and this list follows whichever you pick.
           </div>
         )}
         {prompts.map((p) => p.btw ? (
@@ -2802,7 +2852,7 @@ function PromptHistory({ feedId, agentName }: { feedId: string; agentName: strin
         ) : (
           <div key={p.key} className="group rounded-md border border-line bg-panel/40 hover:border-warn/50 transition-colors overflow-hidden">
             {/* your prompt — click to jump to it (gold) */}
-            <button onClick={() => jumpToPrompt(feedId, "u:" + p.text.slice(0, 120))}
+            <button onClick={() => jumpToPrompt(pick, "u:" + p.text.slice(0, 120))}
               className="w-full text-left px-2 py-1.5 hover:bg-panel2">
               <div className="flex items-center gap-2 text-[10px] text-muted">
                 <span className="font-mono text-warn">#{p.n}</span>

@@ -1086,6 +1086,122 @@ def running(project_id: str, window: float = RUNNING_WINDOW) -> list:
 
 
 # ---------------------------------------------------------------------------
+# EVERY agent working right now, wherever it is
+# ---------------------------------------------------------------------------
+# THE PANEL USED TO BE TOLD WHAT TO ASK ABOUT, and that is why it said "No agents running" beside
+# a fan-out the user could watch working. It asked only about the projects the live poll had
+# already counted, so it inherited three separate ways of being blind:
+#
+#   * the poll (`cc_session.live_status`) walks the sessions THIS backend process is streaming. An
+#     agent dispatched before the last restart, or started by the CLI outside the Studio, is not
+#     in that map at all — and a restart is the first thing anyone does when a panel looks wrong.
+#   * the window then filtered those ids down to the REGISTERED workspaces, so an agent in any
+#     other folder could not be listed even when the poll knew about it.
+#   * DeepSeek reported 0 subagents by construction (engines._DeepSeek.live_rows, now fixed).
+#
+# So the question is asked of the disk instead: every folder every engine has a conversation for,
+# every feed id under it. Discovery is mtimes — one scandir per session folder, nothing opened —
+# and the full picture of an agent is built only for a feed that really has one live.
+_EVERY_TTL = 2.0
+_every_cache: dict = {"at": 0.0, "out": None}
+
+
+def _feed_universe() -> list[str]:
+    """Every feed id with a conversation on disk, whichever engine wrote it.
+
+    Two kinds of engine, two sources. Claude, the alternate engines (Kimi, Qwen, a provider added
+    in Settings) and DeepSeek each keep one project folder per workspace under their own home, so
+    the folder names ARE the ids. An engine with its own log (Codex) is asked for its list.
+    """
+    ids: list[str] = []
+    homes: list[tuple[str, Path]] = [("", mission.claude_projects_dir())]
+    for pfx, dirname in mission.alt_homes().items():
+        homes.append((pfx, mission._alt_home(dirname) / "projects"))
+    for pfx, root in homes:
+        try:
+            with os.scandir(root) as it:
+                for e in it:
+                    # The CLI writes the drive letter upper-case ("G--KAPOW"); the Studio's own id
+                    # is lower ("g--KAPOW") and that is what the workspace list is keyed by. The
+                    # path still resolves either way — Windows does not care — so the id the UI
+                    # can match is the one handed out.
+                    if e.is_dir():
+                        ids.append(pfx + e.name[:1].lower() + e.name[1:])
+        except OSError:
+            continue
+    for eng in engines.ALL:
+        try:
+            ids += [eng.feed_id(b) for b in eng.folders()]
+        except Exception:
+            continue
+    return list(dict.fromkeys(ids))
+
+
+def running_everywhere() -> dict:
+    """Every subagent working right now, in any folder, under any engine.
+
+    Cheap in the common case, which is "nothing is delegated": the live check per feed is an
+    mtime scan, and an agent's bill, prompt and footprint are read only for a feed that has one.
+    Cached for a couple of seconds, because the panel polls and the answer cannot change faster
+    than an agent writes a line.
+    """
+    now = time.time()
+    hit = _every_cache.get("out")
+    if hit is not None and now - float(_every_cache.get("at") or 0) < _EVERY_TTL:
+        return hit
+    # Work handed to ANOTHER engine — a GPT picture, a ComfyUI build — is a delegation of this
+    # conversation and it is counted in the badge, so it has to be listed here too or the two
+    # disagree again. Its feed is known without reading anything.
+    delegating: set = set()
+    try:
+        from . import delegates
+        delegating = set(delegates.running_by_feed())
+    except Exception:
+        pass
+    rows: list[dict] = []
+    for fid in _feed_universe():
+        eng = engines.for_feed(fid)
+        try:
+            # Mtimes first. The full answer joins the parent transcript for every prompt and
+            # label and reads each agent's own ledger, and it must not be paid for a folder where
+            # nothing is going on. An engine with its own index answers from the index, which is
+            # one small file, so that one is simply asked.
+            if not eng.native_feed and fid not in delegating                     and not running(fid, window=OPEN_WINDOW):
+                continue
+            # Through `mission`, which is where the engine dispatch and the delegated job cards
+            # live. Asking the Claude module straight is the mistake that made a Codex fan-out
+            # invisible in the first place.
+            got = [a for a in (mission.project_subagents(fid).get("agents") or [])
+                   if a.get("running") or a.get("open")]
+        except Exception:
+            continue
+        for a in got:
+            row = dict(a)
+            row["project"] = fid
+            row["folder"] = engines.bare_folder(fid)
+            # The agent id the chat box sends, which is NOT always the engine class: an alternate
+            # engine (Kimi, Qwen, a provider from Settings) is Claude's plumbing under its own
+            # prefix, and handing the pane "claude" would point it at the wrong conversation.
+            pfx = mission.alt_prefix(fid)
+            row["engine"] = pfx[:-2] if pfx else eng.id
+            row["engine_name"] = engines.name_of(fid)
+            rows.append(row)
+    rows.sort(key=lambda r: float(r.get("updated") or r.get("ts") or 0), reverse=True)
+    out = {
+        "rows": rows,
+        "total": len(rows),
+        # Writing right now, against dispatched-and-quiet. Both are working; only the wording
+        # differs, and saying which is which is the difference between "3 agents" and an answer
+        # to "is one of them stuck".
+        "moving": sum(1 for r in rows if r.get("running")),
+        "at": now,
+    }
+    _every_cache["at"] = time.time()
+    _every_cache["out"] = out
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Two agents in the same file
 # ---------------------------------------------------------------------------
 def _symbols_for(root: str, paths: list) -> dict:

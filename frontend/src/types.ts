@@ -477,6 +477,26 @@ export interface SubAgentDetail {
   touched?: SubAgent["touched"];
 }
 
+/** One working subagent, found by the backend's own sweep of every folder and every engine.
+ *  The sweep is the answer to "what is running", so each row says WHERE it is: the feed id its
+ *  transcript lives under (`project`), the plain folder id the workspace list is keyed by
+ *  (`folder`), and whose agent it is. */
+export interface RunningAgent extends SubAgent {
+  project: string;
+  folder: string;
+  engine: string;
+  engine_name: string;
+}
+
+/** One engine's conversation in a folder — what the prompt history offers as a tab. */
+export interface EngineFeed {
+  id: string;
+  engine: string;
+  name: string;
+  sessions: number;
+  last: number;
+}
+
 export interface SubAgentClash { path: string; agents: string[]; symbols: string[]; }
 
 export interface FeedResponse {

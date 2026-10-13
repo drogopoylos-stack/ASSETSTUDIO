@@ -3106,6 +3106,19 @@ def sessions(project_id: str) -> list[dict]:
     return out
 
 
+def folders() -> list[str]:
+    """Every folder this engine holds a conversation index for.
+
+    On disk, not in `_CONVS`: a Codex thread survives a backend restart, and so does a subagent
+    it started, so a count that began at the in-memory list went blind at exactly the moment the
+    user restarted the Studio to see what was going on.
+    """
+    try:
+        return sorted(p.stem for p in _PROJECTS.glob("*.json"))
+    except OSError:
+        return []
+
+
 def remember_session(project_id: str, thread_id: str) -> None:
     pid = bare(project_id)
     if thread_id:
