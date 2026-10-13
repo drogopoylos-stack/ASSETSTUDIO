@@ -67,6 +67,7 @@ def fake_post(text, files=None, reply_to=""):
 
 rm._post = fake_post
 rm._react = lambda mid, emoji="x": REACTS.append((mid, emoji))
+REAL_PULL = rm._pull            # kept, so the real channel reader can be tested too
 rm._pull = lambda: []
 
 # --- the engines, stubbed: a busy map and a closing message, no processes ----------------------
@@ -259,12 +260,35 @@ rm._deliver({"id": "m6", "content": "hello?"})
 check("5h with nothing sent yet, the phone is told what to do, and no turn is started",
       SEND == [] and SENT and "Start a turn" in SENT[0]["text"], (SEND, SENT))
 
-print("\n[6] The agent behind a feed id")
-check("6a a bare folder is Claude", rm._agent_for(BARE) == "claude")
-check("6b a codex-- feed is Codex", rm._agent_for(CX) == "codex")
-check("6c and the folder id is the same for both",
+print("\n[6] Reading the channel - the cursor, and whose messages count")
+rm.forget()
+CALLS: list[str] = []
+INBOX_MSGS: list[dict] = [{"id": "500", "content": "written before REMOTE was on",
+                           "author": {"username": "me"}}]
+
+
+def fake_call(method, path, body=None, files=None, timeout=25.0):
+    """Discord's REST layer, replaced: the question here is which query is asked."""
+    CALLS.append(path)
+    return 200, list(INBOX_MSGS)
+
+
+rm._call = fake_call
+check("6a the first look asks for ONE message, and replays nothing",
+      REAL_PULL() == [] and CALLS[-1].endswith("?limit=1"), CALLS)
+INBOX_MSGS = [{"id": "501", "content": "do it", "author": {"username": "me"}},
+              {"id": "502", "content": "ignore me", "author": {"username": "studio", "bot": True}}]
+msgs = REAL_PULL()
+check("6b then only what was written after that point", "after=500" in CALLS[-1], CALLS)
+check("6c and never a bot's own message, which would be a loop",
+      [m["id"] for m in msgs] == ["501"], msgs)
+
+print("\n[7] The agent behind a feed id")
+check("7a a bare folder is Claude", rm._agent_for(BARE) == "claude")
+check("7b a codex-- feed is Codex", rm._agent_for(CX) == "codex")
+check("7c and the folder id is the same for both",
       rm._target(CX)["bare"] == rm._target(BARE)["bare"] == BARE)
-check("6d the project is named as the user named it", rm._target(CX)["name"] == PROJ.name)
+check("7d the project is named as the user named it", rm._target(CX)["name"] == PROJ.name)
 
 print("\n%d passed, %d failed" % (ok, fail))
 sys.exit(1 if fail else 0)

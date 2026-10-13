@@ -240,7 +240,9 @@ def _pull() -> list[dict]:
         return []
     st = _load()
     after = str(st.get("after") or "")
-    q = "?limit=25" + ("&after=" + after if after else "&limit=1")
+    # The FIRST look asks for one message only: that stores where the channel is now, so the
+    # history written before REMOTE was switched on is never replayed as instructions.
+    q = ("?limit=25&after=" + after) if after else "?limit=1"
     code, res = _call("GET", "/channels/%s/messages%s" % (ch, q), timeout=20.0)
     if code // 100 != 2 or not isinstance(res, list):
         if code:
