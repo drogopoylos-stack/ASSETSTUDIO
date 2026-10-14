@@ -101,6 +101,37 @@ if model is None:
     out({"ready": False, "error": ("load failed: " + last)[:300]}); sys.exit(1)
 out({"ready": True, "device": device})
 
+
+# DECODE THE CLIP OURSELVES, and never through faster_whisper.decode_audio.
+#
+# That helper calls av.open(..., metadata_errors="ignore"), an argument PyAV dropped. With the
+# version pip resolves today every dictation came back as
+#   open() got an unexpected keyword argument 'metadata_errors'
+# so the mic button recorded, uploaded, and then showed an error — it looked dead. The decode is
+# twenty lines of PyAV that no release can take away, so the mic no longer depends on two packages
+# agreeing about one keyword. faster-whisper takes a float32 array directly.
+def _pcm(path):
+    import numpy as np, av
+    with av.open(path) as container:
+        stream = next(s for s in container.streams if s.type == "audio")
+        rs = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        chunks = []
+
+        def take(frame):
+            r = rs.resample(frame)
+            if r is None:
+                return
+            for f in (r if isinstance(r, (list, tuple)) else [r]):
+                chunks.append(f.to_ndarray().reshape(-1))
+
+        for frame in container.decode(stream):
+            take(frame)
+        take(None)   # flush whatever the resampler still holds
+    if not chunks:
+        raise RuntimeError("the clip holds no audio")
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -113,7 +144,14 @@ while True:
     except Exception:
         continue
     try:
-        segs, info = model.transcribe(req["audio"], task=req.get("task", "translate"),
+        clip = req["audio"]
+        try:
+            clip = _pcm(clip)
+        except Exception as de:
+            # Keep the path as the fall-back: a future faster-whisper may read a container PyAV
+            # cannot. If that fails too, the error below names both attempts.
+            out({"stage": "decode-fallback", "detail": str(de)[:200]})
+        segs, info = model.transcribe(clip, task=req.get("task", "translate"),
                                       vad_filter=True, beam_size=5)
         text = "".join(s.text for s in segs).strip()
         out({"text": text, "language": getattr(info, "language", "") or ""})

@@ -93,7 +93,12 @@ export function VoiceButton({ onText, task, onTask, onStatus, className, compact
       }
       if (s.installing) setHint("installing voice…");
       else if (s.loading) setHint("downloading model (one-time)…");
-      if (s.install_error || s.worker_error) {
+      // ONLY AN ERROR FROM THE ATTEMPT WE STARTED. worker_error keeps the last failure until the
+      // next spawn clears it, so a load that failed hours ago was still on the status when this
+      // poll began — the click set voice up, the first tick read that old line, and the button
+      // went quiet instead of recording. While `loading` is true the attempt is still running, and
+      // its own result replaces the stale one a few seconds later.
+      if (!s.loading && !s.installing && (s.install_error || s.worker_error)) {
         autoRec.current = false;
         setHint(s.install_error || s.worker_error); setSt("idle"); stopPoll(); return;
       }
@@ -129,7 +134,7 @@ export function VoiceButton({ onText, task, onTask, onStatus, className, compact
     }
   }
 
-  function click() {
+  async function click() {
     if (st === "recording") { rec.current?.stop(); return; }
     if (st === "transcribing" || st === "setup") return;
     if (!ready) {
@@ -141,7 +146,12 @@ export function VoiceButton({ onText, task, onTask, onStatus, className, compact
       }
       autoRec.current = true;                 // set up, then listen: the first use is one click
       setSt("setup"); setHint("setting up voice…");
-      api.voiceEnable().catch(() => {});
+      // WAIT for the enable before the first poll. Fired side by side, the GET could answer
+      // before the POST was handled, which is how the poll met the previous failure.
+      const s = await api.voiceEnable().catch(() => null);
+      if (s && usable(s) && !s.loading) {     // already resident — record at once
+        setReady(true); setHint(""); setSt("idle"); autoRec.current = false; startRec(); return;
+      }
       pollReady();
       return;
     }
