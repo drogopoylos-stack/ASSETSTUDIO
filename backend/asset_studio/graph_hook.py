@@ -49,6 +49,14 @@ _SEDDY = re.compile(r"(?:^|[|;&(]\s*)sed\b[^|;&\n)]*?-n\s*['\"]?/(?P<pat>[^/'\"]
 # `awk -F: '{print $2}' data/tmp/summary.txt` gave the symbol 'tmp' out of the file's path.
 _AWKY = re.compile(r"(?:^|[|;&(]\s*)awk\b[^|;&\n)]*?['\"]\s*/(?P<pat>[^/\s'\"]+)/")
 _PSSTR = re.compile(r"Select-String\b[^|;&\n)]*?-Pattern\s+(?P<pat>\S+)", re.I)
+# How a person greps for a declaration: `export function RankEmblem`, `class Foo extends`,
+# `def _pcm(`, `const NEWS_ENTRIES =`. The identifier must follow the keyword immediately, so
+# `export function (a|b)` stays a text search and asks the graph nothing.
+_DECL = re.compile(
+    r"^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?"
+    r"(?:(?:public|private|protected|static|abstract|readonly)\s+)*"
+    r"(?:function|const|let|var|class|interface|type|enum|struct|def|fn|func|trait)\s+"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 
 
 def _bare(tok: str) -> str:
@@ -64,6 +72,45 @@ def _bare(tok: str) -> str:
     m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", t)
     t = m.group(0) if m else ""
     return t if _SYMBOL.match(t) else ""
+
+
+def _symbol_from_pattern(pat: str) -> str:
+    """The identifier a SEARCH PATTERN asks for, or "".
+
+    A bare identifier is not the only shape a symbol lookup takes. Measured in KAPOW over one
+    session: twelve shell searches, and the two clearest symbol lookups among them were
+    `rg -n "export function RankEmblem"` and `rg -n "export function rankName"`. Both went
+    unanswered, because the pattern holds spaces and the old test was `_SYMBOL.match` on the
+    whole pattern. The graph held RankEmblem() at src/ui/ranked/RankEmblem.tsx:50 and
+    rankName() at src/ranked/leagues.ts:69 the whole time, while the agent guessed a directory
+    and grepped it. A declaration phrase IS the question the graph answers best.
+
+    A wrong guess here is cheap: main() keeps only an EXACT declaration hit, so a phrase that
+    merely contains the word `function` finds nothing in the graph and the hook stays quiet."""
+    t = (pat or "").strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+        t = t[1:-1]
+    elif t[:1] in ("\"", "'") and t.endswith(("(", "()")):
+        # _GREPPY cuts the command at a `)` so a subshell is never read as part of it, so
+        # `rg -n "RankEmblem()" src/` arrives here as the unbalanced `"RankEmblem(`. Only this
+        # shape may drop a lone quote: an unbalanced token otherwise means the cut fell inside
+        # an alternation (`"strip|title__menu"` -> `"strip`), and the first branch of an
+        # alternation is NOT what the search is for. That note used to read as a symbol lookup.
+        t = t[1:]
+    if _SYMBOL.match(t):
+        return t
+    # A regex writes its spaces as escapes — `export\s+function\s+RankEmblem` is the same
+    # question as the phrase. Normalise them back to spaces before reading the shape.
+    t = re.sub(r"\\s[+*]?|\[ \\t\][+*]?", " ", t).strip()
+    t = t.lstrip("^").strip()
+    m = _DECL.match(t)
+    if m and _SYMBOL.match(m.group("name")):
+        return m.group("name")
+    # `RankEmblem()`, `useRank(`, `rankName\b` — an identifier dressed in call or word syntax.
+    m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\(\)?|\\\(|\\b)$", t)
+    if m and _SYMBOL.match(m.group(1)):
+        return m.group(1)
+    return ""
 
 
 def _symbol_from_bash(command: str) -> str:
@@ -89,15 +136,18 @@ def _symbol_from_bash(command: str) -> str:
             t = toks[i]
             if t.startswith("-"):
                 # a flag that takes a value: skip its argument too
-                if t in ("-e", "-m", "--include", "--exclude", "--glob", "-g", "--type", "-t"):
+                # -A/-B/-C take a count when it is written apart from the flag (`rg -A 8 foo`);
+                # attached (`-A8`) it is already one token. Without this the count read as the
+                # pattern, failed the identifier test, and the real pattern was never reached.
+                if t in ("-e", "-m", "--include", "--exclude", "--glob", "-g", "--type", "-t",
+                         "-A", "-B", "-C", "--after-context", "--before-context", "--context",
+                         "--max-count"):
                     i += 2
                     continue
                 i += 1
                 continue
-            cand = t
-            if len(cand) >= 2 and cand[0] == cand[-1] and cand[0] in "\"'":
-                cand = cand[1:-1]
-            if _SYMBOL.match(cand):
+            cand = _symbol_from_pattern(t)
+            if cand:
                 piped = m.group("sep") == "|" and not m.group("xargs")   # xargs hands it files
                 operands = [x for x in toks[i + 1:] if not x.startswith("-") and not _REDIRECT.match(x)]
                 recursive = any(x in _RECURSE or x.startswith("--recursive") for x in toks)
@@ -402,7 +452,10 @@ def main() -> int:
         return _deny_reading_the_graph(payload, host, port)
     ti = payload.get("tool_input") or {}
     if tool == "Grep":
-        pattern = str(ti.get("pattern") or "").strip()
+        # Through _symbol_from_pattern, not a bare identifier test: `export function RankEmblem`
+        # is a symbol lookup and has to reach the graph as `RankEmblem`. The note and the query
+        # both use what comes back, so q= never carries a phrase.
+        pattern = _symbol_from_pattern(str(ti.get("pattern") or ""))
     elif tool in ("Bash", "PowerShell"):
         pattern = _symbol_from_bash(str(ti.get("command") or ""))
     elif tool == "Glob":
