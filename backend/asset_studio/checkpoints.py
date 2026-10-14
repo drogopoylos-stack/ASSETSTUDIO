@@ -39,7 +39,8 @@ _SKIP = workspace._SKIP_DIRS
 _MAX_FILE = 512 * 1024            # per-file cap
 _MAX_TOTAL = 30 * 1024 * 1024    # total snapshot cap
 _MAX_FILES = 4000
-_KEEP = 12                       # checkpoints retained per project
+_KEEP = 12                       # checkpoints retained PER ENGINE in one project (see _prune)
+_KEEP_TOTAL = 48                 # ceiling for the folder, whatever the mix of engines
 _BIN_EXT = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".pdf", ".zip", ".gz",
     ".exe", ".dll", ".so", ".bin", ".woff", ".woff2", ".ttf", ".otf", ".mp3", ".mp4",
@@ -264,11 +265,38 @@ def _dir(project_id: str) -> Path:
     return CKPT_DIR / (safe or "x")
 
 
+def _agent_of(f: Path) -> str:
+    """Which engine a stored checkpoint frames. Rows written before the field say nothing, and
+    they all share the one bucket — which is what they used to do anyway."""
+    try:
+        with gzip.open(f, "rt", encoding="utf-8") as fh:
+            return str(json.load(fh).get("agent") or "")
+    except (OSError, ValueError, EOFError):
+        return ""
+
+
 def _prune(d: Path) -> None:
+    """Keep the newest _KEEP PER ENGINE, under a folder-wide ceiling.
+
+    One folder keeps one store — that part is right, because a checkpoint frames the folder and
+    not an agent. But one retention cap over the whole store let a busy engine delete another's
+    history. Measured in g--KAPOW: three engines shared twelve slots, Codex's last three turns
+    pushed Claude down to nine and DeepSeek out entirely, so the rewind the user went looking for
+    had already been deleted by a different agent's work. Per engine, each keeps its own dozen,
+    the way the prompt history now holds each engine's own prompts.
+    """
+    files = sorted(d.glob("*.json.gz"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if len(files) <= _KEEP:                  # the common case: never read a row to prune nothing
+        return
+    seen: dict[str, int] = {}
     removed = False
-    for old in sorted(d.glob("*.json.gz"), key=lambda f: f.stat().st_mtime, reverse=True)[_KEEP:]:
+    for i, f in enumerate(files):
+        who = _agent_of(f)
+        seen[who] = n = seen.get(who, 0) + 1
+        if n <= _KEEP and i < _KEEP_TOTAL:
+            continue
         try:
-            old.unlink()
+            f.unlink()
             removed = True
         except OSError:
             pass

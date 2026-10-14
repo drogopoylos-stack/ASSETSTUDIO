@@ -3097,6 +3097,9 @@ function CheckpointsPanel({ root, agent, agentName, resolveAgentName }: {
   const [openFile, setOpenFile] = useState("");        // "<checkpoint id><path>" of the open file
   const [diffs, setDiffs] = useState<Record<string, CheckpointChange[]>>({});
   const [busy, setBusy] = useState(false);
+  /** Whose turns to list; "" is every engine. The store is per folder, and each engine now keeps
+      its own dozen, so "which of these are mine" is a question the list has to answer. */
+  const [who, setWho] = useState("");
   const toast = useStore((s) => s.toast);
 
   const load = () => api.ckptList(root.id).then((r) => setList(r.checkpoints)).catch(() => {});
@@ -3135,6 +3138,15 @@ Restore anyway? That agent's edits since the checkpoint will be overwritten.`)) 
   const stColor = (s: string) => s === "added" ? "text-ok" : s === "deleted" ? "text-danger" : "text-warn";
   const stTag = (s: string) => s === "added" ? "A" : s === "deleted" ? "D" : "M";
 
+  // One row per engine that has ever snapshotted here, newest engine first.
+  const byAgent: { id: string; n: number }[] = [];
+  for (const c of list) {
+    const k = c.agent || "";
+    const hit = byAgent.find((x) => x.id === k);
+    if (hit) hit.n++; else byAgent.push({ id: k, n: 1 });
+  }
+  const shown = who ? list.filter((c) => (c.agent || "") === who) : list;
+
   return (
     <div className="h-full flex flex-col bg-bg">
       <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-line text-xs bg-panel">
@@ -3151,6 +3163,23 @@ Restore anyway? That agent's edits since the checkpoint will be overwritten.`)) 
           onClick={snapshot} title="Snapshot the project now (before editing)"><Plus size={11} /> Checkpoint now</button>
         <button className="chip hover:text-text" onClick={load} title="Refresh"><RefreshCw size={11} /></button>
       </div>
+      {/* WHOSE TURNS. Three engines in one folder put three histories in one list; each keeps its
+          own dozen, so without this the user scrolls past another agent's work to find their own. */}
+      {byAgent.length > 1 && (
+        <div className="shrink-0 flex items-center gap-1 px-2 py-1 border-b border-line/60 text-[10px] overflow-x-auto">
+          <button className={cls("chip !py-0", !who && "!border-brand !text-brand")}
+            onClick={() => setWho("")} title="Every engine that has worked in this folder">
+            all · {list.length}
+          </button>
+          {byAgent.map((a) => (
+            <button key={a.id || "none"} className={cls("chip !py-0", who === a.id && "!border-brand !text-brand")}
+              onClick={() => setWho(who === a.id ? "" : a.id)}
+              title={a.id ? `Only the turns ${resolveAgentName(a.id)} was about to run` : "Older rows, written before the engine was recorded"}>
+              {a.id ? resolveAgentName(a.id) : "unlabelled"} · {a.n}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-auto p-2 space-y-1.5">
         {list.length === 0 && (
           <div className="text-muted/60 text-xs px-1 py-3 leading-relaxed">
@@ -3160,7 +3189,7 @@ Restore anyway? That agent's edits since the checkpoint will be overwritten.`)) 
             working in VS Code.
           </div>
         )}
-        {list.map((c) => (
+        {shown.map((c) => (
           <div key={c.id} className="rounded-md border border-line bg-panel/40 overflow-hidden">
             <button className="w-full text-left px-2 py-1.5 hover:bg-panel2 flex items-center gap-2"
               onClick={() => toggle(c.id)}>
