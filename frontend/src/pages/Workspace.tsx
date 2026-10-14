@@ -24,6 +24,7 @@ import {
   GripVertical,
   History,
   Image as ImageIcon,
+  ImagePlus,
   ListChecks,
   Loader2,
   Maximize2,
@@ -74,6 +75,7 @@ function PaneLoading({ label }: { label: string }) {
 import { GitPanel } from "../components/GitPanel";
 import { SubAgentPanel } from "../components/SubAgentPanel";
 import { buildTree, WorkspaceTree } from "../components/WorkspaceTree";
+import { PasteBoard } from "../components/PasteBoard";
 import { RunningAgents } from "../components/RunningAgents";
 import { PANE_DND, PaneGrid, PresetButton, useLayout } from "../components/PaneGrid";
 import { preset, splitChatPane, type Pane, type PresetId } from "../components/paneLayout";
@@ -346,6 +348,9 @@ export default function Workspace() {
   // The panels the activity bar opens. Both are popovers rather than tabs: they are a glance,
   // not a place you work, and a tab for either would push a pane off the grid.
   const [agentsPanel, setAgentsPanel] = useState(false);
+  /** The Paste board: a screenshot marked up and handed to a workspace. Full-screen, not a
+      popover — the picture is the point, and the notes are typed while reading it. */
+  const [pasteBoard, setPasteBoard] = useState(false);
   const [wsPanel, setWsPanel] = useState(false);
   const [wsQuery, setWsQuery] = useState("");
   const [agentColour, setAgentColour] = useState<Record<string, string>>({});
@@ -2247,6 +2252,12 @@ ${text.trim()}`;
           <button className="p-2 rounded text-muted hover:text-text"
             title={`Skills — enable/disable what ${activeAgentName} loads (game-dev, UI/UX…). One library, every engine.`}
             onClick={openSkills}><Wand2 size={20} /></button>
+          {/* Paste & mark. A screenshot does not have to be saved, named and attached to be
+              talked about: paste it, pin the spots, and hand the picture to any workspace —
+              as a reference to send later, or with the notes as the prompt now. */}
+          <button className={cls("p-2 rounded", pasteBoard ? "text-brand bg-panel2" : "text-muted hover:text-text")}
+            title="Paste & mark — Ctrl+V a screenshot, write a note on each spot, send it to any workspace"
+            onClick={() => setPasteBoard(true)}><ImagePlus size={20} /></button>
           {/* Agents. The bottom bar has carried this count for a while, and the bottom bar is
               the one strip people hide. It belongs here, beside the phases badge, in the same
               shape: the ring turns while anything is running, and the number sits to its left. */}
@@ -2291,6 +2302,11 @@ ${text.trim()}`;
                 // said "no record".
                 openAgentPane(agentId, r?.id || pid || activeRoot?.id || "", engine);
               }} />
+          )}
+
+          {pasteBoard && (
+            <PasteBoard roots={roots} current={activeRoot} onClose={() => setPasteBoard(false)}
+              onJump={(r) => selectRoot(r)} />
           )}
 
           {wsPanel && (

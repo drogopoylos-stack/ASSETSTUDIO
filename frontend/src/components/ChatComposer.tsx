@@ -147,6 +147,8 @@ function readDraft(projectId: string): { msg: string; files: string[]; images: s
 
 /** The highest `composerInsert` nonce any composer on this page has already taken. */
 let takenInsert = 0;
+/** The same, for the Paste board's hand-over — one composer takes it, not both panes. */
+let takenFeed = 0;
 
 export function ChatComposer({
   projectId, rootPath, rootName, variant = "panel", disabled, onSendingChange,
@@ -326,6 +328,32 @@ export function ChatComposer({
       el.scrollTop = el.scrollHeight;
     });
   }, [composerInsert, projectId]);
+
+  // A MARKED-UP SCREENSHOT ARRIVING FROM THE PASTE BOARD. The image is already uploaded into this
+  // project, so all that is left is to put it in the box — and, when the board asked for it, to
+  // send the turn. The send cannot happen here: this effect runs before the state it just set has
+  // committed, so `send()` would read the message as it was a moment ago. It raises a flag that
+  // the effect below acts on, once the text and the attachment are really in.
+  const composerFeed = useStore((s) => s.composerFeed);
+  const feedSend = useRef(false);
+  useEffect(() => {
+    const f = composerFeed;
+    if (!f || f.projectId !== projectId || f.nonce <= takenFeed) return;
+    takenFeed = f.nonce;
+    const imgs = f.images.filter(Boolean);
+    if (imgs.length) setImages((im) => [...new Set([...im, ...imgs])]);
+    if (f.text) setMsg((m) => (m.includes(f.text) ? m : (m.trim() ? m.replace(/\s*$/, "\n\n") : "") + f.text));
+    // Only a fresh request sends. A composer that mounts minutes later has already picked the
+    // same content out of the stored draft, and must not fire a turn the user did not just ask for.
+    if (f.send && Date.now() - f.at < 20000) feedSend.current = true;
+  }, [composerFeed, projectId]);
+  useEffect(() => {
+    if (!feedSend.current) return;
+    if (!msg.trim() && images.length === 0) return;    // state has not landed yet
+    feedSend.current = false;
+    send();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg, images]);
 
   const poll = useRef<number | null>(null);
   const searchTimer = useRef<number | null>(null);

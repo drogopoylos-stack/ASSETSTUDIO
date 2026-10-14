@@ -163,6 +163,15 @@ interface AppState {
   composerInsert: { projectId: string; text: string; nonce: number } | null;
   insertIntoComposer: (projectId: string, text: string) => void;
 
+  // A MARKED-UP SCREENSHOT ON ITS WAY TO A WORKSPACE. The same channel as above cannot carry it,
+  // because this one brings an attachment as well as words, it names a project the window may not
+  // even be looking at, and it may ask for the turn to be sent rather than left to edit. The
+  // Paste board writes the target's draft too, so a workspace whose composer is not mounted still
+  // receives the image; this is what reaches the one that IS mounted, right away.
+  composerFeed: { projectId: string; text: string; images: string[];
+                  send: boolean; at: number; nonce: number } | null;
+  feedComposer: (projectId: string, text: string, images: string[], send: boolean) => void;
+
   // A comment written on one line of a diff, waiting to be sent. Kept in the store rather than
   // in the diff component, because the diff is inside a feed that re-renders and unmounts as it
   // scrolls, and a comment must survive that — it is the user's writing, not a view state.
@@ -363,6 +372,11 @@ export const useStore = create<AppState>((set, get) => ({
   composerInsert: null,
   insertIntoComposer: (projectId, text) =>
     set((s) => ({ composerInsert: { projectId, text, nonce: (s.composerInsert?.nonce || 0) + 1 } })),
+
+  composerFeed: null,
+  feedComposer: (projectId, text, images, send) =>
+    set((s) => ({ composerFeed: { projectId, text, images, send, at: Date.now(),
+                                  nonce: (s.composerFeed?.nonce || 0) + 1 } })),
 
   diffNotes: [],
   addDiffNote: (n) => set((s) => ({ diffNotes: [...s.diffNotes, { ...n, id: noteSeq++ }] })),
