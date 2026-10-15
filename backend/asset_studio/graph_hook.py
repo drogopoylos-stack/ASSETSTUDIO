@@ -383,7 +383,8 @@ def _deny_mass_kill(payload: dict, host: str, port: int) -> int:
     return 1                           # truthy: denied, and the decision is already on stdout
 
 
-def _web_hint(payload: dict, host: str, port: int) -> bool:
+def _web_hint(payload: dict, host: str, port: int, event: str = "PreToolUse",
+              dialect: str = "claude") -> bool:
     """Say ONCE per session that a refusal is not the end of the road.
 
     A NUDGE, NOT A BLOCK: WebFetch is instant and free for most of the web, and routing every
@@ -423,11 +424,36 @@ def _web_hint(payload: dict, host: str, port: int) -> bool:
            "Studio's stealth fetcher: curl -s -X POST %s/fetch -H 'content-type: application/json' "
            "-d '{\"url\":\"<url>\"}'. Keyless search: curl -s --get %s/search "
            "--data-urlencode 'q=<query>'. Said once per session." % (base, base))
-    print(json.dumps({
-        "suppressOutput": True,
-        "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg},
-    }))
+    _context(event, msg, dialect)
     return True
+
+
+# The other engines' names for the same tools. DeepSeek's harness names them in lower case
+# (`pwsh`, `grep`, `read`) with Claude's argument shapes (`pattern`, `file_path`, `command`), so a
+# rename is all it takes for one parser to serve all three. Codex sends `Bash` already.
+_TOOL_NAMES = {"pwsh": "PowerShell", "bash": "Bash", "grep": "Grep", "glob": "Glob", "read": "Read"}
+
+
+def _dialect(argv: list[str]) -> str:
+    """Which engine runs this hook: `--dialect codex|deepseek`, else Claude Code.
+
+    The three take different OUTPUT, not different input. Codex refuses an answer carrying
+    `suppressOutput`, which is Claude-only. DeepSeek's Claude-hook bridge ignores
+    `additionalContext` on PreToolUse and honours it on PostToolUse, so there the graph's note
+    has to ride the event after the search, while a refusal still has to come before it."""
+    if "--dialect" in argv:
+        i = argv.index("--dialect")
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return "claude"
+
+
+def _context(event: str, msg: str, dialect: str) -> None:
+    """Hand `msg` to the model as context, in the shape this engine accepts."""
+    out: dict = {"hookSpecificOutput": {"hookEventName": event, "additionalContext": msg}}
+    if dialect == "claude":
+        out["suppressOutput"] = True
+    print(json.dumps(out))
 
 
 def main() -> int:
@@ -435,21 +461,33 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except Exception:
         return 0
+    dialect = _dialect(sys.argv)
     tool = str(payload.get("tool_name") or "")
+    tool = _TOOL_NAMES.get(tool, tool)
+    event = str(payload.get("hook_event_name") or "PreToolUse")
+    # DeepSeek runs this hook twice per call. Before the call only a refusal does anything, and
+    # after it only a note does: the bridge drops PreToolUse context, and a refusal after the fact
+    # would only add an error to a tool that has already run.
+    refuse = event == "PreToolUse"
+    inform = dialect != "deepseek" or event == "PostToolUse"
     host, port, enabled = _settings_port()
     # BEFORE the graphify gate. This guard has nothing to do with the code graph — it only
     # shares the hook — and it must not go quiet because someone turned graphify off. Losing
     # every browser tab on the machine is not a feature of an optional index.
-    if tool in ("Bash", "PowerShell") and _deny_mass_kill(payload, host, port):
+    if refuse and tool in ("Bash", "PowerShell") and _deny_mass_kill(payload, host, port):
         return 0
     # Also before the graphify gate, and also only sharing the hook: a blocked web page has
     # nothing to do with the code graph.
-    if tool in ("WebFetch", "WebSearch") and _web_hint(payload, host, port):
+    if tool in ("WebFetch", "WebSearch"):
+        if inform:
+            _web_hint(payload, host, port, event, dialect)
         return 0
     if not enabled:
         return 0
     if tool == "Read":
-        return _deny_reading_the_graph(payload, host, port)
+        return _deny_reading_the_graph(payload, host, port) if refuse else 0
+    if not inform:
+        return 0
     ti = payload.get("tool_input") or {}
     if tool == "Grep":
         # Through _symbol_from_pattern, not a bare identifier test: `export function RankEmblem`
@@ -508,11 +546,7 @@ def main() -> int:
     # The "[code graph]" prefix is a CONTRACT, not decoration: the Studio's feed looks for it in
     # the hook attachment the transcript records, and turns it into a visible line. Change the
     # marker here and the feed goes quiet without any error anywhere.
-    msg = _graph_note(pattern, where, more, behind)
-    print(json.dumps({
-        "suppressOutput": True,
-        "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg},
-    }))
+    _context(event, _graph_note(pattern, where, more, behind), dialect)
     return 0
 
 

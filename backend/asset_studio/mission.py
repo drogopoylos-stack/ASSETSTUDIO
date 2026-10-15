@@ -2432,21 +2432,31 @@ def _graph_from_hook(entry: dict) -> dict:
 
     The hook injects this into the model's context and the transcript records it, but nothing
     ever showed it to the person watching — so the graph could answer a hundred times and look
-    exactly like it had never run. The marker is a contract with graph_hook.py."""
+    exactly like it had never run. The marker is a contract with graph_hook.py.
+
+    PostToolUse too: DeepSeek's hook bridge only delivers context after the tool has run, so its
+    graph notes arrive on that event (deepseek_session records them in this same shape)."""
     att = entry.get("attachment") or {}
-    if att.get("hookEvent") != "PreToolUse":
+    if att.get("hookEvent") not in ("PreToolUse", "PostToolUse"):
         return {}
     c = att.get("content")
     parts = c if isinstance(c, list) else [c]
     for part in parts:
         t = part if isinstance(part, str) else (part.get("text") if isinstance(part, dict) else "")
-        if not isinstance(t, str) or _GRAPH_MARK not in t:
-            continue
-        m = _GRAPH_RE.search(t)
-        if m:
-            return {"symbol": m.group(1), "where": " ".join(m.group(2).split())[:300]}
-        return {"symbol": "", "where": " ".join(t.split())[:300]}
+        g = graph_note(t)
+        if g:
+            return g
     return {}
+
+
+def graph_note(t) -> dict:
+    """{symbol, where} out of one graph_hook.py note, or {} when `t` is not one."""
+    if not isinstance(t, str) or _GRAPH_MARK not in t:
+        return {}
+    m = _GRAPH_RE.search(t)
+    if m:
+        return {"symbol": m.group(1), "where": " ".join(m.group(2).split())[:300]}
+    return {"symbol": "", "where": " ".join(t.split())[:300]}
 
 
 def _result_text(block: dict):

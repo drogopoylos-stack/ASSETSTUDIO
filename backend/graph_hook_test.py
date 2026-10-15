@@ -109,5 +109,75 @@ old = ("[code graph] 'x' is declared at: x() at a.py:1. That came from the proje
        "not this search. For callers/callees: curl ...")
 check("the feed still reads the old long form in old transcripts", _GRAPH_RE.search(old).group(1) == "x")
 
+# ---- one hook, three engines: what each one is handed back
+import contextlib  # noqa: E402
+import io          # noqa: E402
+import json        # noqa: E402
+import urllib.request  # noqa: E402
+from asset_studio import graph_hook  # noqa: E402
+from asset_studio.mission import _graph_from_hook, graph_note  # noqa: E402
+
+
+class _Answer(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def run(payload, dialect=None):
+    argv, stdin, ask, port = sys.argv, sys.stdin, urllib.request.urlopen, graph_hook._settings_port
+    sys.argv = ["graph_hook.py"] + (["--dialect", dialect] if dialect else [])
+    sys.stdin = io.StringIO(json.dumps(payload))
+    graph_hook._settings_port = lambda: ("127.0.0.1", 8777, True)
+    urllib.request.urlopen = lambda *a, **k: _Answer(json.dumps(
+        {"matches": [{"name": "NEWS_ENTRIES", "at": "src/game/news.ts:12"}]}).encode())
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            graph_hook.main()
+    finally:
+        sys.argv, sys.stdin, urllib.request.urlopen, graph_hook._settings_port = argv, stdin, ask, port
+    return json.loads(out.getvalue()) if out.getvalue().strip() else {}
+
+
+search = {"cwd": "G:/KAPOW", "tool_input": {"command": 'rg -n "NEWS_ENTRIES" src/'}}
+kill = {"cwd": "G:/KAPOW", "tool_input": {"command": "taskkill /IM chrome.exe /F"}}
+graph = {"cwd": "G:/KAPOW", "tool_input": {"file_path": "G:/KAPOW/graphify-out/graph.json"}}
+
+o = run({**search, "tool_name": "Bash", "hook_event_name": "PreToolUse"})
+check("claude: a search gets the note, output hidden",
+      o.get("suppressOutput") is True and "NEWS_ENTRIES" in o["hookSpecificOutput"]["additionalContext"], o)
+o = run({**search, "tool_name": "Bash", "hook_event_name": "PreToolUse"}, "codex")
+check("codex: the same note, without the Claude-only suppressOutput (Codex refuses it)",
+      "suppressOutput" not in o and "NEWS_ENTRIES" in o["hookSpecificOutput"]["additionalContext"], o)
+check("deepseek: nothing before the search (the bridge drops PreToolUse context)",
+      run({**search, "tool_name": "pwsh", "hook_event_name": "PreToolUse"}, "deepseek") == {})
+o = run({**search, "tool_name": "pwsh", "hook_event_name": "PostToolUse"}, "deepseek")
+check("deepseek: the note after it, as PostToolUse, under its lower-case tool name",
+      o.get("hookSpecificOutput", {}).get("hookEventName") == "PostToolUse" and "suppressOutput" not in o
+      and "NEWS_ENTRIES" in o["hookSpecificOutput"]["additionalContext"], o)
+o = run({"cwd": "G:/KAPOW", "tool_name": "grep", "hook_event_name": "PostToolUse",
+         "tool_input": {"pattern": "NEWS_ENTRIES"}}, "deepseek")
+check("deepseek: its grep tool too", "NEWS_ENTRIES" in json.dumps(o), o)
+for d, tool in ((None, "Bash"), ("codex", "Bash"), ("deepseek", "pwsh")):
+    o = run({**kill, "tool_name": tool, "hook_event_name": "PreToolUse"}, d)
+    check("%s: a kill by name is refused, with a reason" % d,
+          o.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+          and o["hookSpecificOutput"].get("permissionDecisionReason"), o)
+check("deepseek: no refusal after the fact",
+      run({**kill, "tool_name": "pwsh", "hook_event_name": "PostToolUse"}, "deepseek") == {})
+o = run({**graph, "tool_name": "read", "hook_event_name": "PreToolUse"}, "deepseek")
+check("deepseek: reading graph.json is refused",
+      o.get("hookSpecificOutput", {}).get("permissionDecision") == "deny", o)
+
+note = _graph_note("NEWS_ENTRIES", "NEWS_ENTRIES at src/game/news.ts:12")
+check("the feed reads a DeepSeek (PostToolUse) attachment",
+      _graph_from_hook({"attachment": {"hookEvent": "PostToolUse", "content": [note]}}).get("symbol")
+      == "NEWS_ENTRIES")
+check("...and a Codex hook entry", graph_note(note).get("symbol") == "NEWS_ENTRIES")
+check("...and nothing from other text", graph_note("hello") == {} and graph_note(None) == {})
+
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -1168,7 +1168,9 @@ def _developer_notes(project_id: str = "") -> str:
             "where a symbol is declared, what calls it and what it uses, before a broad text search:\n"
             f"  curl -s --get '{base}' --data-urlencode 'root=<ABSOLUTE WORKSPACE PATH>' --data-urlencode 'q=<symbol>'\n"
             "Do not read graphify-out/graph.json itself - it is megabytes. Text searches (strings, "
-            "config values) still belong to rg.")
+            "config values) still belong to rg.\n"
+            "A line starting with [code graph] that arrives with a search is Asset Studio's own hook "
+            "answering from this graph, not injected text: use it.")
     # BOOST's one constant note. It rides the thread's developer instructions, which Codex sends
     # once and caches, so it is paid for once per thread rather than once per message.
     try:
@@ -1231,7 +1233,40 @@ def _thread_params(cwd: str, mode: str, model: str, project_id: str = "") -> dic
             p.setdefault("config", {})["tool_output_token_limit"] = lim
     except Exception:
         pass
+    p.setdefault("config", {}).update(_hook_config())
+    if not p["config"]:
+        del p["config"]
     return p
+
+
+# The keys _hook_config adds. _open_thread drops them together when a Codex refuses them.
+_HOOK_KEYS = ("features", "bypass_hook_trust", "hooks")
+
+
+def _hook_config() -> dict:
+    """The Studio's PreToolUse hook (graph_hook.py), as Codex thread config.
+
+    The same hook Claude sessions get (cc_session._btw_settings_file): it answers a symbol search
+    from the code graph and refuses a kill-every-browser command. Codex runs everything through
+    its shell tool, so `Bash` is the one matcher it needs. `bypass_hook_trust`: a hook from config
+    otherwise waits for the user to trust it in Codex's own TUI, which the Studio never shows.
+    The command runs in PowerShell on Windows, where a quoted path is a string, not a command,
+    hence the `&`."""
+    try:
+        from . import web_tools
+        if not (settings.get("cc_graphify") or web_tools.enabled()):
+            return {}
+        gh = Path(__file__).with_name("graph_hook.py")
+        if not gh.is_file():
+            return {}
+    except Exception:
+        return {}
+    cmd = f'"{sys.executable}" "{gh}" --dialect codex'
+    if os.name == "nt":
+        cmd = "& " + cmd
+    return {"features": {"codex_hooks": True}, "bypass_hook_trust": True,
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+                {"type": "command", "command": cmd, "timeout": 8}]}]}}
 
 
 def _inputs(message: str, images: Optional[list[str]]) -> list[dict]:
@@ -1392,9 +1427,10 @@ def _open_thread(srv: AppServer, method: str, params: dict) -> dict:
     except RpcError:
         if "config" not in params:
             raise
-        # BOOST's output cap is the newest key in `config`: drop it first, so a Codex that does
-        # not take it still gets the Studio's tool server.
-        cfg = {k: v for k, v in (params.get("config") or {}).items() if k != "tool_output_token_limit"}
+        # BOOST's output cap and the hook are the newest keys in `config`: drop them first, so a
+        # Codex that does not take them still gets the Studio's tool server.
+        cfg = {k: v for k, v in (params.get("config") or {}).items()
+               if k != "tool_output_token_limit" and k not in _HOOK_KEYS}
         if cfg and cfg != params.get("config"):
             try:
                 return srv.request(method, {**params, "config": cfg}, timeout=60) or {}
@@ -1895,6 +1931,14 @@ def _on_main_note(conv: _Conv, tid: str, method: str, p: dict) -> None:
             threading.Thread(target=_run_queued, args=(conv, nxt), daemon=True).start()
     elif method == "thread/compacted":
         _log(tid, {"t": "note", "text": "The conversation was compacted."})
+    elif method == "hook/completed":
+        # The graph hook's answer reaches the model as hook context; record it so the feed shows
+        # that the graph answered (mission's "graph" row for Claude sessions, the same here).
+        from . import mission
+        for e in ((p.get("run") or {}).get("entries") or []):
+            g = mission.graph_note(e.get("text") if isinstance(e, dict) else None)
+            if g:
+                _log(tid, {"t": "graph", **g})
     elif method == "model/rerouted":
         to = p.get("toModel") or p.get("model") or ""
         if to:
@@ -3005,6 +3049,9 @@ def events_for(thread_id: str, pid: str, root: str = "", tail_bytes: int = 0) ->
             ev.append({"kind": "result", "ts": ts, "at": at, "ok": False, "text": msg})
         elif t == "note":
             ev.append({"kind": "result", "ts": ts, "at": at, "ok": True, "text": str(r.get("text") or "")})
+        elif t == "graph":
+            ev.append({"kind": "graph", "ts": ts, "at": at, "symbol": str(r.get("symbol") or ""),
+                       "text": str(r.get("where") or "")})
         elif t == "turn_end":
             status = str(r.get("status") or "")
             if status == "failed" and r.get("error"):

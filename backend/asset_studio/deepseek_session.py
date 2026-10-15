@@ -83,6 +83,16 @@ def _append(state: dict, role: str, content, usage: dict | None = None) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _attach(state: dict, event: str, text: str) -> None:
+    """A hook's context as the `attachment` row Claude Code writes (see mission._graph_from_hook)."""
+    import json
+    row = {"type": "attachment", "uuid": uuid.uuid4().hex, "sessionId": state["session"],
+           "cwd": state["cwd"], "timestamp": datetime.now(timezone.utc).isoformat(),
+           "attachment": {"type": "hook_additional_context", "hookEvent": event, "content": [text]}}
+    with state["transcript"].open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 def runtime_home(pid: str) -> Path:
     """The SDK's per-project runtime directory. One runtime per project, so this is also the
     `dshHome` whose `skills` subdirectory the runtime scans (rank 400) — which is why the shared
@@ -123,25 +133,72 @@ def _skill_dirs() -> list[str]:
     return out
 
 
-def _patch_text() -> str:
+def _yaml_str(s: str) -> str:
+    # SINGLE quotes: YAML does not process escapes inside them, so a Windows path with
+    # backslashes survives as written. Only a literal quote would need doubling.
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _hooks_file(home: Path) -> Path | None:
+    """Write the Studio's graph hook as a Claude Code hooks.json for the runtime's bridge.
+
+    The same graph_hook.py Claude sessions get (cc_session._btw_settings_file), under the same
+    switch. The runtime bundles `@deepseek-ai/dsh-hooks-claude-code`, which runs Claude-format
+    command hooks — but only part of them: on PreToolUse it honours a refusal and DROPS
+    `additionalContext`, while on PostToolUse it delivers the context. So the hook rides both
+    events (graph_hook.py --dialect deepseek refuses on the first, informs on the second). Its
+    tool names are lower case: `pwsh`, `bash`, `grep`, `glob`, `read`.
+
+    Commands run in PowerShell with the project as cwd, where a quoted path is a string, not a
+    command — hence the `&`. `timeout` is seconds; the bridge's own default is 600."""
+    try:
+        from .config import settings
+        from . import web_tools
+        if not (settings.get("cc_graphify") or web_tools.enabled()):
+            return None
+        gh = Path(__file__).with_name("graph_hook.py")
+        if not gh.is_file():
+            return None
+        import json
+        import sys
+        cmd = f'"{sys.executable}" "{gh}" --dialect deepseek'
+        if os.name == "nt":
+            cmd = "& " + cmd
+        hook = [{"type": "command", "command": cmd, "timeout": 8}]
+        cfg = {"hooks": {"PreToolUse": [{"matcher": "read|pwsh|bash", "hooks": hook}],
+                         "PostToolUse": [{"matcher": "grep|glob|pwsh|bash", "hooks": hook}]}}
+        path = home / "studio.hooks.json"
+        path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+        return path
+    except Exception:
+        return None
+
+
+def _patch_text(hooks: Path | None = None) -> str:
     """The `--patch` overlay this adapter always passes.
 
     The format is an id-keyed row list: a row names `id` and `config`, and the launcher merges it
-    over the profile's own row of that id (see @deepseek-ai/dsh-app-boot/profile). Two rows:
+    over the profile's own row of that id (see @deepseek-ai/dsh-app-boot/profile). A plugin the
+    profile does not load has to arrive wrapped in `- insert:`; a plain row with a new id is
+    refused as "not found". The rows:
 
     * `session-log-deepseek` — keep optional session-log uploads off.
     * `skill-filesystem` — add the Studio's shared skill library as a custom root, so the Skills
       button is not a Claude-only control.
+    * `studio-claude-hooks` (inserted) — the bundled Claude-hooks bridge, pointed at `hooks`
+      (see `_hooks_file`).
     """
     lines = ["- id: session-log-deepseek", "  config:", "    enabled: false"]
     dirs = _skill_dirs()
     if dirs:
         lines += ["- id: skill-filesystem", "  name: '@deepseek-ai/dsh-skill-filesystem'", "  config:",
                   "    customSkillDirs:"]
-        # SINGLE quotes: YAML does not process escapes inside them, so a Windows path with
-        # backslashes survives as written. Only a literal quote would need doubling.
         for d in dirs:
-            lines.append("      - '" + d.replace("'", "''") + "'")
+            lines.append("      - " + _yaml_str(d))
+    if hooks:
+        lines += ["- insert:", "    - id: studio-claude-hooks",
+                  "      name: '@deepseek-ai/dsh-hooks-claude-code'", "      config:",
+                  "        configPath: " + _yaml_str(str(hooks))]
     return "\n".join(lines) + "\n"
 
 
@@ -220,6 +277,16 @@ def _notification(state: dict, note) -> None:
         if blocks:
             _append(state, "user", [{"type": "tool_result", "tool_use_id": msg.get("callId"),
                     "content": blocks, "is_error": msg.get("isError", False)}])
+    elif typ == "user/message":
+        # The graph hook's note, injected after a search by the Claude-hooks bridge. Recorded as
+        # the attachment row a Claude transcript has for it, so mission shows the "graph" row.
+        src = data.get("source") or {}
+        if src.get("kind") == "plugin" and src.get("plugin") == "hooks-claude-code":
+            from . import mission
+            for b in data.get("content") or []:
+                text = b.get("text") if isinstance(b, dict) else None
+                if mission.graph_note(text):
+                    _attach(state, "PostToolUse", text)
     elif typ == "turn/end":
         reason = data.get("reason") or {}
         if reason.get("kind") not in ("completed", None):
@@ -493,7 +560,7 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
             # shared skill library is mounted as a custom root rather than placed inside it.
             runtime_home.mkdir(parents=True, exist_ok=True)
             patch = runtime_home / "studio.patch.yml"
-            patch.write_text(_patch_text(), encoding="utf-8")
+            patch.write_text(_patch_text(_hooks_file(runtime_home)), encoding="utf-8")
             sig = (state["cwd"], model, effort, hashlib.sha256(key.encode()).hexdigest())
             rec = _runtimes.get((pid, sid))
             if rec and rec["sig"] != sig:
