@@ -17,6 +17,7 @@ from ..config import JOBS_DIR, settings
 from ..events import bus
 from ..models import (
     Asset,
+    AssetType,
     Job,
     JobRequest,
     JobStatus,
@@ -63,6 +64,7 @@ class JobQueue:
             target_game=req.target_game,
             tags=req.tags,
             owner=req.owner,
+            category=req.category,
             step="queued",
         )
         self._jobs[job.id] = job
@@ -200,8 +202,18 @@ class JobQueue:
             self._finish(job, JobStatus.canceled, error="canceled")
             return
 
-        # persist assets
+        # persist assets. A 3D model goes onto its library shelf first (library.py), so the row,
+        # job.outputs and the asset_created event all carry the library path.
+        from .. import library
+        category = library.normalize_category(job.category or str(job.params.get("category") or ""))
+        models = 0
         for asset in assets or []:
+            if not asset.category and category:
+                asset.category = category
+            if asset.type == AssetType.model:
+                library.name_from_job(asset, job, models)
+                models += 1
+                asset = await loop.run_in_executor(None, library.file_asset, asset)
             db.save_asset(asset)
             job.outputs.append(asset)
             await bus.publish(

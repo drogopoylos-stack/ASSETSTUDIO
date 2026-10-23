@@ -47,7 +47,7 @@ def _connect() -> sqlite3.Connection:
 #     The tables below predate that rule and cannot take STRICT without a full rebuild,
 #     which is not worth risking on live rows.
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: Set when the file was written by a build newer than this one. Start-up continues — refusing
 #: to boot would strand the user with no way back — but writes may fail against columns this
@@ -92,8 +92,23 @@ def _migration_1_baseline(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _migration_2_category(conn: sqlite3.Connection) -> None:
+    # The library shelf (library.py) as a real column, so the Catalog's category chips are one
+    # indexed GROUP BY. ADD COLUMN is not idempotent, hence the check. Rows written before this
+    # keep NULL until saved again; the reads below treat NULL as "" (unsorted).
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(assets)").fetchall()}
+    if "category" not in cols:
+        conn.execute("ALTER TABLE assets ADD COLUMN category TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_category ON assets(category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type)")
+    # Fill it from the JSON, which already carries it for anything saved by a newer build.
+    conn.execute("UPDATE assets SET category = COALESCE(json_extract(json, '$.category'), '') "
+                 "WHERE category IS NULL")
+
+
 _MIGRATIONS = {
     1: _migration_1_baseline,
+    2: _migration_2_category,
 }
 
 
@@ -138,8 +153,9 @@ def save_asset(asset: Asset) -> Asset:
         conn = _connect()
         conn.execute(
             """INSERT OR REPLACE INTO assets
-               (id,name,stage,type,provider_id,target_game,commercial_ok,cost,created_at,tags,json)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               (id,name,stage,type,provider_id,target_game,commercial_ok,cost,created_at,tags,json,
+                category)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 asset.id,
                 asset.name,
@@ -152,6 +168,7 @@ def save_asset(asset: Asset) -> Asset:
                 asset.created_at,
                 json.dumps(asset.tags),
                 asset.model_dump_json(),
+                asset.category or "",
             ),
         )
         conn.commit()
@@ -171,9 +188,18 @@ def list_assets(
     search: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
+    category: Optional[str] = None,
+    type: Optional[str] = None,
 ) -> list[Asset]:
     q = "SELECT json FROM assets WHERE 1=1"
     args: list[Any] = []
+    if category is not None:
+        # "" is a real filter: the unsorted shelf.
+        q += " AND COALESCE(category,'')=?"
+        args.append(category)
+    if type:
+        q += " AND type=?"
+        args.append(type)
     if stage:
         q += " AND stage=?"
         args.append(stage)
@@ -191,6 +217,19 @@ def list_assets(
     with _lock:
         rows = _connect().execute(q, args).fetchall()
     return [Asset.model_validate_json(r["json"]) for r in rows]
+
+
+def category_counts(type: Optional[str] = None) -> dict[str, int]:
+    """Assets per library shelf ("" = unsorted), optionally of one type."""
+    q = "SELECT COALESCE(category,'') c, COUNT(*) n FROM assets"
+    args: list[Any] = []
+    if type:
+        q += " WHERE type=?"
+        args.append(type)
+    q += " GROUP BY COALESCE(category,'')"
+    with _lock:
+        rows = _connect().execute(q, args).fetchall()
+    return {r["c"]: r["n"] for r in rows}
 
 
 def delete_asset(asset_id: str) -> bool:

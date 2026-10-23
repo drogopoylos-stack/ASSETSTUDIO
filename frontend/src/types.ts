@@ -72,6 +72,7 @@ export interface Asset {
   job_id?: string | null;
   parent_id?: string | null;
   created_at: number;
+  category?: string;   // library shelf: "weapon", "enemy", "main-character"... "" = unsorted
 }
 
 export interface Job {

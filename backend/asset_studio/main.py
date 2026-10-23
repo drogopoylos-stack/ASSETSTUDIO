@@ -206,6 +206,13 @@ async def _warm_up() -> None:
         await step("workspace list", _ws.roots)
     except Exception:
         pass
+    # File any generated 3D model still sitting in a job folder onto its library shelf
+    # (library.py). Nothing to do after the first run; the job queue files new ones itself.
+    try:
+        from . import library as _lib
+        await step("model library", _lib.backfill)
+    except Exception:
+        pass
     # Reclaim what a previous backend left behind: a headless review browser nobody will ever
     # close again, and its profile directory. Measured here at 4 browsers holding 2.3 GB and 4
     # profile directories, from restarts across one afternoon. Early, and in any case before

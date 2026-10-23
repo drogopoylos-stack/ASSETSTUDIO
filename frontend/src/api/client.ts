@@ -198,7 +198,8 @@ export const api = {
     req<any>("/api/pipeline", { method: "POST", body: JSON.stringify(body) }),
 
   // catalog
-  assets: (q: Partial<{ stage: string; target_game: string; tag: string; search: string; limit: number }> = {}) => {
+  assets: (q: Partial<{ stage: string; target_game: string; tag: string; search: string; limit: number;
+    offset: number; category: string; type: string }> = {}) => {
     const p = new URLSearchParams();
     Object.entries(q).forEach(([k, v]) => v != null && v !== "" && p.set(k, String(v)));
     return req<Asset[]>(`/api/assets?${p.toString()}`);
@@ -209,6 +210,12 @@ export const api = {
   deleteAsset: (id: string, deleteFile = false) =>
     req<any>(`/api/assets/${id}?delete_file=${deleteFile}`, { method: "DELETE" }),
   catalogSummary: () => req<any>("/api/catalog/summary"),
+  // The model library (backend library.py): shelves with counts, and its folder in Explorer.
+  catalogCategories: (type = "") =>
+    req<{ categories: { id: string; label: string; count: number }[]; total: number; folder: string }>(
+      `/api/catalog/categories${type ? `?type=${encodeURIComponent(type)}` : ""}`),
+  revealLibrary: (body: { asset_id?: string; category?: string } = {}) =>
+    req<{ ok: boolean; path: string }>("/api/library/reveal", { method: "POST", body: JSON.stringify(body) }),
 
   // settings + keys
   settings: () => req<any>("/api/settings"),

@@ -526,6 +526,11 @@ def _studio_note(project_id: str = "") -> str:
         f'A textured GLB from ONE reference image, free and local: stage "gen3d", provider_id '
         f'"comfyui-3d", params {{"preset":"pixal3d"}} (or "trellis2"; optional "faces", '
         f'"texture_size"), the image in "inputs"; it starts ComfyUI itself and takes minutes. '
+        # The model library (library.py) shelves every generated model by these two fields.
+        f'For any 3D model job also send "label" (a short name, e.g. "Viking rune axe") and '
+        f'"category" (main-character, character, enemy, creature, weapon, armor, item, prop, '
+        f'environment, building, vehicle or other): the GLB is filed in data/library/models/'
+        f'<category>/ and shows in the Catalog. '
         # OPT-IN, and firmly. The old wording ended "...or game assets", which in a game project
         # matches almost every task: "make the mountains look better" reads as an asset request,
         # and generation got reached for roughly nine times in ten when the user wanted code. It

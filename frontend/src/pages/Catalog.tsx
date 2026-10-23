@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Box,
@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   ShieldAlert,
+  ChevronDown,
   Tag,
   Trash2,
   X,
@@ -37,8 +38,30 @@ interface Summary {
   non_commercial_assets: number;
 }
 
+// A library shelf (backend library.py) and how many assets sit on it.
+interface Shelf {
+  id: string;
+  label: string;
+  count: number;
+}
+
+// The Catalog opens on the newest few; "Load more" pages back through the rest.
+const PAGE = 24;
+
+const TYPES: { id: string; label: string }[] = [
+  { id: "model", label: "3D models" },
+  { id: "image", label: "Images" },
+  { id: "texture", label: "Textures" },
+  { id: "video", label: "Video" },
+  { id: "animation", label: "Animations" },
+  { id: "render", label: "Renders" },
+  { id: "atlas", label: "Atlases" },
+  { id: "other", label: "Other" },
+];
+
 interface EditState {
   name: string;
+  category: string;
   tags: string;
   target_game: string;
   license: string;
@@ -60,6 +83,7 @@ function choiceToCommercial(c: CommercialChoice): boolean | null {
 function editFrom(a: Asset): EditState {
   return {
     name: a.name,
+    category: a.category || "",
     tags: (a.tags || []).join(", "),
     target_game: a.target_game || "",
     license: a.license || "",
@@ -73,6 +97,8 @@ export default function Catalog() {
 
   // filters
   const [stage, setStage] = useState<string>("all");
+  const [category, setCategory] = useState<string>("all"); // "all" | a shelf id | "unsorted"
+  const [type, setType] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [targetGame, setTargetGame] = useState("");
@@ -82,7 +108,11 @@ export default function Catalog() {
   // data
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [shelfTotal, setShelfTotal] = useState(0);
 
   // selection / drawer
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -109,17 +139,36 @@ export default function Catalog() {
     }
   }
 
-  async function loadAssets() {
-    setLoading(true);
+  async function loadShelves() {
     try {
-      const list = await api.assets({
-        stage: stage === "all" ? "" : stage,
-        target_game: targetGame.trim(),
-        tag: tag.trim(),
-        search,
-        limit: 300,
-      });
+      const r = await api.catalogCategories(type === "all" ? "" : type);
+      setShelves(r.categories);
+      setShelfTotal(r.total);
+    } catch (e: any) {
+      // Non-fatal: the grid still works without the shelf chips.
+    }
+  }
+
+  function query() {
+    return {
+      stage: stage === "all" ? "" : stage,
+      category: category === "all" ? "" : category,
+      type: type === "all" ? "" : type,
+      target_game: targetGame.trim(),
+      tag: tag.trim(),
+      search,
+    };
+  }
+
+  // `keep` reloads as many as are on screen, so a new asset arriving does not drop the pages
+  // already loaded with "Load more".
+  async function loadAssets(keep = PAGE) {
+    setLoading(true);
+    const limit = Math.max(PAGE, keep);
+    try {
+      const list = await api.assets({ ...query(), limit, offset: 0 });
       setAssets(list);
+      setHasMore(list.length === limit);
     } catch (e: any) {
       useStore.getState().toast(`Failed to load catalog: ${e.message}`, "danger");
     } finally {
@@ -127,16 +176,56 @@ export default function Catalog() {
     }
   }
 
-  // Reload when filters change or a new asset streams in.
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const list = await api.assets({ ...query(), limit: PAGE, offset: assets.length });
+      setAssets((prev) => [...prev, ...list.filter((a) => !prev.some((p) => p.id === a.id))]);
+      setHasMore(list.length === PAGE);
+    } catch (e: any) {
+      toast(`Failed to load more: ${e.message}`, "danger");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  // A filter change starts again from the newest page.
   useEffect(() => {
     loadAssets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, search, targetGame, tag, recentLen]);
+  }, [stage, category, type, search, targetGame, tag]);
+
+  // A new asset streamed in: refresh what is on screen, keeping its length.
+  const shown = useRef(0);
+  shown.current = assets.length;
+  useEffect(() => {
+    if (recentLen) loadAssets(shown.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentLen]);
 
   useEffect(() => {
     loadSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentLen]);
+
+  useEffect(() => {
+    loadShelves();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, recentLen]);
+
+  const shelfLabel = useMemo(() => {
+    const m: Record<string, string> = {};
+    shelves.forEach((s) => (m[s.id] = s.label));
+    return (id?: string) => (id ? m[id] || id : "");
+  }, [shelves]);
+
+  async function revealFolder(body: { asset_id?: string; category?: string }) {
+    try {
+      await api.revealLibrary(body);
+    } catch (e: any) {
+      toast(`Could not open the folder: ${e.message}`, "danger");
+    }
+  }
 
   // Client-side commercial-safe filter (hides commercial_ok === false).
   const visible = useMemo(
@@ -171,6 +260,7 @@ export default function Catalog() {
     try {
       const patch = {
         name: edit.name.trim() || selected.name,
+        category: edit.category,
         tags: edit.tags
           .split(",")
           .map((t) => t.trim())
@@ -183,6 +273,7 @@ export default function Catalog() {
       setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       toast("Asset saved", "ok");
       loadSummary();
+      loadShelves();
     } catch (e: any) {
       toast(`Save failed: ${e.message}`, "danger");
     } finally {
@@ -199,6 +290,7 @@ export default function Catalog() {
       if (selectedId === a.id) setSelectedId(null);
       toast("Asset deleted", "ok");
       loadSummary();
+      loadShelves();
     } catch (e: any) {
       toast(`Delete failed: ${e.message}`, "danger");
     }
@@ -227,6 +319,7 @@ export default function Catalog() {
     const base = editFrom(selected);
     return (
       base.name !== edit.name ||
+      base.category !== edit.category ||
       base.tags !== edit.tags ||
       base.target_game !== edit.target_game ||
       base.license !== edit.license ||
@@ -236,6 +329,8 @@ export default function Catalog() {
 
   const activeFilters =
     (stage !== "all" ? 1 : 0) +
+    (category !== "all" ? 1 : 0) +
+    (type !== "all" ? 1 : 0) +
     (search ? 1 : 0) +
     (targetGame.trim() ? 1 : 0) +
     (tag.trim() ? 1 : 0) +
@@ -243,6 +338,8 @@ export default function Catalog() {
 
   function clearFilters() {
     setStage("all");
+    setCategory("all");
+    setType("all");
     setSearchInput("");
     setSearch("");
     setTargetGame("");
@@ -290,9 +387,17 @@ export default function Catalog() {
           </div>
           <button
             className="btn-ghost"
+            onClick={() => revealFolder({ category: category === "all" ? "" : category })}
+            title="Open the model library folder (data/library/models) in Explorer"
+          >
+            <FolderOpen size={15} /> Open folder
+          </button>
+          <button
+            className="btn-ghost"
             onClick={() => {
-              loadAssets();
+              loadAssets(assets.length);
               loadSummary();
+              loadShelves();
             }}
             title="Refresh"
           >
@@ -322,10 +427,36 @@ export default function Catalog() {
         </div>
       )}
 
+      {/* Library shelves */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          className={cls("chip cursor-pointer", category === "all" ? "bg-brand/20 text-brand border-brand" : "hover:border-brand")}
+          onClick={() => setCategory("all")}
+        >
+          All <span className="text-muted tabular-nums">{shelfTotal}</span>
+        </button>
+        {shelves
+          .filter((s) => s.count > 0 || s.id !== "unsorted")
+          .map((s) => (
+            <button
+              key={s.id}
+              className={cls(
+                "chip cursor-pointer",
+                category === s.id ? "bg-brand/20 text-brand border-brand" : "hover:border-brand",
+                s.count === 0 && category !== s.id && "opacity-50"
+              )}
+              onClick={() => setCategory(category === s.id ? "all" : s.id)}
+              title={`${s.label}: ${s.count}`}
+            >
+              {s.label} <span className="text-muted tabular-nums">{s.count}</span>
+            </button>
+          ))}
+      </div>
+
       {/* Filters */}
       <Section
         title="Filters"
-        desc="Narrow the library by stage, search, game, or tag."
+        desc="Narrow the library by type, stage, search, game, or tag."
         right={
           activeFilters > 0 ? (
             <button className="btn-ghost text-xs" onClick={clearFilters}>
@@ -334,7 +465,19 @@ export default function Catalog() {
           ) : undefined
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div>
+            <label className="label">Type</label>
+            <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="all">All types</option>
+              {TYPES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="label">Stage</label>
             <select className="input" value={stage} onChange={(e) => setStage(e.target.value)}>
@@ -411,7 +554,7 @@ export default function Catalog() {
                 <Spinner size={12} /> loading…
               </span>
             ) : (
-              `${visible.length} of ${assets.length} shown`
+              `${visible.length} shown, newest first`
             )}
           </span>
         </div>
@@ -440,8 +583,17 @@ export default function Catalog() {
               selected={a.id === selectedId}
               onClick={openAsset}
               onDelete={deleteAsset}
+              shelf={shelfLabel(a.category)}
             />
           ))}
+        </div>
+      )}
+
+      {hasMore && visible.length > 0 && (
+        <div className="flex justify-center">
+          <button className="btn" disabled={loadingMore} onClick={loadMore}>
+            {loadingMore ? <Spinner size={15} /> : <ChevronDown size={15} />} Load more
+          </button>
         </div>
       )}
 
@@ -547,6 +699,28 @@ export default function Catalog() {
                   />
                 </div>
                 <div>
+                  <label className="label">Category</label>
+                  <select
+                    className="input"
+                    value={edit.category}
+                    onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+                  >
+                    <option value="">Unsorted</option>
+                    {shelves
+                      .filter((s) => s.id !== "unsorted")
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                  </select>
+                  {selected.type === "model" && (
+                    <p className="text-[11px] text-muted mt-1">
+                      Saving moves the model file to this category's folder.
+                    </p>
+                  )}
+                </div>
+                <div>
                   <label className="label">Tags (comma-separated)</label>
                   <input
                     className="input"
@@ -604,6 +778,13 @@ export default function Catalog() {
                 <a className="btn" href={assetFileUrl(selected.id)} download title="Download original">
                   <Download size={15} /> Download
                 </a>
+                <button
+                  className="btn !px-2.5"
+                  onClick={() => revealFolder({ asset_id: selected.id })}
+                  title="Show the file in Explorer"
+                >
+                  <FolderOpen size={15} />
+                </button>
               </div>
               <div className="flex gap-2">
                 {selected.type === "model" && (
@@ -658,11 +839,13 @@ function AssetGridCard({
   selected,
   onClick,
   onDelete,
+  shelf,
 }: {
   asset: Asset;
   selected: boolean;
   onClick: (a: Asset) => void;
   onDelete: (a: Asset) => void;
+  shelf?: string;
 }) {
   const isModel = asset.type === "model";
   const polys = asset.meta?.polys ?? asset.meta?.vertices;
@@ -721,8 +904,10 @@ function AssetGridCard({
           {polys ? <span>{Number(polys).toLocaleString()} tris</span> : null}
           <span className="ml-auto">{fmtCost(asset.cost)}</span>
         </div>
-        {asset.target_game && (
-          <div className="mt-1 text-[11px] text-muted truncate">{asset.target_game}</div>
+        {(shelf || asset.target_game) && (
+          <div className="mt-1 text-[11px] text-muted truncate">
+            {[shelf, asset.target_game].filter(Boolean).join(" · ")}
+          </div>
         )}
       </div>
 

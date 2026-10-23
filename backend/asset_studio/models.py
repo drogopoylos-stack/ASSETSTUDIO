@@ -107,6 +107,8 @@ class Asset(BaseModel):
     job_id: Optional[str] = None
     parent_id: Optional[str] = None        # lineage (e.g. mesh from this image)
     created_at: float = Field(default_factory=time.time)
+    # The library shelf: "weapon", "enemy", "main-character"... ("" = unsorted). See library.py.
+    category: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +122,9 @@ class JobRequest(BaseModel):
     label: str = ""
     target_game: str = ""
     tags: list[str] = Field(default_factory=list)
+    # The library shelf for what the job makes: "weapon", "enemy", "main-character"... The label
+    # becomes the asset's name. See library.py.
+    category: str = ""
     # The conversation that asked for this job, so it shows as that agent's own delegated work
     # in the Subagents panel (see delegates.py). The agent notes tell the agent to send it; left
     # out, the backend attributes the job only when exactly one conversation is mid-turn.
@@ -140,6 +145,7 @@ class Job(BaseModel):
     target_game: str = ""
     tags: list[str] = Field(default_factory=list)
     owner: str = ""                 # the conversation this job was delegated by, if any
+    category: str = ""              # the library shelf for its outputs (JobRequest.category)
     outputs: list[Asset] = Field(default_factory=list)
     cost: float = 0.0
     error: str = ""
