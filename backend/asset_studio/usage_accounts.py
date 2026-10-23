@@ -251,6 +251,10 @@ def _deepseek() -> dict:
     key = _deepseek_key()
     if not key:
         return _missing("deepseek", "Add a DeepSeek API key to see the balance.", connect=True)
+    from . import deepseek_session
+    if deepseek_session.route()["via"] == "river":
+        # A RIVER.AI key is a 401 at DeepSeek's /user/balance, which read as "the key is broken".
+        return _missing("deepseek", "The DeepSeek engine runs on a RIVER.AI key. See the balance on river.ai.")
     r = httpx.get("https://api.deepseek.com/user/balance",
                   headers={**_UA, "Authorization": f"Bearer {key}"}, timeout=12)
     if r.status_code != 200:

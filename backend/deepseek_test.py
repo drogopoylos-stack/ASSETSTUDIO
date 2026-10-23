@@ -16,8 +16,13 @@ os.environ["ASSET_STUDIO_DATA"] = _temp.name
 os.environ["DEEPSEEK_API_KEY"] = "local-fixture-only"
 os.environ["DSH_TELEMETRY_DISABLED"] = "1"
 
-from asset_studio import deepseek_session as dsh, mission, cc_session
+from asset_studio import deepseek_session as dsh, mission, cc_session, keychain
 from asset_studio.routers.mission import sending, cancel_send
+
+# The fixture key only. A real key in the OS keychain won over DEEPSEEK_API_KEY, and a RIVER.AI key
+# there now routes the engine to api.river.ai — a test must never reach a vendor.
+_stored: dict[str, str] = {}
+keychain.get_key = lambda name: _stored.get(name)
 
 requests = []
 # Every POST, parseable or not: (path, content-type, bytes, note). `requests` keeps its old
@@ -502,6 +507,45 @@ class StallWatchTest(unittest.TestCase):
         dsh._notification(state, _Note("session.event", {
             "sessionId": "someone-else", "event": {"type": "tool/call", "data": {"name": "Read"}}}))
         self.assertEqual(state["seen"], 0, "another conversation's event is not this turn's output")
+
+
+class RiverRoute(unittest.TestCase):
+    """A RIVER.AI key sends the engine to api.river.ai with RIVER's model id and an image row."""
+
+    def tearDown(self):
+        _stored.clear()
+
+    def test_a_deepseek_key_keeps_the_default_endpoint(self):
+        _stored["deepseek"] = "sk-abc"
+        rt = dsh.route()
+        self.assertEqual((rt["via"], rt["key"], rt["base_url"]), ("deepseek", "sk-abc", None))
+        self.assertEqual(dsh.wire_model("deepseek-v4-pro", "deepseek"), "deepseek-v4-pro")
+        self.assertNotIn("llm-deepseek", dsh._patch_text())
+
+    def test_an_rv_key_in_the_deepseek_slot_routes_to_river(self):
+        _stored["deepseek"] = "rv_abc"
+        rt = dsh.route()
+        self.assertEqual((rt["via"], rt["key"], rt["base_url"]), ("river", "rv_abc", dsh.RIVER_BASE_URL))
+
+    def test_the_river_slot_wins_and_is_a_key_on_its_own(self):
+        _stored.update({"deepseek": "sk-abc", "river": "rk-xyz"})
+        self.assertEqual(dsh.route()["key"], "rk-xyz")
+        del _stored["deepseek"]
+        self.assertEqual(dsh.api_key(), "rk-xyz", "the River slot alone is enough to send")
+
+    def test_river_rows_map_to_its_model_and_pro_is_refused(self):
+        for row in ("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"):
+            self.assertEqual(dsh.wire_model(row, "river"), dsh.RIVER_MODEL)
+        self.assertEqual(dsh.wire_model("deepseek-v4-pro", "river"), "")
+        _stored["river"] = "rv_abc"
+        r = dsh.send("d--river-pro", "hi", path=_temp.name, model="deepseek-v4-pro", new_session=True)
+        self.assertFalse(r["ok"]); self.assertIn("RIVER.AI does not serve", r["error"])
+
+    def test_the_river_patch_declares_its_model_with_images(self):
+        t = dsh._patch_text(river=True)
+        self.assertIn("- id: llm-deepseek", t)
+        self.assertIn(dsh.RIVER_MODEL, t)
+        self.assertIn("inputModalities: [text, image]", t)
 
 
 if __name__ == "__main__":

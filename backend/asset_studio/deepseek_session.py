@@ -59,7 +59,42 @@ def installed() -> str | None:
 
 def api_key() -> str:
     from . import keychain
-    return keychain.get_key("deepseek") or keychain.get_key("chat:deepseek") or os.environ.get("DEEPSEEK_API_KEY", "")
+    return (keychain.get_key("deepseek") or keychain.get_key("chat:deepseek") or keychain.get_key("river")
+            or os.environ.get("DEEPSEEK_API_KEY", ""))
+
+
+# RIVER.AI serves DeepSeek V4.1 Flash behind an OpenAI-compatible endpoint, and the runtime's
+# `llm-deepseek` adapter takes any OpenAI-compatible gateway through `baseURL` ($DEEPSEEK_BASE_URL).
+# Read off the live endpoint on 2026-10-24 with an `rv_` key:
+#   * `GET /v1/models` lists `deepseek-ai/DeepSeek-V4.1-Flash`; the short ids (`deepseek-flash`)
+#     are 404 `model_not_found`, so the row id has to be rewritten to RIVER's id on the wire;
+#   * tool calls, streamed `reasoning_content`, `reasoning_effort` high/max, `thinking: disabled`
+#     and an inline image all work; there is no DeepSeek V4 Pro;
+#   * the same key against api.deepseek.com is a 401, which is how an `rv_` key pasted into the
+#     DeepSeek slot looked: "Authentication Fails".
+# An unlisted model id is text-only in the adapter, so the patch declares RIVER's id with images.
+RIVER_BASE_URL = "https://api.river.ai/v1"
+RIVER_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
+
+
+def route() -> dict:
+    """Where the DeepSeek engine sends its requests: {"via", "key", "base_url"}.
+
+    RIVER.AI when its own key slot is filled, or when the DeepSeek slot holds a RIVER key (`rv_`);
+    otherwise DeepSeek's own API (base_url None = the adapter's default)."""
+    from . import keychain
+    river = (keychain.get_key("river") or "").strip()
+    key = river or (api_key() or "").strip()
+    if river or key.startswith("rv_"):
+        return {"via": "river", "key": key, "base_url": os.environ.get("RIVER_BASE_URL") or RIVER_BASE_URL}
+    return {"via": "deepseek", "key": key, "base_url": None}
+
+
+def wire_model(model: str, via: str) -> str:
+    """The id the endpoint knows for a picker row. RIVER has one DeepSeek model; '' = not served."""
+    if via != "river":
+        return model
+    return "" if model == "deepseek-v4-pro" else RIVER_MODEL
 
 
 def _close(harness) -> None:
@@ -174,7 +209,7 @@ def _hooks_file(home: Path) -> Path | None:
         return None
 
 
-def _patch_text(hooks: Path | None = None) -> str:
+def _patch_text(hooks: Path | None = None, river: bool = False) -> str:
     """The `--patch` overlay this adapter always passes.
 
     The format is an id-keyed row list: a row names `id` and `config`, and the launcher merges it
@@ -187,8 +222,14 @@ def _patch_text(hooks: Path | None = None) -> str:
       button is not a Claude-only control.
     * `studio-claude-hooks` (inserted) — the bundled Claude-hooks bridge, pointed at `hooks`
       (see `_hooks_file`).
+    * `llm-deepseek` (RIVER.AI only) — declare RIVER's model id as image-capable; unlisted ids
+      pass through as text-only and an attached picture would be dropped.
     """
     lines = ["- id: session-log-deepseek", "  config:", "    enabled: false"]
+    if river:
+        lines += ["- id: llm-deepseek", "  config:", "    models:",
+                  "      - id: " + _yaml_str(RIVER_MODEL), "        name: 'DeepSeek-V4.1-Flash (RIVER.AI)'",
+                  "        inputModalities: [text, image]"]
     dirs = _skill_dirs()
     if dirs:
         lines += ["- id: skill-filesystem", "  name: '@deepseek-ai/dsh-skill-filesystem'", "  config:",
@@ -363,7 +404,7 @@ def _bank_turn(state: dict) -> None:
     if not pid or not (tin or tout or tcache):
         return
     feed = PREFIX + pid
-    model = str(state.get("model") or "")
+    model = str(state.get("wire_model") or state.get("model") or "")
     cost, basis = pricing.cost_with_basis(model, {"input": tin, "output": tout,
                                                   "cache_read": tcache, "cache_write": 0})
     try:
@@ -495,10 +536,16 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
         return {"ok": False, "error": "The DeepSeek SDK connection supports Full access. Select it in the agent settings before sending."}
     if not installed():
         return {"ok": False, "agent": AGENT, "needs_install": True, "error": "DeepSeek Harness SDK is not installed"}
-    key = api_key()
+    rt = route()
+    key = rt["key"]
     if not key:
         return {"ok": False, "agent": AGENT, "needs_install": True,
                 "error": "Add the DeepSeek API key in Settings > API Keys > DeepSeek Harness"}
+    wire_id = wire_model(model, rt["via"])
+    if not wire_id:
+        return {"ok": False, "error": (
+            f"RIVER.AI does not serve {MODEL_LABELS.get(model, model)}. Pick DeepSeek V4.1 Flash "
+            "(the model button beside the prompt).")}
     cwd = path if path and Path(path).is_dir() else cc_session._resolve(pid)[0]
     if not cwd or not Path(cwd).is_dir():
         return {"ok": False, "error": "could not resolve this project's folder on disk"}
@@ -541,7 +588,11 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
                  "sent": time.time(), "seen": 0, "last_note": 0.0,
                  # The ledgers are keyed by project, and the token counters are per TURN — one turn
                  # is many assistant messages, and the bill is per request.
-                 "pid": pid, "turn_in": 0, "turn_out": 0}
+                 "pid": pid, "turn_in": 0, "turn_out": 0,
+                 # The id the endpoint bills. RIVER publishes no price; its id starts `deepseek-`, so
+                 # pricing reads it at DeepSeek's Flash rate — an estimate that keeps the spend cap
+                 # working. A `pricing_overrides` row for the id replaces it.
+                 "wire_model": wire_id}
         _live[pid] = state
         mission.remember_active_session(feed, sid)
         _append(state, "user", shown)
@@ -560,16 +611,17 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
             # shared skill library is mounted as a custom root rather than placed inside it.
             runtime_home.mkdir(parents=True, exist_ok=True)
             patch = runtime_home / "studio.patch.yml"
-            patch.write_text(_patch_text(_hooks_file(runtime_home)), encoding="utf-8")
-            sig = (state["cwd"], model, effort, hashlib.sha256(key.encode()).hexdigest())
+            river = rt["via"] == "river"
+            patch.write_text(_patch_text(_hooks_file(runtime_home), river=river), encoding="utf-8")
+            sig = (state["cwd"], model, effort, hashlib.sha256(key.encode()).hexdigest(), rt["base_url"])
             rec = _runtimes.get((pid, sid))
             if rec and rec["sig"] != sig:
                 _close(rec["harness"])
                 _runtimes.pop((pid, sid), None)
                 rec = None
             if not rec:
-                h = DeepSeekHarness(cwd=state["cwd"], dsh_home=str(runtime_home), model=model,
-                        api_key=key, reasoning_effort=None if effort == "default" else effort,
+                h = DeepSeekHarness(cwd=state["cwd"], dsh_home=str(runtime_home), model=wire_id,
+                        api_key=key, base_url=rt["base_url"], reasoning_effort=None if effort == "default" else effort,
                         patches=(str(patch),), env={"DSH_PERMISSION_MODE": "danger-full-access", "DSH_TELEMETRY_DISABLED": "1"})
                 # SDK 0.1.5 cannot attach a previously created id after process exit.
                 # Keep a runtime alive between turns; after restart/model switch,

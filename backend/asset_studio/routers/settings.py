@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api", tags=["settings"])
 # key_name -> label/help shown in the UI
 KNOWN_KEYS = {
     "deepseek": "DeepSeek Harness (native dsh; V4.1 Flash)",
+    "river": "RIVER.AI (DeepSeek V4.1 Flash for the DeepSeek Harness; api.river.ai)",
     "fal": "fal (MiniMax H3 Max video; paid API)",
     "tripo": "Tripo 3D",
     "meshy": "Meshy",
