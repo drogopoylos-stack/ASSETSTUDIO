@@ -4,7 +4,8 @@ Drives TripoSplat (3D Gaussian splats), Hunyuan3D 2.1, TRELLIS.2, TripoSG, SF3D 
 friends through your ComfyUI. The studio doesn't bundle the weights — install the
 model's ComfyUI custom node + weights once, export its workflow (Save → API Format),
 save it under data/comfy_workflows/<preset>.json, and run it here. The input image,
-%seed% and %prompt% are injected wherever you place those tokens.
+%seed% and %prompt% are injected wherever you place those tokens, and %faces% and
+%texture_size% where a workflow lets them be chosen (the shipped Pixal3D / TRELLIS.2 one does).
 """
 from __future__ import annotations
 
@@ -41,6 +42,10 @@ class ComfyWorkflow3DProvider(ComfyUnloadMixin, Provider):
                       description="Each needs its ComfyUI node + a saved workflow. TripoSplat & TripoSR are the most 8GB-friendly."),
         ProviderParam(name="prompt", label="Prompt (if your workflow uses one)", type="text", default="", group="Prompt"),
         ProviderParam(name="seed", label="Seed (-1 = random)", type="seed", default=-1, group="Sampler"),
+        ProviderParam(name="faces", label="Target faces", type="int", default=700000, min=5000, max=2000000,
+                      group="Mesh", description="Pixal3D / TRELLIS.2: faces after decimation. Fewer = lighter game asset."),
+        ProviderParam(name="texture_size", label="Texture size", type="select", options=["1024", "2048", "4096"],
+                      default="4096", group="Mesh", description="Pixal3D / TRELLIS.2: baked texture resolution."),
         ProviderParam(name="workflow", label="Workflow JSON (custom / preset override)", type="text",
                       default="", group="Advanced",
                       description="Paste a ComfyUI workflow exported as API Format. Overrides the preset."),
@@ -76,7 +81,9 @@ class ComfyWorkflow3DProvider(ComfyUnloadMixin, Provider):
         seed = int(ctx.param("seed", -1))
         if seed < 0:
             seed = random.randint(0, 2**31 - 1)
-        mapping = {"%seed%": seed, "%prompt%": str(ctx.param("prompt", ""))}
+        mapping = {"%seed%": seed, "%prompt%": str(ctx.param("prompt", "")),
+                   "%faces%": int(ctx.param("faces", 700000)),
+                   "%texture_size%": int(ctx.param("texture_size", "4096"))}
         ctx.progress(0.05, "preparing workflow")
         with httpx.Client(timeout=180.0) as http:
             img = ctx.first_image()
@@ -88,7 +95,7 @@ class ComfyWorkflow3DProvider(ComfyUnloadMixin, Provider):
             g = inject(graph, mapping)
             ctx.progress(0.15, "submitting to ComfyUI")
             pid = submit(http, base, g, new_client_id())
-            entry = wait(http, base, pid, ctx, timeout=1200)  # 3D can take a while
+            entry = wait(http, base, pid, ctx, timeout=2400)  # 3D can take a while (Pixal3D at 4K: minutes)
             imgs, files = collect_outputs(entry)
             if files:
                 ref = files[-1]

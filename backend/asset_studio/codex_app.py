@@ -1171,6 +1171,13 @@ def _developer_notes(project_id: str = "") -> str:
             "config values) still belong to rg.\n"
             "A line starting with [code graph] that arrives with a search is Asset Studio's own hook "
             "answering from this graph, not injected text: use it.")
+    # The 2D/3D generators, under the same two switches as a Claude session's note.
+    try:
+        from . import cc_session, plugins
+        if settings.get("studio_tools_prompt", True) and plugins.generation_available():
+            parts.append(cc_session._studio_note(project_id))
+    except Exception:
+        pass
     # BOOST's one constant note. It rides the thread's developer instructions, which Codex sends
     # once and caches, so it is paid for once per thread rather than once per message.
     try:

@@ -25,6 +25,9 @@ from ..config import DATA_DIR, settings
 # Where users drop exported ComfyUI workflows (API format), named "<preset-id>.json".
 WORKFLOWS_DIR = (DATA_DIR / "comfy_workflows")
 WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+# Workflows the studio ships, for models ComfyUI runs natively. A file of the same name in
+# WORKFLOWS_DIR wins, so a user's own export replaces a shipped one.
+BUNDLED_WORKFLOWS_DIR = Path(__file__).resolve().parent / "comfy_workflows"
 
 IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 MESH_EXTS = (".glb", ".gltf", ".obj", ".ply", ".stl", ".fbx")
@@ -54,10 +57,25 @@ CATALOG: list[dict] = [
      "node": "ComfyUI-Hunyuan3DWrapper / ComfyUI-3D-Pack",
      "homepage": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1",
      "notes": "Highest-fidelity PBR textures; heavier. A '2mini' variant fits smaller GPUs."},
+    # Pixal3D and TRELLIS.2 share one shipped workflow (ComfyUI's template "Pixal3D & TRELLIS.2:
+    # Image to Model"); only the model switch differs. Weights, ~15 GB, under ComfyUI/models/:
+    #   diffusion_models/pixal3d_int8_convrot.safetensors     (Comfy-Org/Pixal3D)
+    #   diffusion_models/trellis_2_int8_convrot.safetensors   (Comfy-Org/TRELLIS.2)
+    #   vae/trellis_2_shape_vae_bf16.safetensors, vae/trellis_2_texture_vae_bf16.safetensors,
+    #   clip_vision/dino_v3_L_naf_fp32.safetensors            (Comfy-Org/Pixal3D)
+    #   geometry_estimation/moge_2_vitl_normal_fp16.safetensors (Comfy-Org/MoGe)
+    #   background_removal/birefnet.safetensors                (Comfy-Org/BiRefNet)
+    # from https://huggingface.co/<repo>/resolve/main/<dir>/<file>.
+    {"id": "pixal3d", "name": "Pixal3D — image-aligned PBR mesh", "kind": "3d",
+     "license": "see Comfy-Org/Pixal3D", "vram": "~12–16 GB", "node": "native in ComfyUI v0.38+",
+     "homepage": "https://huggingface.co/Comfy-Org/Pixal3D",
+     "notes": "Single image → textured GLB (PBR, normal + AO baked). Follows the picture's camera, "
+              "so the mesh matches the reference closely. Shipped workflow; needs the ~15 GB weights."},
     {"id": "trellis2", "name": "TRELLIS.2 — production PBR mesh", "kind": "3d",
-     "license": "MIT", "vram": "~10–16 GB", "node": "ComfyUI-TRELLIS2",
-     "homepage": "https://github.com/microsoft/TRELLIS",
-     "notes": "Production-grade PBR GLB. The studio also has a native TRELLIS provider (hosted/local)."},
+     "license": "MIT", "vram": "~12–16 GB", "node": "native in ComfyUI v0.38+",
+     "homepage": "https://github.com/microsoft/TRELLIS.2",
+     "notes": "Single image → textured GLB (PBR, normal + AO baked). Same shipped workflow as Pixal3D "
+              "with the TRELLIS.2 model. The studio also has a native TRELLIS provider (hosted/local)."},
     {"id": "sf3d", "name": "Stable Fast 3D — fastest", "kind": "3d",
      "license": "Stability Community", "vram": "~6–7 GB", "node": "ComfyUI-3D-Pack",
      "homepage": "https://github.com/Stability-AI/stable-fast-3d",
@@ -120,8 +138,10 @@ def comfy_available(base: Optional[str] = None) -> tuple[bool, str]:
 
 def load_preset_workflow(preset_id: str) -> Optional[dict]:
     """Load a workflow the user exported from ComfyUI (Save → API Format) and saved
-    as <preset_id>.json under DATA_DIR/comfy_workflows/."""
+    as <preset_id>.json under DATA_DIR/comfy_workflows/, else the one the studio ships."""
     f = WORKFLOWS_DIR / f"{preset_id}.json"
+    if not f.exists():
+        f = BUNDLED_WORKFLOWS_DIR / f"{preset_id}.json"
     if not f.exists():
         return None
     try:

@@ -522,6 +522,10 @@ def _studio_note(project_id: str = "") -> str:
         f'steps called out to another model; '
         f"GET {base}/api/jobs/<id> until \"status\":\"succeeded\" — the result file is outputs[0].path. "
         f"Prefer providers with available=true (e.g. the ComfyUI presets for local 2D/3D). "
+        # comfyui-3d reads available=false while ComfyUI is stopped, but a job starts ComfyUI itself.
+        f'A textured GLB from ONE reference image, free and local: stage "gen3d", provider_id '
+        f'"comfyui-3d", params {{"preset":"pixal3d"}} (or "trellis2"; optional "faces", '
+        f'"texture_size"), the image in "inputs"; it starts ComfyUI itself and takes minutes. '
         # OPT-IN, and firmly. The old wording ended "...or game assets", which in a game project
         # matches almost every task: "make the mountains look better" reads as an asset request,
         # and generation got reached for roughly nine times in ten when the user wanted code. It
