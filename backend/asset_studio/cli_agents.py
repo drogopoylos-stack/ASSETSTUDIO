@@ -74,6 +74,15 @@ _NOT_A_RUN = re.compile(r"(?:^|\s)(?:--help|-h|--version|-V)(?:\s|$)")
 
 _MODEL = re.compile(r"(?:^|\s)(?:-m|--model)[=\s]+([A-Za-z0-9._:/-]+)")
 
+# A Bash call with `run_in_background` is ANSWERED AT ONCE: its tool_result is this receipt, not
+# the work. Read as the end, it closed the card a third of a second after GPT started drawing, so
+# the panel said nothing was running for the two minutes that something was. The real end is a
+# `<task-notification>` the CLI writes into the conversation later, naming the same tool_use id.
+_BG_RECEIPT = re.compile(r"^\s*Command running in background with ID:\s*\S+?\.\s*"
+                         r"Output is being written to:\s*(.+?\.output)", re.S)
+_NOTE = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
+_EXIT = re.compile(r"exit code (-?\d+)")
+
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 _VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 
@@ -241,9 +250,14 @@ def _row(agent_id: str, eng: str, eng_name: str, work: str, model: str, label: s
 
 
 def _cards_for(use: dict, started: float, res: Optional[tuple[str, bool, float]],
-               session: str) -> list[dict]:
-    """One Bash tool call as the cards it deserves — one per model invocation inside it."""
-    cmd = str((use.get("input") or {}).get("command") or "")
+               session: str, end_status: str = "", out_log: str = "") -> list[dict]:
+    """One Bash tool call as the cards it deserves — one per model invocation inside it.
+
+    `end_status` overrides what the result alone would say (a background task that was killed
+    stopped; it did not fail), and `out_log` is the file a background call writes its output to.
+    """
+    inp = use.get("input") or {}
+    cmd = str(inp.get("command") or "")
     k = _kind(cmd)
     if k is None:
         return []
@@ -260,11 +274,16 @@ def _cards_for(use: dict, started: float, res: Optional[tuple[str, bool, float]]
         model = m.group(1)
 
     text, is_err, finished = (res or ("", False, 0.0))
-    call_live = res is None and (time.time() - started) < _RUN_CAP
+    # The call cannot outlive its own timeout, which a background call sets up to two hours.
+    try:
+        cap = float(inp.get("timeout") or 0) / 1000.0 + 60.0 if inp.get("timeout") else _RUN_CAP
+    except (TypeError, ValueError):
+        cap = _RUN_CAP
+    call_live = res is None and (time.time() - started) < cap
     if res is None:
         call_status = "running" if call_live else "stopped"
     else:
-        call_status = "failed" if is_err else "succeeded"
+        call_status = end_status or ("failed" if is_err else "succeeded")
 
     out: list[dict] = []
     if work == "image":
@@ -288,8 +307,8 @@ def _cards_for(use: dict, started: float, res: Optional[tuple[str, bool, float]]
         return out
     if work == "image" or not _launched(eng, work, parts):
         return []
-    return [_row("cli-" + uid, eng, eng_name, work, model, "", "", cmd, started, finished,
-                 call_status, call_live, text, "", "", session)]
+    return [_row("cli-" + uid, eng, eng_name, work, model, str(inp.get("description") or ""),
+                 "", cmd, started, finished, call_status, call_live, text, "", out_log, session)]
 
 
 def _session_file(project_id: str, session: str = "") -> Optional[Path]:
@@ -349,15 +368,22 @@ def cards(project_id: str, session: str = "") -> list[dict]:
 
     uses: list[tuple[dict, float]] = []
     results: dict[str, tuple[str, bool, float]] = {}
+    notes: dict[str, tuple[str, str, str, float]] = {}
     for e in entries:
         at = subagents._epoch(str(e.get("timestamp") or ""))
         content = ((e.get("message") or {}).get("content"))
+        if isinstance(content, str):
+            # A background call's end arrives as plain user text, not as a block.
+            _notes_in(content, at, notes)
+            continue
         if not isinstance(content, list):
             continue
         for b in content:
             if not isinstance(b, dict):
                 continue
-            if b.get("type") == "tool_use" and b.get("name") == "Bash":
+            if b.get("type") == "text":
+                _notes_in(str(b.get("text") or ""), at, notes)
+            elif b.get("type") == "tool_use" and b.get("name") == "Bash":
                 uses.append((b, at))
             elif b.get("type") == "tool_result":
                 tid = str(b.get("tool_use_id") or "")
@@ -367,12 +393,70 @@ def cards(project_id: str, session: str = "") -> list[dict]:
     sess = f.stem
     out: list[dict] = []
     for use, at in uses:
+        uid = str(use.get("id") or "")
+        res = results.get(uid)
+        end_status, out_log = "", ""
+        m = _BG_RECEIPT.match(res[0]) if res else None
+        if m:
+            # Only the receipt so far: still working until the notification says otherwise.
+            out_log = m.group(1).strip()
+            note = notes.get(uid)
+            if note is None:
+                res = None
+            else:
+                status, summary, out_file, done_at = note
+                out_log = out_file or out_log
+                code = _EXIT.search(summary)
+                failed = status != "completed" or (code is not None and code.group(1) != "0")
+                end_status = "stopped" if status in ("killed", "stopped") else ""
+                tail = _tail(out_log)
+                res = (summary + ("\n\n" + tail if tail else ""), failed, done_at)
         try:
-            out += _cards_for(use, at, results.get(str(use.get("id") or "")), sess)
+            out += _cards_for(use, at, res, sess, end_status, out_log)
         except Exception:
             continue
     out.sort(key=lambda c: c.get("ts") or 0, reverse=True)
     return out
+
+
+def _notes_in(text: str, at: float, into: dict) -> None:
+    """Every `<task-notification>` in a message, keyed by the tool_use id it closes."""
+    if "<task-notification>" not in text:
+        return
+    for m in _NOTE.finditer(text):
+        body = m.group(1)
+
+        def tag(name: str) -> str:
+            t = re.search(rf"<{name}>(.*?)</{name}>", body, re.S)
+            return t.group(1).strip() if t else ""
+
+        uid = tag("tool-use-id")
+        if uid:
+            into[uid] = (tag("status"), tag("summary"), tag("output-file"), at)
+
+
+def _tail(path: str, size: int = 3000) -> str:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - size))
+            return fh.read().decode("utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def epoch_of(v) -> float:
+    """A row's `ts` as epoch seconds. A card carries a number; a Task agent carries the ISO text
+    of its transcript record. Sorted raw, the two raised TypeError, the subagents answer was a 500
+    and the sweep dropped the whole folder, so an /orch run with Task agents AND `codex exec`
+    jobs showed nothing at all behind the agents icon."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(v or "").replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def merge(project_id: str, data: dict, session: str = "") -> dict:
@@ -384,7 +468,7 @@ def merge(project_id: str, data: dict, session: str = "") -> dict:
     if not cs:
         return data
     agents = list(data.get("agents") or []) + cs
-    agents.sort(key=lambda a: a.get("ts") or 0, reverse=True)
+    agents.sort(key=lambda a: epoch_of(a.get("ts")), reverse=True)
     out = dict(data)
     out["agents"] = agents
     out["running"] = int(data.get("running") or 0) + sum(1 for c in cs if c.get("running"))

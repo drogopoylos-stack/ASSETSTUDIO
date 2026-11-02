@@ -589,9 +589,8 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
                  # The ledgers are keyed by project, and the token counters are per TURN — one turn
                  # is many assistant messages, and the bill is per request.
                  "pid": pid, "turn_in": 0, "turn_out": 0,
-                 # The id the endpoint bills. RIVER publishes no price; its id starts `deepseek-`, so
-                 # pricing reads it at DeepSeek's Flash rate — an estimate that keeps the spend cap
-                 # working. A `pricing_overrides` row for the id replaces it.
+                 # The id the endpoint bills, so a RIVER turn is priced at RIVER's own published
+                 # rate (pricing._RIVER), not DeepSeek's.
                  "wire_model": wire_id}
         _live[pid] = state
         mission.remember_active_session(feed, sid)

@@ -209,8 +209,9 @@ def merge(feed: str, data: dict) -> dict:
         return data
     if not cs:
         return data
+    from .cli_agents import epoch_of  # a Task agent's ts is ISO text, a card's is a number
     agents = list(data.get("agents") or []) + cs
-    agents.sort(key=lambda a: a.get("ts") or 0, reverse=True)
+    agents.sort(key=lambda a: epoch_of(a.get("ts")), reverse=True)
     out = dict(data)
     out["agents"] = agents
     out["running"] = int(data.get("running") or 0) + sum(1 for c in cs if c.get("running"))

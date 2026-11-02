@@ -20,6 +20,8 @@ from .config import settings
 # differently; cache_read is the cheap one, which is why a warm agent costs so little.
 TIERS: dict[str, dict[str, float]] = {
     "tier_2_10":  {"input": 2.0,  "output": 10.0, "cw5m": 2.5,   "cw1h": 4.0,  "read": 0.2},
+    # Sonnet 5.5: https://www.anthropic.com/claude-sonnet-5-5 (2026-10-28).
+    "tier_2_10_cr010": {"input": 2.0, "output": 10.0, "cw5m": 2.5, "cw1h": 4.0, "read": 0.1},
     "tier_3_15":  {"input": 3.0,  "output": 15.0, "cw5m": 3.75,  "cw1h": 6.0,  "read": 0.3},
     "tier_5_25":  {"input": 5.0,  "output": 25.0, "cw5m": 6.25,  "cw1h": 10.0, "read": 0.5},
     "tier_15_75": {"input": 15.0, "output": 75.0, "cw5m": 18.75, "cw1h": 30.0, "read": 1.5},
@@ -50,6 +52,7 @@ _MODEL_TIER: list[tuple[str, str]] = [
     ("claude-opus-4-5", "tier_5_25"),
     ("claude-opus-4-1", "tier_15_75"),
     ("claude-opus-4-0", "tier_15_75"),
+    ("claude-sonnet-5-5", "tier_2_10_cr010"),
     ("claude-sonnet-5", "tier_2_10"),
     ("claude-sonnet-4-6", "tier_3_15"),
     ("claude-sonnet-4-5", "tier_3_15"),
@@ -78,11 +81,22 @@ _DEEPSEEK: list[tuple[str, dict[str, float]]] = [
 ]
 _DEEPSEEK_PEAK_UTC = ((1, 4), (6, 10))
 
+# RIVER.AI, $ per million tokens, read off https://console.river.ai/api/public/pricing ("the same
+# rates billing uses") on 2026-10-24. One flat rate, no peak/off-peak. Exact ids, checked before the
+# DeepSeek prefixes above — RIVER's id starts with `deepseek-` and would otherwise be priced as
+# DeepSeek's own Flash, 2.5x too high.
+_RIVER: dict[str, dict[str, float]] = {
+    "deepseek-ai/deepseek-v4.1-flash": {"input": 0.12, "read": 0.0024, "output": 0.48},
+    "deepseek-ai/deepseek-v4.1-flash-1017": {"input": 0.12, "read": 0.0024, "output": 0.48},
+}
+
 
 def _deepseek_rate(model: str, at: float | None = None) -> dict[str, float]:
     """The DeepSeek rate for this model at this moment (peak or off-peak), or {} for another model."""
     import time as _time
     m = (model or "").split("[")[0].strip().lower()
+    if m in _RIVER:
+        return _RIVER[m]
     for prefix, rate in _DEEPSEEK:
         if m.startswith(prefix):
             t = _time.gmtime(_time.time() if at is None else at)

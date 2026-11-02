@@ -154,7 +154,29 @@ class _Live:
 # holding "opus" the [1m] suffix (its catalog entry sets supports_1m_suffix), fast mode is a config
 # flag rather than a per-model argument, and --effort takes the same five levels.
 MODELS = ["default", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "opus",
-          "claude-fable-5-1", "claude-fable-5", "sonnet", "haiku"]
+          "claude-fable-5-1", "claude-fable-5", "claude-sonnet-5-5", "sonnet", "haiku"]
+
+# A pinned definition is needed: the Agent tool's `model` argument only accepts
+# family aliases, which may resolve to an older Sonnet on some providers.
+_STUDIO_SUBAGENTS = {
+    "studio-sonnet": {
+        "description": "Sonnet 5.5 worker. Use only when the user asks to delegate a task to Sonnet.",
+        "model": "claude-sonnet-5-5",
+        "prompt": (
+            "Complete the task delegated by the parent agent, within its stated scope and constraints. "
+            "Inspect relevant project instructions, verify your work, and return a concise report of "
+            "results, changed files, checks, and any blockers. Do not expand the task."
+        ),
+    },
+}
+_SUBAGENT_ROUTING_NOTE = (
+    "SONNET DELEGATION: when the user asks for a Sonnet subagent, use the Agent (or Task) tool "
+    "with subagent_type='studio-sonnet'. That worker is pinned to claude-sonnet-5-5. Omit the "
+    "per-call model argument so it does not override the pinned version. Pass the task and its "
+    "constraints, then review and integrate the result. Keep your own model unchanged. Use this "
+    "worker only when requested; if it is unavailable, report the error rather than silently "
+    "substituting another model."
+)
 PERMISSION_MODES = ["default", "plan", "acceptEdits", "bypassPermissions"]
 
 
@@ -1887,6 +1909,9 @@ def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
     if permission_mode and permission_mode != "default":
         args += ["--permission-mode", permission_mode]
     notes: list[str] = []
+    if not mission.alt_prefix(project_id):
+        args += ["--agents", json.dumps(_STUDIO_SUBAGENTS)]
+        notes.append(_SUBAGENT_ROUTING_NOTE)
     # Two conditions, and the second is the one that was missing: the note only exists when a
     # generator is actually switched on. Turning the tabs off used to hide the buttons while
     # still telling the agent the API was there.
@@ -1960,7 +1985,8 @@ def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
             pass
     # The Studio engine as MCP tools, beside the notes (see mcp_engine.py). One small file per
     # project names the stdio server; the CLI starts it for this session and every subagent.
-    if project_id and _mcp_on():
+    from .extra_mcp import servers as extra_servers
+    if project_id and (_mcp_on() or extra_servers(cwd)):
         try:
             args += ["--mcp-config", str(_mcp_config_file(project_id, cwd))]
         except Exception:
@@ -1976,6 +2002,9 @@ def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
     if permission_mode and permission_mode != "default":
         args += ["--permission-mode", permission_mode]
     notes: list[str] = []
+    if not mission.alt_prefix(project_id):
+        args += ["--agents", json.dumps(_STUDIO_SUBAGENTS)]
+        notes.append(_SUBAGENT_ROUTING_NOTE)
     # Two conditions, and the second is the one that was missing: the note only exists when a
     # generator is actually switched on. Turning the tabs off used to hide the buttons while
     # still telling the agent the API was there.
@@ -3649,6 +3678,10 @@ def _mcp_config_file(project_id: str, cwd: str = "") -> Path:
         "env": {"STUDIO_BASE": _base_url(), "STUDIO_CWD": str(cwd or ""),
                 "STUDIO_FEED": str(project_id or ""), "PYTHONIOENCODING": "utf-8"},
     }}}
+    from .extra_mcp import servers as extra_servers
+    if not _mcp_on():
+        cfg["mcpServers"].pop("studio", None)
+    cfg["mcpServers"].update(extra_servers(cwd))
     path = _MCP_DIR / f"{project_id}.json"
     text = json.dumps(cfg, indent=1)
     try:
@@ -3841,7 +3874,9 @@ def _note_sig() -> tuple:
     # rides the next natural respawn (new conversation, model change, idle reap) and BOOST itself
     # never forces one. The switches BOOST moves are in boost._PROFILE, which is now made only of
     # keys that are not in this tuple either.
-    return tuple(bool(settings.get(k, True)) for k in keys)
+    # Deliver newly available delegation capabilities on the next safe idle send,
+    # including sessions adopted from a backend that predates this worker.
+    return tuple(bool(settings.get(k, True)) for k in keys) + ("studio-sonnet-5-5-v1",)
 
 
 def _send_streaming(project_id: str, message: str, cwd: str, model: str,

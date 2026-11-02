@@ -356,7 +356,11 @@ if "--mcp-config" in args:
 settings.get = with_settings(cc_mcp=False)
 try:
     args_off = cc._claude_stream_args("claude", None, "default", "default", False, "default", project_id="mcptest", cwd=str(tmp))
-    ok("...and not when Studio tools over MCP is off", "--mcp-config" not in args_off)
+    off_servers = {}
+    if "--mcp-config" in args_off:
+        off_path = Path(args_off[args_off.index("--mcp-config") + 1])
+        off_servers = json.loads(off_path.read_text(encoding="utf-8"))["mcpServers"]
+    ok("...and Studio stays off even with extra MCP servers installed", "studio" not in off_servers)
 finally:
     settings.get = orig_get
 try:

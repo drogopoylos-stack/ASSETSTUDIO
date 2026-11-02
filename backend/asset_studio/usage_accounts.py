@@ -253,8 +253,7 @@ def _deepseek() -> dict:
         return _missing("deepseek", "Add a DeepSeek API key to see the balance.", connect=True)
     from . import deepseek_session
     if deepseek_session.route()["via"] == "river":
-        # A RIVER.AI key is a 401 at DeepSeek's /user/balance, which read as "the key is broken".
-        return _missing("deepseek", "The DeepSeek engine runs on a RIVER.AI key. See the balance on river.ai.")
+        return _river()
     r = httpx.get("https://api.deepseek.com/user/balance",
                   headers={**_UA, "Authorization": f"Bearer {key}"}, timeout=12)
     if r.status_code != 200:
@@ -266,6 +265,20 @@ def _deepseek() -> dict:
     cur = info.get("currency") or "USD"
     detail = f"granted {info.get('granted_balance', '0')} · topped up {info.get('topped_up_balance', '0')} {cur}"
     return _balance("deepseek", "DeepSeek API", amount, cur, detail=detail, ok=bool(d.get("is_available", True)))
+
+
+def _river() -> dict:
+    """A RIVER.AI key has no balance to read: the inference API answers every unknown path with an
+    empty gRPC UNIMPLEMENTED, and the Console API takes only a browser (WorkOS) login, not the key
+    (both checked 2026-10-24; the docs say "402: check your Console balance"). So the bar shows what
+    the Studio itself has spent through RIVER, priced at RIVER's published rates (pricing._RIVER),
+    and points at the Console for what is left."""
+    from . import spend
+    used = sum(float(v or 0) for m, v in (spend.totals().get("by_model") or {}).items()
+               if m.lower().startswith("deepseek-ai/"))
+    return {**_balance("deepseek", "RIVER.AI (DeepSeek)", 0.0, "USD", used=used,
+                       detail="spent through the Studio · balance at console.river.ai"),
+            "balance_unknown": True}
 
 
 # --- Kimi (Moonshot) ---------------------------------------------------------

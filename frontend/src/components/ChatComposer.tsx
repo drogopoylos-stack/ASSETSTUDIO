@@ -50,7 +50,7 @@ import { CODEX_ACCESS, CodexSettings, CodexSignIn, codexEffortRows, codexModeOf,
 // says: 1M native, June 2026 cutoff, 128k max output where Opus 5 defaults to 64k, every effort
 // level, fast mode, and $4/$20 per million with cache reads at $0.20 — against Opus 5's $5/$25 and
 // $0.50. Its own default effort is medium, not high. Opus 5 stays on the list beside it.
-const MODELS: [string, string][] = [["default", "Default"], ["claude-opus-5-5", "Opus 5.5"], ["claude-opus-5", "Opus 5"], ["claude-opus-4-8", "Opus 4.8"], ["opus", "Opus (auto)"], ["claude-fable-5-1", "Fable 5.1"], ["claude-fable-5", "Fable 5"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]];
+const MODELS: [string, string][] = [["default", "Default"], ["claude-opus-5-5", "Opus 5.5"], ["claude-opus-5", "Opus 5"], ["claude-opus-4-8", "Opus 4.8"], ["opus", "Opus (auto)"], ["claude-fable-5-1", "Fable 5.1"], ["claude-fable-5", "Fable 5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]];
 // Kimi runs through the same Claude Code engine (Moonshot endpoint) — model rides the spawn env
 const KIMI_MODELS: [string, string][] = [["default", "Kimi K3"], ["kimi-k3", "Kimi K3 (pinned)"], ["kimi-k2-turbo-preview", "Kimi K2 Turbo"]];
 // Qwen rides the SAME Claude Code engine (DashScope's Anthropic-compatible endpoint), so the model
@@ -1496,7 +1496,7 @@ export function ChatComposer({
 
       {/* agent picker menu */}
       {agentMenu && (
-        <div className="absolute bottom-12 left-2 z-40 card p-1.5 w-72 space-y-0.5 text-xs shadow-card">
+        <div className="absolute bottom-12 left-2 z-40 card p-1.5 w-72 max-h-[min(70vh,calc(100vh-5rem))] overflow-y-auto overscroll-contain space-y-0.5 text-xs shadow-card">
           <div className="px-1.5 py-1 text-[10px] text-muted">Send this chat with…</div>
           {agents.map((a) => (
             <div key={a.id} className={cls("rounded px-1.5 py-1.5", a.id === agentId && "bg-panel2")}>

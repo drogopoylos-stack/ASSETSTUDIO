@@ -24,6 +24,7 @@ export function friendlyModel(id: string): string {
   if (m.includes("opus-5")) return "Opus 5";
   if (m.includes("opus-4-8") || m.includes("opus-4.8")) return "Opus 4.8";
   if (m.includes("opus")) return "Opus";
+  if (m.includes("sonnet-5-5") || m.includes("sonnet-5.5")) return "Sonnet 5.5";
   if (m.includes("sonnet-5")) return "Sonnet 5";
   if (m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return "Sonnet 4.6";
   if (m.includes("sonnet")) return "Sonnet";

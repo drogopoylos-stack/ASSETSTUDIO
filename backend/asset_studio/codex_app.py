@@ -1232,6 +1232,11 @@ def _thread_params(cwd: str, mode: str, model: str, project_id: str = "") -> dic
                 feed = ""
         mcp["env"] = {**mcp["env"], "STUDIO_CWD": cwd, "STUDIO_FEED": feed}
         p["config"] = {"mcp_servers": {"studio": mcp}}
+    from .extra_mcp import servers as extra_servers
+    for name, server in extra_servers(cwd).items():
+        # Codex uses the stdio command fields without Claude's transport discriminator.
+        server.pop("type", None)
+        p.setdefault("config", {}).setdefault("mcp_servers", {})[name] = server
     # BOOST: cap how much of one tool output stays in the thread (see boost.codex_tool_tokens).
     try:
         from . import boost

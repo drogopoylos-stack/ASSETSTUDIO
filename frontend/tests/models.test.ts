@@ -26,6 +26,11 @@ eq("Opus 4.8", friendlyModel("claude-opus-4-8"), "Opus 4.8");
 eq("the moving alias", friendlyModel("opus"), "Opus");
 
 section("nothing else moved");
+eq("Sonnet 5.5", friendlyModel("claude-sonnet-5-5"), "Sonnet 5.5");
+eq("Sonnet 5.5 with context suffix", friendlyModel("claude-sonnet-5-5[1m]"), "Sonnet 5.5");
+eq("Sonnet 5.5 with a date", friendlyModel("claude-sonnet-5-5-20260928"), "Sonnet 5.5");
+eq("Sonnet 5.5 on Bedrock", friendlyModel("us.anthropic.claude-sonnet-5-5"), "Sonnet 5.5");
+eq("Sonnet 5.5 written with a dot", friendlyModel("claude-sonnet-5.5"), "Sonnet 5.5");
 eq("Sonnet 5", friendlyModel("claude-sonnet-5"), "Sonnet 5");
 eq("Sonnet 4.6", friendlyModel("claude-sonnet-4-6"), "Sonnet 4.6");
 eq("the Sonnet alias", friendlyModel("sonnet"), "Sonnet");

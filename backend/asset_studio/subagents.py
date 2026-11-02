@@ -1198,7 +1198,7 @@ def running_everywhere() -> dict:
             row["engine"] = pfx[:-2] if pfx else eng.id
             row["engine_name"] = engines.name_of(fid)
             rows.append(row)
-    rows.sort(key=lambda r: float(r.get("updated") or r.get("ts") or 0), reverse=True)
+    rows.sort(key=lambda r: float(r.get("updated") or 0) or cli_agents.epoch_of(r.get("ts")), reverse=True)
     out = {
         "rows": rows,
         "total": len(rows),

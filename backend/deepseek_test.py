@@ -541,6 +541,14 @@ class RiverRoute(unittest.TestCase):
         r = dsh.send("d--river-pro", "hi", path=_temp.name, model="deepseek-v4-pro", new_session=True)
         self.assertFalse(r["ok"]); self.assertIn("RIVER.AI does not serve", r["error"])
 
+    def test_a_river_turn_is_priced_at_rivers_rate_and_shown_as_used(self):
+        from asset_studio import pricing, usage_accounts
+        cost, basis = pricing.cost_with_basis(dsh.RIVER_MODEL, {"input": 1e6, "cache_read": 1e6, "output": 1e6})
+        self.assertEqual((round(cost, 4), basis), (0.6024, "list"))
+        _stored["deepseek"] = "rv_abc"
+        r = usage_accounts._deepseek()
+        self.assertTrue(r["balance_unknown"]); self.assertIn("console.river.ai", r["balance"]["detail"])
+
     def test_the_river_patch_declares_its_model_with_images(self):
         t = dsh._patch_text(river=True)
         self.assertIn("- id: llm-deepseek", t)
