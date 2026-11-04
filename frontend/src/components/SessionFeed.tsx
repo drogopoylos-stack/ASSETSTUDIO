@@ -1292,7 +1292,18 @@ export function FeedLines({ lines, cli, className }: {
   );
 }
 
+/** One line of a CLI helper's own log. A row of its own and not a ResultBlock, because that block
+ *  shows the FIRST ten lines and folds the rest, and the end is the part of a running log to read. */
+function LogLine({ e, cli }: { e: FeedEvent; cli?: boolean }) {
+  return (
+    <div className={cls("whitespace-pre-wrap break-words text-muted", cli ? "pl-[2ch]" : "pl-5 font-mono text-xs")}>
+      <Linkify text={e.text || ""} />
+    </div>
+  );
+}
+
 const EventRow = memo(function EventRow({ e, onAnswer, onRewind, onOpenAgent }: { e: FeedEvent; onAnswer?: (t: string) => void; onRewind?: (uuid: string, text: string, restoreFiles: boolean) => void; onOpenAgent?: (id: string) => void }) {
+  if (e.kind === "log") return <LogLine e={e} />;
   // A subagent gets the full width of the row. It is not one line of output; it is a whole
   // second conversation, with a bill.
   if (e.kind === "agent" && e.agent) {
@@ -1508,6 +1519,7 @@ function CliWelcome({ path, fresh, loading }: { path: string; fresh: boolean; lo
 
 const CliRow = memo(function CliRow({ e, onAnswer, onRewind, onOpenAgent }: { e: FeedEvent; onAnswer?: (t: string) => void; onRewind?: (uuid: string, text: string, restoreFiles: boolean) => void; onOpenAgent?: (id: string) => void }) {
   if (e.kind === "user") return <UserEvent e={e} onRewind={onRewind} cli />;
+  if (e.kind === "log") return <LogLine e={e} cli />;
   if (e.kind === "result") return <ResultBlock text={e.text || ""} ok={e.ok} cli />;
   // A delegated task keeps its card in the console look too. Its numbers are the point, and a
   // console line cannot hold a token breakdown and a list of files without becoming a wall.

@@ -104,6 +104,43 @@ class BackgroundCodex(unittest.TestCase):
         self.assertFalse(c["running"])
         self.assertEqual(c["status"], "succeeded")
 
+    def test_the_pane_rows_have_something_to_draw(self):
+        # A tool row draws title and command, never text: the pane was a column of empty bullets.
+        self._write(self._use(), self._receipt(), self._note())
+        lines = cli_agents.detail("G--KAPOW", self._card()["agent_id"])["lines"]
+        self.assertEqual(lines[0]["kind"], "tool")
+        self.assertEqual(lines[0]["title"], "Bash")
+        self.assertIn("codex exec", lines[0]["command"])
+        self.assertEqual([r["text"] for r in lines if r["kind"] == "log"], ["exit 0", "lucho-draft.png"])
+        for r in lines:
+            if r["kind"] == "tool":
+                self.assertTrue(r.get("title"))
+            else:
+                self.assertTrue(r.get("text"))
+
+    def test_the_result_does_not_print_the_log_again(self):
+        self._write(self._use(), self._receipt(), self._note())
+        result = [r for r in cli_agents.detail("G--KAPOW", self._card()["agent_id"])["lines"]
+                  if r["kind"] == "result"]
+        self.assertEqual(len(result), 1)
+        self.assertIn("completed (exit code 0)", result[0]["text"])
+        self.assertNotIn("lucho-draft.png", result[0]["text"])
+        self.assertNotIn("ok", result[0])
+
+    def test_a_failed_run_says_so_in_the_pane(self):
+        self._write(self._use(), self._receipt(), self._note(code=1))
+        lines = cli_agents.detail("G--KAPOW", self._card()["agent_id"])["lines"]
+        self.assertIs(next(r for r in lines if r["kind"] == "result")["ok"], False)
+
+    def test_the_result_stays_whole_without_a_log(self):
+        self._write(self._use(), self._receipt(), self._note())
+        cid = self._card()["agent_id"]
+        self.out.unlink()
+        self._write(self._use(background=False), self._result("exit 0\n\nsecond part", self.t0 + 25))
+        lines = cli_agents.detail("G--KAPOW", cid)["lines"]
+        self.assertFalse([r for r in lines if r["kind"] == "log"])
+        self.assertIn("second part", next(r for r in lines if r["kind"] == "result")["text"])
+
 
 class MixedTimestamps(unittest.TestCase):
     """A Task agent's ts is ISO text, a shell card's is epoch seconds. The merge sort compared

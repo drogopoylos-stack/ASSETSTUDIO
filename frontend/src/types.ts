@@ -356,7 +356,7 @@ export interface FeedTodo {
   status: string;
 }
 export interface FeedEvent {
-  kind: "thinking" | "text" | "tool" | "result" | "user" | "question" | "graph" | "agent" | "turn";
+  kind: "thinking" | "text" | "tool" | "result" | "user" | "question" | "graph" | "agent" | "turn" | "log";
   /** "turn": what the finished answer above took. Only the fields the backend actually KNEW are
    *  sent — a missing one means "not known", never zero. The `agent_*` figures are a SLICE of
    *  `tokens` and `cost`, not an addition to them: the CLI prices the whole turn on its own rate
@@ -674,6 +674,10 @@ export interface CodexStatus {
   npm: boolean;
   running: boolean;
   error: string;
+  /** Codex did not answer the account question in time because the app-server is busy (working,
+   *  or loading a huge saved conversation) — NOT because sign-in failed. The account fields below
+   *  stay at their last known values, so the UI must never read this as a sign-out. */
+  busy?: boolean;
   signed_in: boolean;
   requires_auth: boolean;
   /** signed in, or a provider that needs no OpenAI sign-in */
@@ -864,6 +868,12 @@ export interface Session {
   size: number;
   title: string;
   active: boolean;
+  /** Codex's own rollout file on disk for this conversation. Absent when unknown, or when the
+   *  engine is not Codex. */
+  rollout_bytes?: number;
+  /** That rollout is past the resume limit: reopening this conversation will stall Codex, so the
+   *  menu marks it and offers to archive the file along with forgetting it. */
+  too_big?: boolean;
 }
 
 export interface Checkpoint {

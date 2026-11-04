@@ -487,23 +487,31 @@ def detail(project_id: str, agent_id: str, limit: int = 400) -> Optional[dict]:
     card = next((c for c in cards(project_id) if c.get("agent_id") == agent_id), None)
     if card is None:
         return None
+    # A tool row draws its title and its command, and never `text`: sent there, the command and
+    # every line of the log came out as a bullet with nothing beside it.
     lines = [{"kind": "tool", "ts": _hms(card.get("ts") or 0), "at": card.get("ts") or 0,
-              "text": card.get("command") or ""}]
+              "tool": "Bash", "title": "Bash", "icon": "terminal", "command": card.get("command") or ""}]
     if card.get("prompt") and card.get("prompt") != card.get("command"):
         lines.append({"kind": "user", "ts": "", "at": 0, "text": card["prompt"]})
     # The CLI's own transcript, when the wrapper kept one. This is the only place the other
     # model's reasoning is visible at all, which is the reason to open the pane.
     log = card.get("log_file") or ""
+    logged = False
     if log:
         try:
             tail = Path(log).read_text(encoding="utf-8", errors="replace")[-40_000:]
             for chunk in tail.splitlines()[-limit:]:
                 if chunk.strip():
-                    lines.append({"kind": "tool", "ts": "", "at": 0, "text": chunk})
+                    lines.append({"kind": "log", "ts": "", "at": 0, "text": chunk})
+                    logged = True
         except OSError:
             pass
     if card.get("result"):
-        lines.append({"kind": "result", "ts": "", "at": 0, "text": card["result"]})
+        # The result is the notification's summary and then the tail of that same log, so with the
+        # log drawn above it only the summary is news.
+        text = card["result"].split("\n\n", 1)[0] if logged else card["result"]
+        lines.append({"kind": "result", "ts": "", "at": 0, "text": text,
+                      **({"ok": False} if card.get("status") == "failed" else {})})
     if card.get("output_file"):
         lines.append({"kind": "text", "ts": "", "at": 0, "text": "Wrote " + card["output_file"]})
     return {"ok": True, "agent": card, "lines": lines[-limit:], "source": "cli"}

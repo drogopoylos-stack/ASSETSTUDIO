@@ -133,6 +133,13 @@ ok("the composer menu has the switch", /FEED_DETAILS\.map/.test(composer) && /se
 ok("Settings has it too", /FEED_DETAILS\.map/.test(settings) && /setFeedDetail\(d\.id\)/.test(settings));
 ok("and it is findable by search", /label: "Command output", pane: "general"/.test(settings));
 
+// ---------------------------------------------------------------- a helper's log is not folded
+
+console.log("\nThe log of a CLI helper");
+ok("both looks draw the line itself", /e\.kind === "log"\) return <LogLine e=\{e\} \/>/.test(feed)
+  && /e\.kind === "log"\) return <LogLine e=\{e\} cli \/>/.test(feed));
+ok("it does not go through the block that folds", !/function LogLine[\s\S]{0,300}ResultBlock text/.test(feed));
+
 // ----------------------------------------------------------------
 
 console.log("\n  " + pass + " passed, " + fails.length + " failed");

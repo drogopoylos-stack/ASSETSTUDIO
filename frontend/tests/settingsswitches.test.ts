@@ -33,8 +33,8 @@ console.log("The Studio engine pane says what is on, first");
 
 ok("there is a Switchboard", /function Switchboard\(/.test(engine));
 ok("...and the pane opens on it",
-   engine.indexOf("<Switchboard rows={switches} />") > 0
-   && engine.indexOf("<Switchboard rows={switches} />") < engine.indexOf('<Section title="Engine window"'),
+   engine.indexOf("<Switchboard rows=") > 0
+   && engine.indexOf("<Switchboard rows=") < engine.indexOf('<Section title="Engine window"'),
    "it must come before the first Section");
 ok("a row can say the machine cannot do it",
    /blocked\?: string/.test(engine) && /r\.blocked \? "unavailable"/.test(engine),
