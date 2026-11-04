@@ -167,6 +167,27 @@ export function CodexSignIn({ status }: { status: CodexStatus }) {
   }
 
   if (status.ready) return null;
+  // The app-server answers one request at a time, so loading a huge saved conversation makes the
+  // tiny account/read wait long enough to time out. `busy` says exactly that, and the backend
+  // keeps the last known account for it — drawing the sign-in prompt here would announce a
+  // signed-out Codex that is in fact signed in.
+  if (status.busy) {
+    return (
+      <div className={box}>
+        <div className="font-medium text-text flex items-center gap-1">
+          <Loader2 size={12} className="animate-spin shrink-0" /> Codex is busy
+        </div>
+        <div className="text-muted leading-snug">
+          It is working, or opening a large saved conversation, and did not answer in time. Your
+          sign-in has not changed.
+        </div>
+        <button className={btn} disabled={!!busy}
+          onClick={() => act("check", () => api.codexRecheck().then(() => refreshCodex()))}>
+          {busy === "check" ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Check again
+        </button>
+      </div>
+    );
+  }
   const lg = status.login;
   if (lg?.pending) {
     const device = lg.kind === "device";
@@ -250,6 +271,10 @@ export function CodexSignIn({ status }: { status: CodexStatus }) {
 export function codexWho(status: CodexStatus | null): string {
   if (!status) return "…";
   if (!status.installed) return "not installed";
+  // Busy is not signed out. The backend keeps the last known account while it cannot ask, so
+  // `signed_in` is still true in the case that matters; this is only reached when nothing was
+  // ever known, where "not signed in" would be a lie.
+  if (status.busy && !status.signed_in) return "Codex is busy";
   if (!status.signed_in) return status.ready ? "no sign-in needed (custom provider)" : "not signed in";
   if (status.auth === "apiKey") return "signed in with an API key";
   return `signed in${status.email ? ` as ${status.email}` : ""}${status.plan ? ` · ${status.plan}` : ""}`;

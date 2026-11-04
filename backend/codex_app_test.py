@@ -287,6 +287,147 @@ check("written under .studio-uploads/codex, the name made safe", dest.is_file() 
 check("the bytes are the image", dest.is_file() and dest.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n")
 check("the slim record keeps no base64", "result" not in cx._slim({**kept, "result": "AAAA"}))
 
+print("\n[6] a late answer is not a sign-out, and a conversation too large to reopen")
+
+# The app-server serves one request at a time, so a Codex that is working - or reopening a huge
+# conversation - makes `account/read` late. Reported as a sign-out, that put a sign-in box in front
+# of a user who was signed in and whose agent was working.
+
+
+class _Dead:
+    loaded: set = set()
+
+    def request(self, method, params=None, timeout=30.0):
+        raise cx.RpcError(-2, f"Codex did not answer {method} within {int(timeout)} s")
+
+    def notify(self, *a, **k):
+        pass
+
+
+class _SignedOut:
+    loaded: set = set()
+
+    def request(self, method, params=None, timeout=30.0):
+        return {"account": None, "requiresOpenaiAuth": True} if method == "account/read" else {}
+
+
+_real_find, _real_server = cx.find_codex, cx.server
+cx.find_codex = lambda refresh=False: {"shim": "codex.cmd", "exe": "codex.exe",
+                                       "version": "0.166.0", "argv": ["codex"]}
+cx._ACCOUNT.clear()
+cx._ACCOUNT.update(at=time.time() - 100, v={"signed_in": True, "requires_auth": True,
+                                            "auth": "chatgpt", "email": "a@b.c", "plan": "plus"})
+cx._BUSY["at"] = 0.0
+try:
+    cx.server = lambda start=True: _Dead()
+    late = cx.status()
+    check("a late account read says busy, never signed out",
+          late["signed_in"] is True and late["busy"] is True and late["ready"] is True
+          and late["error"] == "", late)
+    again = cx.status()
+    check("...and while it is busy the sign-in is answered from what was already read",
+          again["busy"] is True and again["email"] == "a@b.c" and again["ready"] is True, again)
+    cx.server = lambda start=True: _SignedOut()
+    cx._BUSY["at"] = 0.0
+    cx._ACCOUNT.update(at=0.0)                    # force a real read of a real answer
+    out = cx.status()
+    check("an answer that really says signed out still says signed out",
+          out["signed_in"] is False and out["busy"] is False and out["ready"] is False, out)
+finally:
+    cx.find_codex, cx.server = _real_find, _real_server
+    cx._ACCOUNT.clear()
+
+# ---------------------------------------------------------------------------
+print("\n[7] how big a conversation is, and how it is forgotten")
+
+BIG = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+SMALL = "11111111-2222-3333-4444-555555555555"
+
+
+def _fake_rollout(tid: str, size: int) -> Path:
+    """A rollout file as Codex writes it: named with the thread id, filed under the date."""
+    d = Path(os.environ["CODEX_HOME"]) / "sessions" / "2026" / "11" / "04"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"rollout-2026-11-04T10-00-00-{tid}.jsonl"
+    p.write_bytes(b"x" * size)
+    return p
+
+
+p_big = _fake_rollout(BIG, 3_000_000)
+p_small = _fake_rollout(SMALL, 1_000)
+cx._rebuild_rollouts()
+check("a rollout is found from the thread id the Studio already has", cx._rollout_for(BIG) == p_big)
+check("its size is the number the guard decides on", cx.rollout_bytes(BIG) == 3_000_000,
+      cx.rollout_bytes(BIG))
+check("a thread with no rollout reports zero",
+      cx.rollout_bytes("99999999-9999-9999-9999-999999999999") == 0)
+check("the size can be huge, so an unlimited guard is possible too",
+      cx.resume_limit_bytes() > 0, cx.resume_limit_bytes())
+
+cx._index_update("unit-sessions", lambda d: d["threads"].update({
+    BIG: {"cwd": str(proj), "created": 1.0, "title": "the giant"},
+    SMALL: {"cwd": str(proj), "created": 2.0, "title": "small"},
+}))
+rows = {r["id"]: r for r in cx.sessions("codex--unit-sessions")}
+check("the conversations menu is told how big each rollout is",
+      rows[BIG]["rollout_bytes"] == 3_000_000 and rows[SMALL]["rollout_bytes"] == 1_000, rows)
+
+_kept = cx.settings.all().get("codex_resume_max_mb")
+cx.settings.all()["codex_resume_max_mb"] = 1          # 1 MB, so the 3 MB one is over it
+rows = {r["id"]: r for r in cx.sessions("codex--unit-sessions")}
+check("a conversation over the limit is flagged to the user",
+      rows[BIG]["too_big"] is True and not rows[SMALL].get("too_big"), rows)
+check("the limit is what the guard refuses on", cx.resume_limit_bytes() == 1024 * 1024,
+      cx.resume_limit_bytes())
+
+
+class _NeverAsked:
+    loaded: set = set()
+
+    def request(self, *a, **k):
+        raise AssertionError("the size guard let a resume through to Codex")
+
+    def notify(self, *a, **k):
+        pass
+
+
+_big_conv = cx._conv("unit-big")
+_big_conv.cwd = str(proj)
+_real_fit = cx.fit_model
+cx.fit_model = lambda m: (m or "gpt-6.1-sol", "")
+try:
+    refused = cx._start_turn(_big_conv, _NeverAsked(), [{"type": "text", "text": "hi"}],
+                             {"text": "hi"}, "default", "default", "full", False, session=BIG)
+finally:
+    cx.fit_model = _real_fit
+check("reopening an over-large conversation is refused, not attempted",
+      refused.get("ok") is False and "cannot reopen" in str(refused.get("error")), refused)
+check("...and it says what to do instead",
+      "new conversation" in str(refused.get("error")), refused)
+
+cx._index_update("unit-forget", lambda d: d["threads"].update(
+    {BIG: {"cwd": str(proj), "created": 1.0, "title": "the giant"}}))
+cx._log(BIG, {"t": "user", "text": "hello"})
+_done = cx.forget_conversation("codex--unit-forget", BIG, rollout=True)
+check("forgetting reports what it set aside", _done["ok"] and _done["freed_bytes"] >= 3_000_000, _done)
+check("the rollout was moved, never deleted",
+      _done["rollout_moved"] and not p_big.exists()
+      and (Path(os.environ["CODEX_HOME"]) / "sessions-archive" / p_big.name).is_file(), _done)
+check("the Studio's own transcript is set aside too",
+      not cx._log_path(BIG).exists()
+      and (cx._THREADS / "forgotten" / cx._log_path(BIG).name).is_file())
+check("it leaves the conversations menu",
+      not any(r["id"] == BIG for r in cx.sessions("codex--unit-forget")))
+check("...and no longer holds the folder's active slot", cx._index("unit-forget").get("active") == "")
+check("forgetting a conversation the folder does not have says so",
+      cx.forget_conversation("codex--unit-forget", BIG)["ok"] is False)
+check("a nonsense id is refused", cx.forget_conversation("codex--unit-forget", "nope")["ok"] is False)
+
+if _kept is None:
+    cx.settings.all().pop("codex_resume_max_mb", None)
+else:
+    cx.settings.all()["codex_resume_max_mb"] = _kept
+
 # ---------------------------------------------------------------------------
 # The live half: the real Codex CLI against a stand-in Responses API.
 # ---------------------------------------------------------------------------

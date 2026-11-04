@@ -575,13 +575,20 @@ def _busy() -> bool:
 _ACCOUNT: dict = {}
 _LOGIN: dict = {}
 _LOGIN_LOCK = threading.Lock()
+# When an answer came back late. One late `account/read` is enough to say "busy" for a while, and
+# during that while the status is answered from the account we already read: the app-server serves
+# one request at a time, so asking again immediately only adds another late request to its queue.
+_BUSY: dict = {"at": 0.0}
+_BUSY_HOLD_S = 15.0
 
 
 def _read_account(srv: AppServer, fresh: bool = False) -> dict:
     now = time.time()
     if _ACCOUNT and not fresh and now - _ACCOUNT.get("at", 0) < 20:
         return _ACCOUNT["v"]
-    r = srv.request("account/read", {}, timeout=20) or {}
+    # 10s, not 20: the chat polls this to draw the sign-in line, and a busy app-server made every
+    # poll sit there for the full timeout before the page could say anything at all.
+    r = srv.request("account/read", {}, timeout=10) or {}
     acct = r.get("account") or None
     v = {"signed_in": acct is not None, "requires_auth": bool(r.get("requiresOpenaiAuth", True)),
          "auth": "", "email": "", "plan": ""}
@@ -754,7 +761,7 @@ def status(fresh: bool = False) -> dict:
                  "version": info.get("version", ""), "npm": bool(_npm()),
                  "latest": latest_version() if info or _npm() else "",
                  "signed_in": False, "requires_auth": True, "auth": "", "email": "", "plan": "",
-                 "running": False, "error": "", "sandbox": "",
+                 "running": False, "error": "", "sandbox": "", "busy": False,
                  "install": {k: _INSTALL.get(k) for k in ("running", "ok", "error", "what")},
                  **_login_view()}
     out["install"]["log"] = list(_INSTALL.get("log") or [])[-12:]
@@ -770,10 +777,26 @@ def status(fresh: bool = False) -> dict:
     if srv is None:
         return out
     out["running"] = True
-    try:
-        out.update(_read_account(srv, fresh=fresh))
-    except Exception as e:  # noqa: BLE001
-        out["error"] = f"Codex did not report its sign-in: {getattr(e, 'message', e)}"
+    known = _ACCOUNT.get("v") or {}
+    # A late answer is not a sign-out. The app-server serves one request at a time, so while Codex
+    # works - or while it reopens a large conversation (measured: 251 MB, minutes) - every other
+    # call is late, `account/read` included. Reading that as "signed out" put a sign-in box in
+    # front of a user who was signed in and whose agent was in fact working. So keep the account we
+    # already read and say busy instead; only an answer that really says signed-out clears it.
+    if not fresh and known and _BUSY["at"] and time.time() - _BUSY["at"] < _BUSY_HOLD_S:
+        out.update(known)
+        out["busy"] = True
+    else:
+        try:
+            out.update(_read_account(srv, fresh=fresh))
+            _BUSY["at"] = 0.0
+        except Exception as e:  # noqa: BLE001
+            _BUSY["at"] = time.time()
+            if known:
+                out.update(known)
+                out["busy"] = True
+            else:
+                out["error"] = f"Codex did not report its sign-in: {getattr(e, 'message', e)}"
     out["ready"] = ready_to_chat(out)
     if os.name == "nt":
         out["sandbox"] = _sandbox_state(srv)
@@ -1462,6 +1485,18 @@ def _start_turn(conv: _Conv, srv: AppServer, inputs: list[dict], user_rec: dict,
     tid = "" if new_session else (session or idx.get("active") or "")
     tp = _thread_params(conv.cwd, mode, model, pid)
     if tid and tid not in srv.loaded:
+        over = rollout_bytes(tid)
+        limit = resume_limit_bytes()
+        if limit and over > limit:
+            # Reopening this would block the whole app-server for minutes and every other Codex
+            # call with it. Say so at once instead, and leave the thread to the conversations menu.
+            _log(tid, {"t": "note", "text": (
+                f"This conversation is {over / 1048576:.0f} MB, too large for Codex to reopen "
+                f"without blocking every other Codex call for minutes; it was left closed.")})
+            return {"ok": False, "agent": "codex", "error": (
+                f"This conversation is {over / 1048576:.0f} MB, so Codex cannot reopen it without "
+                f"stalling every other Codex call for minutes. Start a new conversation, or forget "
+                f"this one from the conversations menu and carry on in a fresh one.")}
         _OWNER[tid] = pid
         try:
             rr = _open_thread(srv, "thread/resume", {"threadId": tid, **tp})
@@ -2600,6 +2635,36 @@ def _rollout_for(thread_id: str) -> Optional[Path]:
     return p
 
 
+def rollout_bytes(thread_id: str) -> int:
+    """How big Codex's own rollout for a thread is, in bytes. 0 when there is none.
+
+    This is the number that decides what reopening a conversation costs. The Studio's own transcript
+    is a few MB even for a long conversation; Codex's rollout keeps every command's full output and
+    can be a hundred times larger - reopening the thread makes Codex read all of it.
+    """
+    path = _rollout_for(str(thread_id or ""))
+    if path is None:
+        return 0
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def resume_limit_bytes() -> int:
+    """The size above which the Studio will not reopen a conversation, 0 for no limit.
+
+    An over-large resume does not fail politely: the app-server serves one request at a time, so it
+    takes every other Codex call down with it for minutes and the chat looks disconnected. Refusing
+    up front and saying why is the lesser evil, and the conversations menu can forget the thread.
+    """
+    try:
+        mb = float(settings.get("codex_resume_max_mb", 100) or 0)
+    except (TypeError, ValueError):
+        mb = 100.0
+    return int(mb * 1024 * 1024) if mb > 0 else 0
+
+
 def _rollout_tokens(thread_id: str) -> dict:
     """A thread's running token total, out of Codex's OWN rollout file.
 
@@ -3149,6 +3214,7 @@ def sessions(project_id: str) -> list[dict]:
     pid = bare(project_id)
     d = _index(pid)
     active = d.get("active") or ""
+    limit = resume_limit_bytes()
     out = []
     for tid, meta in (d.get("threads") or {}).items():
         path = _log_path(tid)
@@ -3157,8 +3223,15 @@ def sessions(project_id: str) -> list[dict]:
             size, mtime = st.st_size, st.st_mtime
         except OSError:
             size, mtime = 0, float(meta.get("updated") or meta.get("created") or 0)
-        out.append({"id": tid, "ts": mtime, "size": size, "title": str(meta.get("title") or "(empty conversation)"),
-                    "active": tid == active})
+        row = {"id": tid, "ts": mtime, "size": size,
+               "title": str(meta.get("title") or "(empty conversation)"), "active": tid == active}
+        # Codex's own rollout, so the menu can show which conversations are cheap to reopen and
+        # which one would stall Codex for minutes (see `resume_limit_bytes`).
+        rb = rollout_bytes(tid)
+        if rb:
+            row["rollout_bytes"] = rb
+            row["too_big"] = bool(limit and rb > limit)
+        out.append(row)
     out.sort(key=lambda o: o["ts"], reverse=True)
     if out and not any(o["active"] for o in out) and active == "":
         pass
@@ -3182,6 +3255,62 @@ def remember_session(project_id: str, thread_id: str) -> None:
     pid = bare(project_id)
     if thread_id:
         _index_update(pid, lambda d: d.update(active=thread_id))
+
+
+def forget_conversation(project_id: str, thread_id: str, rollout: bool = False) -> dict:
+    """Drop a conversation from this folder's list, and optionally archive Codex's own rollout.
+
+    Nothing is deleted: the Studio's transcript moves to data/codex/threads/forgotten/ and, with
+    `rollout`, Codex's rollout to <CODEX_HOME>/sessions-archive/. Both can be put back by hand.
+    This is the way out of a conversation too large to reopen (see `resume_limit_bytes`), which
+    patience does not fix - the size only grows.
+    """
+    pid = bare(project_id)
+    tid = str(thread_id or "")
+    blank = {"ok": False, "error": "", "freed_bytes": 0, "rollout_moved": False}
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", tid):
+        return {**blank, "error": "That is not a conversation id"}
+    if tid not in (_index(pid).get("threads") or {}):
+        return {**blank, "error": "This folder has no such conversation"}
+    freed = 0
+    src = _log_path(tid)
+    if src.exists():
+        dest_dir = _THREADS / "forgotten"
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / src.name
+            if dest.exists():
+                dest = dest_dir / f"{tid}.{int(time.time())}.jsonl"
+            freed += src.stat().st_size
+            fsutil.replace(src, dest)
+        except OSError as e:
+            return {**blank, "error": f"Could not set that conversation aside: {e}"}
+    moved = False
+    if rollout:
+        path = _rollout_for(tid)
+        if path is not None and path.exists():
+            try:
+                archive = _sessions_root().parent / "sessions-archive"
+                archive.mkdir(parents=True, exist_ok=True)
+                dest = archive / path.name
+                if dest.exists():
+                    dest = archive / f"{path.stem}.{int(time.time())}.jsonl"
+                freed += path.stat().st_size
+                fsutil.replace(path, dest)
+                moved = True
+            except OSError:
+                pass
+        _rebuild_rollouts()          # the walk still lists the file we just moved away
+
+    def drop(index: dict) -> None:
+        (index.get("threads") or {}).pop(tid, None)
+        (index.get("subs") or {}).pop(tid, None)
+        if index.get("active") == tid:
+            index["active"] = ""
+
+    _index_update(pid, drop)
+    _OWNER.pop(tid, None)
+    return {"ok": True, "error": "", "freed_bytes": freed, "rollout_moved": moved}
 
 
 def context(project_id: str) -> dict:

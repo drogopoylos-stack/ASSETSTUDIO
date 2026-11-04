@@ -727,6 +727,13 @@ export const api = {
   codexInstall: (update = true) =>
     req<{ ok: boolean; running?: boolean; error?: string }>(
       "/api/codex/install", { method: "POST", body: JSON.stringify({ update }), timeoutMs: 30_000 }),
+  /** Drop one Codex conversation from the Studio's list. With `rollout` it also moves Codex's own
+   *  rollout file into an archive folder — the way out of a conversation that is too large to
+   *  reopen. `project` is the feed id the session list was fetched with. */
+  codexForgetConversation: (project: string, thread: string, rollout: boolean) =>
+    req<{ ok: boolean; error?: string; freed_bytes: number; rollout_moved: boolean }>(
+      "/api/codex/conversations/forget",
+      { method: "POST", body: JSON.stringify({ project, thread, rollout }), timeoutMs: 60_000 }),
   missionSlash: (projectId = "") => req<{ commands: import("../types").SlashCommand[] }>(`/api/mission/slash-commands${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`),
   sessionSend: (projectId: string, body: { message: string; model: string; permission_mode: string; fork: boolean; images?: string[]; effort?: string; thinking?: boolean; steer?: boolean; agent?: string; new_session?: boolean; session?: string; path?: string; companions?: { id: string; model?: string; effort?: string; permission_mode?: string }[] }) =>
     req<any>(`/api/mission/projects/${encodeURIComponent(projectId)}/send`, { method: "POST", body: JSON.stringify(body) }),

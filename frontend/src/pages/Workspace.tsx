@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   AppWindow,
   Box,
   Check,
@@ -47,7 +48,7 @@ import {
 import { api } from "../api/client";
 import { useStore } from "../store/useStore";
 import type { Checkpoint, CheckpointChange, EngineFeed, EntryInfo, FileResult, RunningAgent, Session, Skill, TreeEntry, WorkspaceRoot } from "../types";
-import { cls, pollWhileVisible, timeAgo, useSetting } from "../components/ui";
+import { cls, humanBytes, pollWhileVisible, timeAgo, useSetting } from "../components/ui";
 import { folderAgent, paneAgent, writePaneAgent, sendSettings } from "../components/sendPrefs";
 import { WorktreeDialog } from "../components/WorktreeDialog";
 import { NewGameButton } from "../components/NewGameDialog";
@@ -2952,6 +2953,7 @@ function ConversationControl({ root, feedId, mode, setMode }: {
   // at the height of the bar it hangs from.
   const [open, setOpen] = useState<{ left: number; top: number } | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const toast = useStore((s) => s.toast);
   // on mount as well as on open — the LABEL needs the list, not only the menu. ~35ms for 24
   // transcripts, so there is nothing to save by waiting for a click.
   useEffect(() => {
@@ -2962,6 +2964,21 @@ function ConversationControl({ root, feedId, mode, setMode }: {
     return () => { gone = true; };
   }, [open, feedId]);
   const isCurrent = (s: Session) => mode.type === "session" ? s.id === mode.id : s.active;
+  // Forget is two things at once: drop the row from Studio's list, and — for a rollout too large
+  // for Codex to reopen — move Codex's own file out of the way. The refetch is what makes the row
+  // actually disappear, and the chip must not keep pointing at a conversation that is gone.
+  async function forget(s: Session) {
+    try {
+      const r = await api.codexForgetConversation(feedId, s.id, !!s.too_big);
+      if (!r.ok) { toast(r.error || "could not forget that conversation", "danger"); return; }
+      if (isCurrent(s)) setMode({ type: "new" });
+      const list = await api.missionSessions(feedId).then((x) => x.sessions).catch(() => null);
+      if (list) setSessions(list);
+      toast(`Forgot “${s.title}”${r.rollout_moved ? ` · archived ${humanBytes(r.freed_bytes)}` : ""}`, "ok");
+    } catch (e: any) {
+      toast(e?.message || "could not forget that conversation", "danger");
+    }
+  }
   const current = sessions.find(isCurrent);
   const label = mode.type === "new" ? "New conversation"
     : current?.title || (mode.type === "session" ? "Past conversation" : root.name || "Latest");
@@ -2997,11 +3014,31 @@ function ConversationControl({ root, feedId, mode, setMode }: {
             </button>
             <div className="px-2 py-1 mt-0.5 text-[10px] text-muted uppercase tracking-wide border-t border-line">Saved conversations</div>
             {sessions.map((s) => (
-              <button key={s.id} className={cls("w-full text-left px-2 py-1.5 rounded hover:bg-panel2", mode.type !== "new" && isCurrent(s) && "bg-panel2 ring-1 ring-brand/40")}
-                onClick={() => { setMode({ type: "session", id: s.id }); setOpen(null); }}>
-                <div className="truncate text-text/90">{s.title}</div>
-                <div className="text-[10px] text-muted">{timeAgo(s.ts)}{s.active ? " · current" : ""}</div>
-              </button>
+              // A div, not a button: the row now holds TWO controls, and a button inside a button
+              // is invalid HTML — the browser would hoist them apart and the click would land on
+              // the wrong one. The wrapper is not clickable, so Forget cannot switch conversations.
+              <div key={s.id} className={cls("flex items-stretch gap-1 rounded hover:bg-panel2", mode.type !== "new" && isCurrent(s) && "bg-panel2 ring-1 ring-brand/40")}>
+                <button className="min-w-0 flex-1 text-left px-2 py-1.5"
+                  onClick={() => { setMode({ type: "session", id: s.id }); setOpen(null); }}>
+                  <div className="truncate text-text/90">{s.title}</div>
+                  <div className="text-[10px] text-muted">
+                    {timeAgo(s.ts)}{s.active ? " · current" : ""}
+                    {s.rollout_bytes != null && <> · {humanBytes(s.rollout_bytes)}</>}
+                  </div>
+                  {s.too_big && (
+                    <div className="text-[10px] text-warn flex items-center gap-1">
+                      <AlertTriangle size={9} className="shrink-0" /> too large to reopen
+                    </div>
+                  )}
+                </button>
+                <button className="shrink-0 self-center rounded px-2 py-1 text-[10px] text-muted hover:text-danger hover:bg-panel inline-flex items-center gap-1"
+                  title={s.too_big
+                    ? "Remove this conversation from the list and archive Codex's own rollout file"
+                    : "Remove this conversation from the list"}
+                  onClick={() => forget(s)}>
+                  <Trash2 size={11} /> {s.too_big ? "Forget + archive file" : "Forget"}
+                </button>
+              </div>
             ))}
             {sessions.length === 0 && <div className="px-2 py-2 text-muted/60">no saved conversations yet</div>}
           </div>

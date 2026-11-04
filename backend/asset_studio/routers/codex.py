@@ -27,6 +27,21 @@ def recheck():
     return codex_app.recheck()
 
 
+class ForgetBody(BaseModel):
+    project: str
+    thread: str
+    rollout: bool = False
+
+
+@router.post("/conversations/forget")
+def conversations_forget(body: ForgetBody):
+    """Drop a conversation from a folder's list, and optionally archive Codex's rollout file.
+
+    The way out of a conversation so large that reopening it would stall the app-server for minutes.
+    Nothing is deleted: the transcript and the rollout are moved aside, not removed."""
+    return codex_app.forget_conversation(body.project, body.thread, rollout=body.rollout)
+
+
 class LoginBody(BaseModel):
     kind: str = "chatgpt"          # "chatgpt" (browser) | "device" (a code) | "apikey"
     api_key: str = ""
