@@ -362,6 +362,13 @@ async def _startup():
         remote.resume()
     except Exception:
         pass
+    # The skills of this version: a `git pull` and a restart are enough to get them. Primary backend
+    # only, and in a thread, because a first install fetches over the network.
+    try:
+        from . import skill_sync
+        skill_sync.start_background()
+    except Exception:
+        pass
     await queue.start()
     app.state._stats_task = asyncio.create_task(_stats_broadcaster())
     app.state._avail_task = asyncio.create_task(_availability_warmer())

@@ -87,9 +87,10 @@ console.log("\nSkills is in Settings");
 
 ok("there is a Skills section", /function SkillsSection\(/.test(settings));
 ok("...listed in the rail", /id: "skills", label: "Skills"/.test(settings));
-ok("...that reads the real list", /api\.skillsList\(\)/.test(settings));
-ok("...and toggles the real switch", /api\.skillToggle\(sk\.id, !sk\.enabled\)/.test(settings));
-ok("every skill shows its own description", /\{sk\.description\}/.test(settings),
+const browser = src("components/SkillsBrowser.tsx");
+ok("...that reads the real list", /useSkills\(\)/.test(settings) && /api\.skillsList\(feedId, agent\)/.test(browser));
+ok("...and toggles the real switch", /api\.skillToggle\(sk\.id, enabled, feedId, agent\)/.test(browser));
+ok("every skill shows its own description", /\{sk\.description\}/.test(browser),
    "the description IS the explanation");
 ok("it says a new skill arrives off", /arrives <span[^>]*>off<\/span>/.test(settings));
 

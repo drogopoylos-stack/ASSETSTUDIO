@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "defaults_on": ["local-image-to-3d", "claude-code-1m-context", "zustand-stable-selectors", "orch2"],
+  "user_only": ["orch"],
+  "setup": ["graphify"],
+  "upstream": {
+    "fusion-motion-design": {
+      "repo": "https://github.com/legionsound/open-fusion-mcp",
+      "commit": "f0b20ca2caaf93fde88515fce3569511d9170d78",
+      "path": "skills/fusion-motion-design",
+      "runtime": "runtime/davinci/open-fusion-mcp/skills/fusion-motion-design"
+    },
+    "fusion-reference": {
+      "repo": "https://github.com/legionsound/open-fusion-mcp",
+      "commit": "f0b20ca2caaf93fde88515fce3569511d9170d78",
+      "path": "skills/fusion-reference",
+      "runtime": "runtime/davinci/open-fusion-mcp/skills/fusion-reference"
+    },
+    "use-fusion": {
+      "repo": "https://github.com/legionsound/open-fusion-mcp",
+      "commit": "f0b20ca2caaf93fde88515fce3569511d9170d78",
+      "path": "skills/use-fusion",
+      "runtime": "runtime/davinci/open-fusion-mcp/skills/use-fusion"
+    }
+  },
+  "needs": {
+    "resolve-edit": ["davinci-resolve"],
+    "resolve-color": ["davinci-resolve"],
+    "resolve-media-analysis": ["davinci-resolve"],
+    "fusion-motion-design": ["use-fusion"],
+    "fusion-reference": ["use-fusion"],
+    "use-fusion": ["use-fusion"]
+  },
+  "private": ["learned-backend", "learned-game", "learned-general", "learned-integrations", "learned-ui", "studio",
+              "claude-code-headless-sdk", "studio-backend", "studio-game", "studio-general", "studio-integrations", "studio-ui"]
+}

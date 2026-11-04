@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { api } from "../api/client";
 import { EnginePane } from "./SettingsEngine";
+import { SkillsBrowser, SkillsTransfer, useSkills } from "../components/SkillsBrowser";
 import { settingSlug } from "../components/ui";
 import { FEED_DETAILS, detailSummary } from "../components/feedDetail";
 import AgentTerminal from "../components/AgentTerminal";
@@ -1758,79 +1759,20 @@ function PlanningPane() {
 // A new skill therefore arrives OFF. Nothing installs itself into your prompt.
 
 function SkillsSection() {
-  const [skills, setSkills] = useState<import("../types").Skill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState("");
-  const [q, setQ] = useState("");
-  const [err, setErr] = useState("");
-
-  const load = () => api.skillsList()
-    .then((r) => { setSkills(r.skills || []); setErr(""); })
-    .catch((e) => setErr(String(e?.message || e)))
-    .finally(() => setLoading(false));
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
-
-  const toggle = async (sk: import("../types").Skill) => {
-    setBusy(sk.id);
-    try {
-      const r = await api.skillToggle(sk.id, !sk.enabled);
-      setSkills((ss) => ss.map((x) => (x.id === sk.id ? { ...x, enabled: r.enabled, state: r.state } : x)));
-    } catch (e: any) { setErr(String(e?.message || e)); } finally { setBusy(""); }
-  };
-
-  const needle = q.trim().toLowerCase();
-  const shown = needle
-    ? skills.filter((s) => (s.name + " " + s.description + " " + (s.category || "")).toLowerCase().includes(needle))
-    : skills;
-  // On first, because "what is switched on" is the question this page answers.
-  const sorted = [...shown].sort((a, b) => (Number(b.enabled) - Number(a.enabled)) || a.name.localeCompare(b.name));
-  const on = skills.filter((s) => s.enabled).length;
+  const lib = useSkills();
+  const on = lib.skills.filter((s) => s.enabled).length;
 
   return (
     <Section title="Skills"
       desc="Instructions Claude loads only when it needs them. A skill that is off cannot be loaded at all, so it costs nothing but the one line of description below its name."
       right={<div className="text-xs text-muted text-right">
-        <div><span className="text-text tabular-nums">{on}</span> of {skills.length} on</div>
+        <div><span className="text-text tabular-nums">{on}</span> of {lib.skills.length} on</div>
         <button className="text-brand hover:underline inline-flex items-center gap-1"
-          onClick={() => { setLoading(true); load(); }}><RefreshCw size={11} /> refresh</button>
+          onClick={() => lib.load()}><RefreshCw size={11} /> refresh</button>
       </div>}>
-      <input className="input w-full text-sm mb-3" value={q} placeholder="filter by name, description or category"
-        onChange={(e) => setQ(e.target.value)} />
-      {err && <div className="text-xs text-danger mb-2">{err}</div>}
-      {loading ? (
-        <div className="text-xs text-muted py-3">loading…</div>
-      ) : sorted.length === 0 ? (
-        <div className="text-xs text-muted/70 py-3">
-          {skills.length === 0
-            ? "No skills installed. They live in ~/.claude/skills/<name>/SKILL.md, and setup.ps1 puts the bundled ones there."
-            : "Nothing matches that."}
-        </div>
-      ) : (
-        <div className="-mx-1">
-          {sorted.map((sk) => (
-            <button key={sk.id} type="button" disabled={busy === sk.id} onClick={() => toggle(sk)}
-              title={sk.enabled ? "Switch off" : "Switch on"}
-              className={cls("w-full text-left flex items-start gap-3 px-1 py-2 rounded-lg transition-colors",
-                busy === sk.id ? "opacity-50" : "hover:bg-panel2/60 cursor-pointer")}>
-              <Wand2 size={13} className={cls("mt-1 shrink-0", sk.enabled ? "text-brand" : "text-muted/50")} />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 flex-wrap">
-                  <span className={cls("text-sm", !sk.enabled && "text-muted")}>{sk.name}</span>
-                  <span className={cls("text-[10px] uppercase tracking-wide",
-                    sk.enabled ? "text-ok" : "text-muted/60")}>{sk.enabled ? "on" : "off"}</span>
-                  {sk.category && <span className="chip text-[9px]">{sk.category}</span>}
-                  <span className="chip text-[9px]">{sk.scope}</span>
-                </span>
-                <span className="block text-xs text-muted mt-0.5 max-w-2xl">{sk.description}</span>
-              </span>
-              <span className={cls("shrink-0 mt-0.5 flex items-center h-5 w-9 rounded-full px-0.5 transition-colors",
-                sk.enabled ? "bg-brand-600 justify-end" : "bg-line justify-start")}>
-                <span className="h-4 w-4 rounded-full bg-white shadow" />
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <SkillsBrowser lib={lib} layout="rail"
+        empty="No skills installed. They live in ~/.claude/skills/<name>/SKILL.md, and the Studio installs the bundled ones there when it starts." />
+      <SkillsTransfer lib={lib} />
       <p className="text-[11px] text-muted/70 mt-3 leading-relaxed">
         A new skill arrives <span className="text-muted">off</span> — nothing adds itself to your prompt.
         A change applies to your next message, in every project. The same list is beside your code

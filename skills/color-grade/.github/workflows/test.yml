@@ -1,0 +1,88 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ruby:
+    name: LUT generation (Ruby)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: LUT generation suite
+        run: ruby test_luts.rb
+
+      - name: Color model suite
+        run: ruby test_color_model.rb
+
+      - name: Repository hygiene suite
+        run: ruby test_repo_hygiene.rb
+
+  python:
+    name: Analysis and grading (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install Pillow numpy PyYAML
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Footage type suite
+        run: python3 test_footage_type.py
+
+      - name: Frame analysis suite
+        run: python3 test_auto_grade.py
+
+      - name: Region sampling suite
+        run: python3 test_analyze_region.py
+
+      - name: LUT application suite
+        run: python3 test_lut_apply.py
+
+      - name: Closed-loop evaluation suite
+        run: python3 test_eval.py
+
+      - name: Shot matching suite
+        run: python3 test_match_grade.py
+
+      - name: Clip sampling suite
+        run: python3 test_sample_clip.py
+
+  javascript:
+    name: Browser pipeline parity (JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The parity suite drives the real Ruby implementation over a pipe rather
+      # than comparing against committed .cube files, so Ruby is a hard
+      # dependency here. Pin it instead of relying on whatever the runner ships.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Pipeline parity suite
+        run: node --test test_pipeline.mjs

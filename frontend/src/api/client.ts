@@ -175,12 +175,24 @@ export const api = {
   // ones are delivered to a Codex thread as standing instructions (`codex_app._skills_note`), so
   // the list and its switches mean the same thing on every engine.
   skillsList: (projectId = "", agent = "") =>
-    req<{ skills: import("../types").Skill[]; agent: string }>(
+    req<{ skills: import("../types").Skill[]; agent: string; groups?: import("../types").SkillGroup[] }>(
       `/api/skills?project_id=${encodeURIComponent(projectId)}&agent=${encodeURIComponent(agent)}`),
   skillToggle: (id: string, enabled: boolean, projectId = "", agent = "") =>
     req<{ ok: boolean; id: string; enabled: boolean; state: string; path?: string }>(
       `/api/skills/${encodeURIComponent(id)}`,
       { method: "POST", body: JSON.stringify({ enabled, project_id: projectId, agent }) }),
+  skillsSync: () => req<import("../types").SkillSyncReport>("/api/skills/sync", { method: "POST" }),
+  skillsPackExport: () => req<import("../types").SkillPackExport>("/api/skills/pack/export", { method: "POST" }),
+  skillsPackImport: async (file: File, overwrite: boolean) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const res = await fetch(`/api/skills/pack/import?overwrite=${overwrite}`, { method: "POST", body: fd });
+    if (!res.ok) {
+      const why = await res.json().then((j) => j?.detail).catch(() => "");
+      throw new Error(why || `import failed (${res.status})`);
+    }
+    return res.json() as Promise<import("../types").SkillPackImport>;
+  },
   listCustom: () => req<any[]>("/api/providers/custom/list"),
   upsertCustom: (spec: any) =>
     req<any>("/api/providers/custom", { method: "POST", body: JSON.stringify(spec) }),

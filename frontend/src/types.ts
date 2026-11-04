@@ -793,6 +793,42 @@ export interface Skill {
   created?: string;     // display string (frontmatter `created` or file creation time)
   created_ts?: number;  // epoch seconds — used for "newest first" ordering
   updated?: string;
+  group?: string;       // the id of a SkillGroup; an older backend sends none
+  origin?: string;      // "bundled": arrives on another computer by itself. "local": this computer only
+  needs?: string[];     // MCP servers the skill calls that this computer does not have
+}
+
+export interface SkillGroup {
+  id: string;
+  label: string;
+}
+
+export interface SkillSyncReport {
+  installed: string[];
+  updated: string[];
+  kept: string[];
+  linked: string[];
+  removed: string[];
+  current: number;
+  waiting: string[];
+  failed: Record<string, string>;
+}
+
+export interface SkillPackExport {
+  file: string;
+  path: string;
+  size: number;
+  skills: string[];
+  skipped: Record<string, string[]>;
+}
+
+export interface SkillPackImport {
+  installed: string[];
+  replaced: string[];
+  kept: string[];
+  current: string[];
+  linked: string[];
+  ignored: number;
 }
 
 export interface SetupTask {

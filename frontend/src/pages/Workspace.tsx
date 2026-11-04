@@ -74,6 +74,7 @@ function PaneLoading({ label }: { label: string }) {
 }
 import { GitPanel } from "../components/GitPanel";
 import { SubAgentPanel } from "../components/SubAgentPanel";
+import { SkillsBrowser, useSkills } from "../components/SkillsBrowser";
 import { buildTree, WorkspaceTree } from "../components/WorkspaceTree";
 import { PasteBoard } from "../components/PasteBoard";
 import { RunningAgents } from "../components/RunningAgents";
@@ -3026,22 +3027,8 @@ function ConversationControl({ root, feedId, mode, setMode }: {
 // home (Kimi and Qwen run the same CLI with their own CLAUDE_CONFIG_DIR), and the backend resolves
 // "whose library" from that prefix. Handed the bare folder id, a Kimi or Qwen pane listed Claude's.
 function SkillsPanel({ feedId, agent, agentName }: { feedId: string; agent: string; agentName: string }) {
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
   const toast = useStore((s) => s.toast);
-  const load = () => api.skillsList(feedId, agent).then((r) => setSkills(r.skills)).catch(() => {}).finally(() => setLoading(false));
-  useEffect(() => { setLoading(true); load(); /* eslint-disable-next-line */ }, [feedId, agent]);
-
-  async function toggle(sk: Skill) {
-    setBusy(sk.id);
-    try {
-      const r = await api.skillToggle(sk.id, !sk.enabled, feedId, agent);
-      setSkills((ss) => ss.map((x) => (x.id === sk.id ? { ...x, enabled: r.enabled, state: r.state } : x)));
-      toast(`${sk.name} ${r.enabled ? "enabled" : "disabled"}`, "ok");
-    } catch (e: any) { toast(e.message, "danger"); } finally { setBusy(null); }
-  }
-  const summarize = (t: string) => { const s = (t || "").replace(/\s+/g, " ").trim(); return s.length > 200 ? s.slice(0, 200) + "…" : s; };
+  const lib = useSkills(feedId, agent, toast);
   const codex = agent === "codex";
 
   return (
@@ -3049,49 +3036,23 @@ function SkillsPanel({ feedId, agent, agentName }: { feedId: string; agent: stri
       <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-line text-xs bg-panel">
         <Wand2 size={13} className="text-brand" />
         <span className="font-semibold">Skills</span>
-        <span className="text-muted">· {skills.length}</span>
+        <span className="text-muted">· {lib.skills.length}</span>
         <span className="chip !py-0 text-[9px] text-muted" title={`The library ${agentName} loads from`}>{agentName}</span>
-        <button className="ml-auto chip hover:text-text" onClick={() => { setLoading(true); load(); }} title="Refresh"><RefreshCw size={11} /></button>
+        <button className="ml-auto chip hover:text-text" onClick={() => lib.load()} title="Refresh" aria-label="Refresh the skills"><RefreshCw size={11} /></button>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto p-2 space-y-1.5">
-        {loading ? (
-          <div className="text-muted text-xs px-1 py-3">loading…</div>
-        ) : skills.length === 0 ? (
-          <div className="text-muted/60 text-xs px-1 py-3 leading-relaxed">
+      <div className="flex-1 min-h-0 overflow-auto p-2">
+        <SkillsBrowser lib={lib} layout="sections" empty={(
+          <>
             No skills installed. Add them under{" "}
             <span className="font-mono text-text">~/.claude/skills/&lt;name&gt;/SKILL.md</span>
             {" "}and they'll appear here{agent === "deepseek-harness"
               ? ", and load in DeepSeek too — the Studio mounts that same folder into the DeepSeek runtime."
               : ", usable in every project."}
-          </div>
-        ) : (
-          skills.map((sk) => (
-            <div key={sk.id} className={cls("rounded-md border p-2.5", sk.enabled ? "border-line bg-panel/40" : "border-line bg-panel2/30")}>
-              <div className="flex items-center gap-2">
-                <Wand2 size={13} className={cls("shrink-0", sk.enabled ? "text-brand" : "text-muted/60")} />
-                <span className={cls("font-medium text-[13px] truncate", !sk.enabled && "text-muted")}>{sk.name}</span>
-                {sk.category && <span className="chip text-[9px] shrink-0">{sk.category}</span>}
-                <span className="chip text-[9px] shrink-0">{sk.scope}</span>
-                <button className="ml-auto shrink-0 disabled:opacity-50" disabled={busy === sk.id}
-                  onClick={() => toggle(sk)} title={sk.enabled ? "Disable" : "Enable"}>
-                  <span className={cls("flex items-center h-5 w-9 rounded-full transition-colors px-0.5", sk.enabled ? "bg-brand-600 justify-end" : "bg-line justify-start")}>
-                    <span className="h-4 w-4 rounded-full bg-white shadow" />
-                  </span>
-                </button>
-              </div>
-              <div className={cls("text-[11px] mt-1 leading-snug", sk.enabled ? "text-muted" : "text-muted/50")}>{summarize(sk.description)}</div>
-              {(sk.created || sk.updated) && (
-                <div className="text-[10px] text-muted/50 mt-1 flex items-center gap-2 flex-wrap">
-                  {sk.created && <span title="When this skill was created">added {sk.created}</span>}
-                  {sk.updated && sk.updated !== (sk.created || "").slice(0, 10) && <span title="Last edited">· updated {sk.updated}</span>}
-                </div>
-              )}
-            </div>
-          ))
-        )}
+          </>
+        )} />
       </div>
       <div className="shrink-0 px-2 py-1 border-t border-line text-[10px] text-muted/70">
-        New skills arrive <span className="text-muted">off</span> — enable the ones you want. Applies to your next message, every project. Newest added first.
+        New skills arrive <span className="text-muted">off</span> — enable the ones you want. Applies to your next message, every project.
         {codex && <> Codex gets the enabled ones as standing instructions, from the <span className="text-muted">next conversation</span> on.</>}
       </div>
     </div>

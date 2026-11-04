@@ -314,20 +314,15 @@ print("MISSING_ROUTES " + ", ".join(missing) if missing else "IMPORT_OK %d route
         Good "UI built."
     }
 
-    # 6) bundled Claude skills -> the Claude folder's skills (disabled by default; enable in the
-    #    Skills tab). Claude Code's folder is CLAUDE_CONFIG_DIR when that is set, else ~\.claude.
-    $bundled = Join-Path $root "skills"
-    if (Test-Path $bundled) {
-        if ($env:CLAUDE_CONFIG_DIR) { $skillsDest = Join-Path $env:CLAUDE_CONFIG_DIR "skills" }
-        else { $skillsDest = Join-Path $env:USERPROFILE ".claude\skills" }
-        New-Item -ItemType Directory -Force -Path $skillsDest | Out-Null
-        $added = 0
-        foreach ($s in Get-ChildItem $bundled -Directory) {
-            $d = Join-Path $skillsDest $s.Name
-            if (-not (Test-Path $d)) { Copy-Item $s.FullName $d -Recurse; $added++ }
-        }
-        Good ("Bundled skills: " + $added + " new installed in " + $skillsDest + " (disabled by default).")
-    }
+    # 6) bundled Claude skills -> the Claude folder's skills, with the paths of this computer written
+    #    into them. Claude Code's folder is CLAUDE_CONFIG_DIR when that is set, else ~\.claude. The
+    #    backend does this again on every start, so a failure here is a warning and not the end.
+    Push-Location (Join-Path $root "backend")
+    & $venvPy -m asset_studio.skill_sync sync | Out-Null
+    $syncCode = $LASTEXITCODE
+    Pop-Location
+    if ($syncCode -eq 0) { Good "Bundled skills are installed. Switch them on in the Skills tab." }
+    else { Write-Host "  Bundled skills: not installed now. The Studio tries again when it starts." -ForegroundColor Yellow }
 
     # Every backend installer below prints one line: READY, or FAILED with the reason.
     function Run-Backend($code) {

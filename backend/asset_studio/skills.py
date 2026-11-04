@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 
 from . import engines, fsutil
@@ -108,6 +109,86 @@ def _set_dmi_flag(md: Path, disabled: bool) -> bool:
         return False
 
 
+# --- what a skill is for ---------------------------------------------------------------------------
+#
+# FIFTY SKILLS IN ONE LIST ARE NOT FINDABLE, and the `category` line in the frontmatter does not help:
+# it has thirteen spellings for eight ideas, and most skills have none. So the group is decided here,
+# in this order: a curated id, then the skill's own `category`, then the words of its name and its
+# description, so that a skill nobody has seen yet still lands in a useful place.
+GROUPS = (
+    {"id": "game", "label": "Game design & development"},
+    {"id": "3d", "label": "3D assets & rendering"},
+    {"id": "video", "label": "Video & montage"},
+    {"id": "images", "label": "Images & AI art"},
+    {"id": "ui", "label": "UI & web design"},
+    {"id": "agents", "label": "Agents & orchestration"},
+    {"id": "integrations", "label": "Integrations & backend"},
+    {"id": "documents", "label": "Documents"},
+    {"id": "notes", "label": "General notes"},
+    {"id": "other", "label": "Other"},
+)
+
+_GROUP_OF_ID = {
+    "game-developer": "game", "game-hud-over-playfield": "game", "animation-vs-gameplay-clocks": "game",
+    "web-build-weight": "game", "learned-game": "game", "studio-game": "game",
+    "forge-director": "3d", "threejs-asset-forge": "3d", "img2threejs": "3d", "stoneforge": "3d",
+    "modular-asset-kit": "3d", "local-image-to-3d": "3d", "three-cinematic": "3d",
+    "renderer-ablation-debugging": "3d", "playcanvas-render-traps": "3d", "render-colour-forensics": "3d",
+    "stylised-3d-reference-matching": "3d",
+    "resolve-edit": "video", "resolve-color": "video", "resolve-media-analysis": "video",
+    "color-grade": "video", "fusion-motion-design": "video", "fusion-reference": "video",
+    "use-fusion": "video", "fusion-figma-transfer": "video",
+    "openai-image-generation": "images", "gemini-image-generation": "images",
+    "ui-ux-pro-max": "ui", "tailwind-play-cdn-gotchas": "ui", "zustand-stable-selectors": "ui",
+    "electron-native-file-ops": "ui", "learned-ui": "ui", "studio-ui": "ui",
+    "orch": "agents", "orch2": "agents", "ai-token-routing": "agents", "claude-code-1m-context": "agents",
+    "claude-code-headless-sdk": "agents", "graphify": "agents",
+    "cs-cart-integration": "integrations", "wolt-drive-api": "integrations", "learned-backend": "integrations",
+    "learned-integrations": "integrations", "studio-backend": "integrations",
+    "studio-integrations": "integrations", "python-windows-console-encoding": "integrations",
+    "local-app-portability": "integrations",
+    "studio-general": "notes", "learned-general": "notes",
+}
+
+_GROUP_OF_CATEGORY = {
+    "game": "game", "game-dev": "game", "gamedev": "game", "studio-game": "game",
+    "3d": "3d", "video": "video", "ui": "ui", "ux": "ui", "ui-ux": "ui", "studio-ui": "ui",
+    "backend": "integrations", "studio-backend": "integrations", "integrations": "integrations",
+    "studio-integrations": "integrations", "general": "notes", "studio-general": "notes",
+    "image": "images", "images": "images", "documents": "documents", "agents": "agents",
+}
+
+# A word in the name counts three times, because a name is chosen and a description is prose.
+_GROUP_WORDS = {
+    "video": r"video|montage|footage|timeline|davinci|resolve|fusion|premiere|color[- ]grad\w*|lut|ffmpeg|motion graphics?|subtitles?",
+    "game": r"games?|gameplay|game[- ]dev\w*|hud|level design|godot|unity|unreal|phaser|playfield|npc",
+    "3d": r"3d|three\.?js|blender|meshes|mesh|glb|gltf|shaders?|playcanvas|renderer|textures?|sculpt\w*",
+    "images": r"images?|illustrations?|photos?|logos?|pictures?|sprites?|stable diffusion|comfyui",
+    "ui": r"ui|ux|interfaces?|tailwind|css|react|zustand|frontend|front-end|landing pages?|dashboards?|electron",
+    "agents": r"agents?|subagents?|orchestrat\w*|claude code|prompts?|llm|mcp|tokens?",
+    "integrations": r"apis?|backend|integrations?|webhooks?|servers?|databases?|sql|deploy\w*|windows",
+    "documents": r"docx|pdf|pptx|xlsx|word documents?|spreadsheets?|presentations?|slides?",
+}
+_GROUP_RX = {g: re.compile(r"(?<![\w-])(?:%s)(?![\w-])" % w, re.I) for g, w in _GROUP_WORDS.items()}
+
+
+def group_of(skill_id: str, category: str = "", description: str = "") -> str:
+    """The id of the group a skill is shown under. See the note above for the order."""
+    hit = _GROUP_OF_ID.get(skill_id)
+    if hit:
+        return hit
+    hit = _GROUP_OF_CATEGORY.get(str(category or "").strip().lower())
+    if hit:
+        return hit
+    name = skill_id.replace("-", " ").replace("_", " ")
+    best, top = "other", 0
+    for g, rx in _GROUP_RX.items():
+        score = 3 * len(rx.findall(name)) + len(rx.findall(description or ""))
+        if score > top:
+            best, top = g, score
+    return best
+
+
 def _entry(sk_dir: Path, md: Path, scope: str) -> dict:
     fm: dict = {}
     try:
@@ -122,6 +203,7 @@ def _entry(sk_dir: Path, md: Path, scope: str) -> dict:
         "id": sk_dir.name, "name": fm.get("name") or sk_dir.name,
         "description": fm.get("description", ""), "scope": scope,
         "category": fm.get("category", ""),
+        "group": group_of(sk_dir.name, fm.get("category", ""), fm.get("description", "")),
         "created": fm.get("created") or _fmt_ts(ctime),
         "created_ts": ctime,
         "updated": fm.get("updated", ""),
@@ -385,6 +467,11 @@ def _list_skills_uncached(project_id: str = "", agent: str = "") -> list[dict]:
         it.pop("_md", None)
         out.append(it)
     out.sort(key=lambda x: x.get("created_ts") or 0, reverse=True)  # newest added first
+    try:
+        from . import skill_sync
+        skill_sync.annotate(out)
+    except Exception:
+        pass                     # a damaged manifest must not empty the list
     return out
 
 

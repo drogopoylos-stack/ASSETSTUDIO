@@ -151,8 +151,7 @@ if not setup.is_file():
     skipped("setup.ps1 installs the bundled skills", "no setup.ps1")
 else:
     t = setup.read_text(encoding="utf-8", errors="replace")
-    check("it copies the bundled skills to ~/.claude/skills",
-          "skills" in t and ".claude\\skills" in t)
+    check("it installs the bundled skills with the sync module", "asset_studio.skill_sync sync" in t)
 
 # ---------------------------------------------------------------------------
 print("\nThe switch in the Skills tab")
