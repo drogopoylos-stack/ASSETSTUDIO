@@ -2479,6 +2479,65 @@ def _tail_lines(live: "_Live"):
             pass
 
 
+def _answer_control_request(live: "_Live", ev: dict) -> bool:
+    """Answer a question the CLI asks its host. An unanswered one blocks the turn with no limit.
+
+    A `control_request` on stdout means a tool call is waiting for this host, and it has no
+    timeout: on 2026-11-04 the telemetry dialog of the Blender MCP server held a turn
+    for 8.5 hours, with the user's own messages queued behind it. An MCP question gets the same
+    answer as on the Codex engine (`mcpServer/elicitation/request`): decline, so the tool returns
+    and the model reads the outcome. Anything else gets an error for the same reason.
+
+    A resumed backend reads the log again from its last checkpoint, so it can answer a request
+    twice. That is harmless, and it also frees a turn that was stuck before this code existed."""
+    try:
+        rid = ev.get("request_id")
+        if not rid:
+            return False
+        sub = (ev.get("request") or {}).get("subtype")
+        if sub == "elicitation":
+            body = {"subtype": "success", "request_id": rid, "response": {"action": "decline"}}
+        else:
+            body = {"subtype": "error", "request_id": rid,
+                    "error": f"Asset Studio does not handle {sub}"}
+        data = (json.dumps({"type": "control_response", "response": body}) + "\n").encode("utf-8")
+        with live.lock:
+            inbox = live.inbox
+            if not inbox:
+                if live.proc.stdin is None:
+                    return False
+                live.proc.stdin.write(data)
+                live.proc.stdin.flush()
+                return True
+        return _inbox_put(live, data)      # outside the lock: delivery can wait on the keeper
+    except Exception:
+        return False
+
+
+_TOOL_WAIT_WARN_S = 300.0          # a blocking tool call this old gets a label that says so
+# Their length is their job, and they report through their own cards.
+_TOOL_WAIT_EXEMPT = frozenset({"Agent", "Task", "Workflow", "Monitor"})
+
+
+def _note_tool_wait(live: "_Live", ev: dict) -> bool:
+    """Say which tool call a silent turn is waiting for, from the CLI's 30 s heartbeat.
+
+    The label never ends the call: a slow tool and a stuck one look alike from here. The next
+    streamed block replaces it, so it lasts only as long as the wait does."""
+    try:
+        tool = str(ev.get("tool_name") or "")
+        waited = float(ev.get("elapsed_time_seconds") or 0)
+        if not tool or tool in _TOOL_WAIT_EXEMPT or waited < _TOOL_WAIT_WARN_S:
+            return False
+        name = tool.replace("mcp__", "", 1).replace("__", " · ")
+        with live.lock:
+            live.activity = ("%s has run for %d minutes with no result. Press Stop to end the call."
+                             % (name, int(waited // 60)))
+        return True
+    except Exception:
+        return False
+
+
 def _live_reader(live: "_Live") -> None:
     """Drain the process's stream-json stdout: capture the real session id and track
     turn boundaries (``result`` ends a turn; the first activity line starts one) to
@@ -2630,6 +2689,11 @@ def _live_reader(live: "_Live") -> None:
                     push_now = live.msg_done
                     live.msg_done = False
                 _publish_live(live, force=push_now)
+            elif typ == "control_request":
+                _answer_control_request(live, ev)
+            elif typ == "tool_progress":
+                if _note_tool_wait(live, ev):
+                    _publish_live(live)
     except Exception:
         pass
     finally:
