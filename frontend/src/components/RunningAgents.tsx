@@ -63,6 +63,10 @@ export function RunningAgents({ rows, err, onOpen, onClose, nameOf }: {
 
         {err && <div className="px-3 py-2 text-warn bg-warn/10 border-b border-warn/30">{err}</div>}
 
+        {total > 0 && (
+          <div className="px-3 pt-2 text-[11px] text-muted">Click an agent to watch its work.</div>
+        )}
+
         {!total && !err && (
           <div className="px-3 py-4 text-muted">
             Nothing is delegated right now. This looks in every folder and asks every engine —
@@ -82,7 +86,7 @@ export function RunningAgents({ rows, err, onOpen, onClose, nameOf }: {
             </div>
             <div className={cls("px-2 pb-2 space-y-1")}>
               {g.agents.map((a) => (
-                <SubAgentCard key={`${g.project}:${a.agent_id}`} agent={a} compact
+                <SubAgentCard key={`${g.project}:${a.agent_id}`} agent={a} compact openOnClick
                   onOpen={(agentId) => { onOpen(g.folder, agentId, g.engine); onClose(); }} />
               ))}
             </div>

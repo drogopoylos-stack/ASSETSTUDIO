@@ -49,7 +49,8 @@ export function SubAgentPanel({ projectId, agentId, cli, onClose, onContinue }: 
   // "wrote its transcript in the last 90 seconds", and an agent thinking through one long turn
   // writes nothing for ten minutes. Stopping on quiet froze the panel on the agent's first step
   // and never restarted it, so a working agent looked dead until the window was reloaded by hand.
-  const done = TERMINAL.has(String(data?.agent?.status || "").toLowerCase());
+  // A recorded outcome does not end the poll while the agent still writes: a resumed agent does.
+  const done = TERMINAL.has(String(data?.agent?.status || "").toLowerCase()) && !data?.agent?.running;
   useEffect(() => {
     return pollWhileVisible(() => (done ? undefined : load()), 2500);
   }, [load, done]);

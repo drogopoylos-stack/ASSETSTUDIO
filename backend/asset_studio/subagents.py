@@ -274,24 +274,97 @@ def wf_journal(run: Path) -> dict:
 
 
 def agent_meta(f: Path) -> dict:
-    """An agent's `.meta.json`, written once at launch beside its transcript.
+    """An agent's `.meta.json`, written at launch beside its transcript and again when it ends.
 
     Every agent has one, a Task agent and a Workflow agent alike: `description` is the name it was
-    given, `agentType`, and for a Workflow agent `workflowPhase`. A Task agent's also says `model`."""
+    given, `agentType`, and for a Workflow agent `workflowPhase`. A Task agent's also says `model`
+    and `requestShape`, and the current CLI adds `finished` at the end, so the entry is remembered
+    per mtime and not for good."""
     key = str(f)
-    got = _meta_cache.get(key)
-    if got is not None:
-        return got
+    side = f.with_name(f.stem + ".meta.json")
     try:
-        got = json.loads(f.with_name(f.stem + ".meta.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        mt = side.stat().st_mtime
+    except OSError:
         return {}                        # not written yet: ask again next time
+    hit = _meta_cache.get(key)
+    if hit is not None and hit[0] == mt:
+        return hit[1]
+    try:
+        got = json.loads(side.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
     if not isinstance(got, dict):
         got = {}
     if len(_meta_cache) >= _WF_CACHE_MAX:
         _meta_cache.pop(next(iter(_meta_cache)), None)
-    _meta_cache[key] = got
+    _meta_cache[key] = (mt, got)
     return got
+
+
+# How far back the parent transcript is searched for the answer to a foreground agent's call.
+_PARENT_TAIL = 8 * 1024 * 1024
+_answered: dict = {}
+
+
+def _parent_answered(f: Path, tool_id: str) -> bool:
+    """Did the parent get a result for this agent's tool call?
+
+    A foreground agent that was interrupted has a tool result with no `agentId` in it, so no
+    summary row ever says that it ended. Asked only for a foreground agent that has gone quiet with
+    no outcome, and a "no" is remembered until the parent transcript grows.
+    """
+    if not tool_id:
+        return False
+    sess = f.parent.parent
+    parent = sess.parent / (sess.name + ".jsonl")
+    key = (str(parent), tool_id)
+    hit = _answered.get(key)
+    if hit is True:
+        return True
+    try:
+        size = parent.stat().st_size
+        if hit == size:
+            return False
+        with open(parent, "rb") as fh:
+            fh.seek(max(0, size - _PARENT_TAIL))
+            found = ('"tool_use_id":"%s"' % tool_id).encode("utf-8") in fh.read()
+    except OSError:
+        return False
+    if len(_answered) >= 256:
+        _answered.clear()
+    _answered[key] = True if found else size
+    return found
+
+
+def _with_launch(f: Path, row: dict, mt: float, now: float) -> dict:
+    """Fill a row from the agent's own sidecar file.
+
+    THE PARENT RECORDS A FOREGROUND AGENT ONLY WHEN IT RETURNS. Until then there is no summary, so
+    a live foreground agent had no name and no type, and nothing said that it was owed a result.
+    Measured on 2026-11-04: a helper that worked for 136 seconds was a row with no label, and it
+    left the list at 92 seconds, in the middle of one quiet command. The sidecar is on disk from
+    the first second, whichever way the agent was started.
+    """
+    meta = agent_meta(f)
+    out = dict(row)
+    for k, src in (("description", "description"), ("agent_type", "agentType"), ("model", "model")):
+        if not out.get(k) and meta.get(src):
+            out[k] = mission._clean(str(meta[src]), 200)
+    # `or`, because a foreground agent can be sent to the background after it started.
+    out["background"] = bool(out.get("background")) or meta.get("requestShape") == "background"
+    if str(out.get("status") or "").lower() in _TERMINAL:
+        return out
+    if meta.get("finished"):
+        out["status"] = "completed"
+        try:
+            out["status_at"] = f.with_name(f.stem + ".meta.json").stat().st_mtime
+        except OSError:
+            out["status_at"] = mt
+    elif (not out["background"] and now - mt > RUNNING_WINDOW
+          and _parent_answered(f, str(meta.get("toolUseId") or ""))):
+        out["status"] = "stopped"
+        out["status_at"] = mt
+    return out
 
 
 def _wf_model(f: Path) -> str:
@@ -861,7 +934,7 @@ def _list_uncached(project_id: str, session: str = "", with_files: bool = False)
             base = summaries.get(aid) or {}
             if run is not None:
                 base = _merge(_wf_row(f, run, ended_at), base)
-            row = _merge(_ledger(f), base)
+            row = _with_launch(f, _merge(_ledger(f), base), mt, now)
             row["agent_id"] = aid
             # A launch record says the agent STARTED and never that it stopped, so a background
             # agent would look finished the moment it went quiet. Its own transcript is the only
@@ -870,18 +943,16 @@ def _list_uncached(project_id: str, session: str = "", with_files: bool = False)
             row["running"] = (now - mt) <= RUNNING_WINDOW and not _finished(row, mt)
             row["updated"] = mt
             row["idle_s"] = round(now - mt, 1)
-            # Dispatched and never heard from again is not the same as finished. A background
-            # agent goes quiet for minutes inside one long turn, and dropping it at 90 seconds
-            # made a working agent look dead everywhere at once. `open` keeps it on screen; the
-            # idle time beside it is what tells the user whether to worry.
+            # Dispatched and never heard from again is not the same as finished. Any agent goes
+            # quiet for minutes inside one long turn, foreground or background, and dropping it at
+            # 90 seconds made a working agent look dead everywhere at once. `open` keeps it on
+            # screen; the idle time beside it is what tells the user whether to worry.
             # `_finished` and nothing else. This used to ALSO test the status unconditionally,
             # which is a different question with a different answer: it treats any recorded
             # outcome as the last word, so an agent that was resumed after completing could never
             # show as working again. One test, in one place, or the panel and the bar disagree —
             # and they did, in both directions, on the same afternoon.
-            row["open"] = (bool(row.get("background"))
-                           and not _finished(row, mt)
-                           and (now - mt) <= OPEN_WINDOW)
+            row["open"] = not _finished(row, mt) and (now - mt) <= OPEN_WINDOW
             # Only for the one or two agents that are actually live: reading the tail of every
             # agent this project ever ran, to fill a status line, is the mistake this file exists
             # to avoid.
@@ -989,15 +1060,14 @@ def working(project_id: str, window: float = OPEN_WINDOW) -> list:
     right. A number that disagrees with itself is worse than no number.
 
     An agent counts if it is MOVING (it wrote within the running window) or if it is OWED (it was
-    dispatched in the background and no outcome has been recorded). Each row carries `moving`, so
-    a caller that wants to say "3 working, 1 quiet" can, without asking a second question.
+    dispatched, in the foreground or the background, and no outcome has been recorded). `running`
+    has already dropped the ones with an outcome. Each row carries `moving`, so a caller that wants
+    to say "3 working, 1 quiet" can, without asking a second question.
     """
     cut = time.time() - RUNNING_WINDOW
-    out = []
-    for a in running(project_id, window=window):
+    out = running(project_id, window=window)
+    for a in out:
         a["moving"] = float(a.get("updated") or 0) > cut
-        if a["moving"] or a.get("background"):
-            out.append(a)
     return out
 
 
@@ -1028,8 +1098,9 @@ def running(project_id: str, window: float = RUNNING_WINDOW) -> list:
     is incremental. So nothing is opened unless something is genuinely running, and the common
     answer — nothing is — costs one scandir per session folder.
     """
-    cut = time.time() - window
-    fresh: list[tuple[str, str, float]] = []          # (agent_id, session, mtime)
+    now = time.time()
+    cut = now - window
+    fresh: list[tuple[Path, str, float]] = []         # (agent file, session, mtime)
     wf_fresh: list[tuple[Path, str, float, Path]] = []  # Workflow agents: (file, session, mtime, run)
     for d in _dirs(project_id):
         try:
@@ -1042,7 +1113,7 @@ def running(project_id: str, window: float = RUNNING_WINDOW) -> list:
                     except OSError:
                         continue
                     if mt > cut:
-                        fresh.append((e.name[6:-6], d.parent.name, mt))
+                        fresh.append((d / e.name, d.parent.name, mt))
         except OSError:
             continue
         # Workflow agents, one folder down. A run that has ended owes nothing, so it is not
@@ -1059,10 +1130,11 @@ def running(project_id: str, window: float = RUNNING_WINDOW) -> list:
     # set: `_summaries` reads EVERY parent transcript when it is given none.
     summaries = _summaries(project_id, {s for _, s, _ in fresh}) if fresh else {}
     seen: dict = {}
-    for aid, sess, mt in sorted(fresh, key=lambda r: r[2], reverse=True):
+    for f, sess, mt in sorted(fresh, key=lambda r: r[2], reverse=True):
+        aid = f.stem[len("agent-"):]
         if aid in seen:
             continue
-        row = dict(summaries.get(aid) or {})
+        row = _with_launch(f, summaries.get(aid) or {}, mt, now)
         # A launch record says the agent STARTED and never that it stopped; the outcome is
         # written later — as `completed` on a foreground agent, or as a queued notification on a
         # background one. Recent writes AND no outcome newer than them = still working.
@@ -1185,8 +1257,14 @@ def running_everywhere() -> dict:
                 # fan-out invisible in the first place.
                 got = [a for a in (mission.project_subagents(fid).get("agents") or [])
                        if a.get("running") or a.get("open")]
-        except Exception:
-            continue
+        except Exception as e:
+            # One unreadable row must not hide a folder's agents. The mtime answer has the name and
+            # the id, and that is enough to list an agent and to open it.
+            print(f"[agents] full list failed for {fid}: {e}", flush=True)
+            try:
+                got = [dict(a, running=a["moving"], open=True) for a in working(fid)]
+            except Exception:
+                continue
         for a in got:
             row = dict(a)
             row["project"] = fid

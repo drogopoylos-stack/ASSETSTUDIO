@@ -271,7 +271,8 @@ try:
     check("an agent writing right now counts", "moving" in ids, ids)
     check("a foreground agent writing right now counts", "busy-fg" in ids, ids)
     check("a BACKGROUND agent that has gone quiet still counts", "quiet-bg" in ids, ids)
-    check("a foreground agent long gone quiet does not", "quiet-fg" not in ids, ids)
+    # `running` has dropped every agent with an outcome, so a quiet one here is owed a result.
+    check("a FOREGROUND agent that has gone quiet still counts", "quiet-fg" in ids, ids)
     check("each row says whether it is moving, so a caller can word it",
           [a["agent_id"] for a in w if a["moving"]] == ["moving", "busy-fg"],
           [(a["agent_id"], a["moving"]) for a in w])

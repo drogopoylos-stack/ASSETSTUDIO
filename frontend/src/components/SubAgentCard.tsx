@@ -45,12 +45,14 @@ function Stat({ icon, value, label, tone, title }: {
   );
 }
 
-export function SubAgentCard({ agent, cli, onOpen, compact }: {
+export function SubAgentCard({ agent, cli, onOpen, compact, openOnClick }: {
   agent: SubAgent;
   cli?: boolean;
   /** show it in a pane of its own */
   onOpen?: (agentId: string) => void;
   compact?: boolean;
+  /** the name opens the pane, and only the arrow unfolds the figures */
+  openOnClick?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const a = agent || ({} as SubAgent);
@@ -70,12 +72,26 @@ export function SubAgentCard({ agent, cli, onOpen, compact }: {
               ? <Loader2 size={13} className="animate-spin text-brand" />
               : <Bot size={13} className="text-accent" />}
           </span>
-          <button onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-1 min-w-0 flex-1 text-left hover:text-brand">
-            {open ? <ChevronDown size={12} className="shrink-0 text-muted" />
-                  : <ChevronRight size={12} className="shrink-0 text-muted" />}
-            <span className="truncate font-medium">{label}</span>
-          </button>
+          {openOnClick && onOpen && a.agent_id ? (
+            <span className="flex items-center gap-1 min-w-0 flex-1">
+              <button onClick={() => setOpen((v) => !v)} title="Show the figures"
+                className="shrink-0 hover:text-brand">
+                {open ? <ChevronDown size={12} className="text-muted" />
+                      : <ChevronRight size={12} className="text-muted" />}
+              </button>
+              <button onClick={() => onOpen(a.agent_id)} title="Open its work in a pane"
+                className="min-w-0 flex-1 text-left truncate font-medium hover:text-brand">
+                {label}
+              </button>
+            </span>
+          ) : (
+            <button onClick={() => setOpen((v) => !v)}
+              className="flex items-center gap-1 min-w-0 flex-1 text-left hover:text-brand">
+              {open ? <ChevronDown size={12} className="shrink-0 text-muted" />
+                    : <ChevronRight size={12} className="shrink-0 text-muted" />}
+              <span className="truncate font-medium">{label}</span>
+            </button>
+          )}
 
           {/* Cost and effort, always visible. This is the number nobody could see before: a
               research agent can spend more than the conversation that sent it. */}

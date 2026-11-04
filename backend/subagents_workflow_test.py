@@ -111,10 +111,12 @@ try:
     check("the quiet Workflow agent still counts", "aaa" in w, sorted(w))
     check("...and says it is quiet, not moving", w.get("aaa", {}).get("moving") is False,
           w.get("aaa", {}).get("moving"))
-    check("a quiet FOREGROUND Task agent does not (unchanged)", "ccc" not in w, sorted(w))
+    check("a quiet FOREGROUND Task agent counts too", "ccc" in w, sorted(w))
+    check("...but it does not guard a respawn: its parent turn already does",
+          "ccc" not in {r["agent_id"] for r in sa.open_background(PID)})
     check("it guards a respawn like a background Task agent",
           "aaa" in {r["agent_id"] for r in sa.open_background(PID)})
-    check("the shared count says 1", mission._active_agent_count(pdir, PID) == 1,
+    check("the shared count says 2", mission._active_agent_count(pdir, PID) == 2,
           mission._active_agent_count(pdir, PID))
 
     print("\nThe list, the panel and the file lookup find it")
