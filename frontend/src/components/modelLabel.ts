@@ -20,6 +20,10 @@ export function friendlyModel(id: string): string {
   if (m === "deepseek-v4-flash") return "DeepSeek V4.1 Flash (v4-flash id)";
   // NOT an alias: its own model (DeepSeek-V4-Pro-0813) at about four times the Flash price.
   if (m === "deepseek-v4-pro") return "DeepSeek V4 Pro";
+  // GLM on RIVER.AI, through the DeepSeek engine. Matches the picker ids and RIVER's wire ids
+  // (`GLM-5.3`, `zai-org/GLM-5.3-Flash`); the Flash rule comes first because it contains the other.
+  if (m.includes("glm-5.3-flash")) return "GLM 5.3 Flash";
+  if (m.includes("glm-5.3")) return "GLM 5.3";
   if (m.includes("opus-5-5") || m.includes("opus-5.5")) return "Opus 5.5";
   if (m.includes("opus-5")) return "Opus 5";
   if (m.includes("opus-4-8") || m.includes("opus-4.8")) return "Opus 4.8";
@@ -64,4 +68,7 @@ export const DEEPSEEK_MODELS: [string, string][] = [
   ["deepseek-v4-flash-vision-exp", `${friendlyModel("deepseek-v4-flash-vision-exp")} · vision`],
   ["deepseek-v4-flash", `${friendlyModel("deepseek-v4-flash")} · text only`],
   ["deepseek-v4-pro", `${friendlyModel("deepseek-v4-pro")} · text only`],
+  // RIVER.AI key only: the backend refuses these rows on a DeepSeek key with a message saying so.
+  ["glm-5.3", `${friendlyModel("glm-5.3")} · RIVER.AI · text only`],
+  ["glm-5.3-flash", `${friendlyModel("glm-5.3-flash")} · RIVER.AI · text only`],
 ];

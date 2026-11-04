@@ -34,11 +34,17 @@ PREFIX = AGENT + "--"
 # runtime's catalogue names it "DeepSeek V4 Pro". Calling it "V4.1 Flash (Pro id)" hid the price.
 # Which rows can SEE is the runtime's declaration — the runtime strips an image for any row it
 # catalogues as text-only, so the picker keeps saying which rows those are.
-MODELS = ("deepseek-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash", "deepseek-v4-pro")
+#
+# The two GLM rows are not DeepSeek models at all: RIVER.AI serves them behind the same key and the
+# same OpenAI-compatible endpoint, and the runtime's adapter drives any such model (see RIVER_ONLY).
+MODELS = ("deepseek-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash", "deepseek-v4-pro",
+          "glm-5.3", "glm-5.3-flash")
 MODEL_LABELS = {"deepseek-flash": "DeepSeek V4.1 Flash",
                 "deepseek-v4-flash-vision-exp": "DeepSeek V4.1 Flash (legacy vision id)",
                 "deepseek-v4-flash": "DeepSeek V4.1 Flash (legacy id)",
-                "deepseek-v4-pro": "DeepSeek V4 Pro"}
+                "deepseek-v4-pro": "DeepSeek V4 Pro",
+                "glm-5.3": "GLM 5.3",
+                "glm-5.3-flash": "GLM 5.3 Flash"}
 HOME = DATA_DIR / "deepseek-harness-home"
 _lock = threading.RLock()
 _live: dict[str, dict] = {}
@@ -75,6 +81,11 @@ def api_key() -> str:
 # An unlisted model id is text-only in the adapter, so the patch declares RIVER's id with images.
 RIVER_BASE_URL = "https://api.river.ai/v1"
 RIVER_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
+# Rows only RIVER.AI serves, as RIVER's wire ids. Checked 2026-11-02 with the Studio's `rv_` key:
+# both are in `GET /v1/models`, and a runtime turn with each wrote a file with `write`, read it back
+# with `read` and ended `completed`; `reasoning_effort` high/max are accepted. Not declared in the
+# patch, so the adapter treats them as text-only, and they are not in VISION_MODELS.
+RIVER_ONLY = {"glm-5.3": "GLM-5.3", "glm-5.3-flash": "zai-org/GLM-5.3-Flash"}
 
 
 def route() -> dict:
@@ -93,7 +104,9 @@ def route() -> dict:
 def wire_model(model: str, via: str) -> str:
     """The id the endpoint knows for a picker row. RIVER has one DeepSeek model; '' = not served."""
     if via != "river":
-        return model
+        return "" if model in RIVER_ONLY else model
+    if model in RIVER_ONLY:
+        return RIVER_ONLY[model]
     return "" if model == "deepseek-v4-pro" else RIVER_MODEL
 
 
@@ -542,6 +555,10 @@ def send(project_id: str, message: str, *, path: str = "", model: str = "default
         return {"ok": False, "agent": AGENT, "needs_install": True,
                 "error": "Add the DeepSeek API key in Settings > API Keys > DeepSeek Harness"}
     wire_id = wire_model(model, rt["via"])
+    if not wire_id and model in RIVER_ONLY:
+        return {"ok": False, "error": (
+            f"{MODEL_LABELS[model]} runs on RIVER.AI, and the DeepSeek engine has a DeepSeek API key. "
+            "Add a RIVER.AI key in Settings > API Keys, or pick a DeepSeek row.")}
     if not wire_id:
         return {"ok": False, "error": (
             f"RIVER.AI does not serve {MODEL_LABELS.get(model, model)}. Pick DeepSeek V4.1 Flash "

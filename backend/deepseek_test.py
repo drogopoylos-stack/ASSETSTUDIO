@@ -229,6 +229,11 @@ class DeepSeekIntegration(unittest.TestCase):
                 # Its own model (DeepSeek-V4-Pro-0813) at its own price — not a Flash alias.
                 self.assertEqual(dsh.MODEL_LABELS[m], "DeepSeek V4 Pro")
                 continue
+            if m in dsh.RIVER_ONLY:
+                # Not DeepSeek at all: GLM, served by RIVER.AI behind the same key.
+                self.assertTrue(dsh.MODEL_LABELS[m].startswith("GLM 5.3"), m)
+                self.assertNotIn(m, dsh.VISION_MODELS, "the adapter treats an undeclared row as text-only")
+                continue
             self.assertIn("V4.1 Flash", dsh.MODEL_LABELS[m],
                           f"{m} is served by V4.1 Flash; its label must say so, not just 'Flash'")
         # The default row is what is sent when nobody opens the menu, so it is the one that has to be
@@ -540,6 +545,20 @@ class RiverRoute(unittest.TestCase):
         _stored["river"] = "rv_abc"
         r = dsh.send("d--river-pro", "hi", path=_temp.name, model="deepseek-v4-pro", new_session=True)
         self.assertFalse(r["ok"]); self.assertIn("RIVER.AI does not serve", r["error"])
+
+    def test_glm_rows_go_to_river_and_are_refused_on_a_deepseek_key(self):
+        self.assertEqual(dsh.wire_model("glm-5.3", "river"), "GLM-5.3")
+        self.assertEqual(dsh.wire_model("glm-5.3-flash", "river"), "zai-org/GLM-5.3-Flash")
+        self.assertEqual(dsh.wire_model("glm-5.3", "deepseek"), "")
+        _stored["deepseek"] = "sk-abc"
+        r = dsh.send("d--glm-ds", "hi", path=_temp.name, model="glm-5.3", new_session=True)
+        self.assertFalse(r["ok"]); self.assertIn("runs on RIVER.AI", r["error"])
+
+    def test_glm_turns_are_priced_at_rivers_glm_rate(self):
+        from asset_studio import pricing
+        u = {"input": 1e6, "cache_read": 1e6, "output": 1e6}
+        self.assertEqual(round(pricing.cost_with_basis("GLM-5.3", u)[0], 4), 4.848)
+        self.assertEqual(round(pricing.cost_with_basis("zai-org/GLM-5.3-Flash", u)[0], 4), 0.544)
 
     def test_a_river_turn_is_priced_at_rivers_rate_and_shown_as_used(self):
         from asset_studio import pricing, usage_accounts

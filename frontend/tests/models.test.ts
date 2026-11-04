@@ -26,6 +26,10 @@ eq("Opus 4.8", friendlyModel("claude-opus-4-8"), "Opus 4.8");
 eq("the moving alias", friendlyModel("opus"), "Opus");
 
 section("nothing else moved");
+eq("GLM 5.3 row", friendlyModel("glm-5.3"), "GLM 5.3");
+eq("GLM 5.3 Flash row", friendlyModel("glm-5.3-flash"), "GLM 5.3 Flash");
+eq("GLM 5.3 as RIVER bills it", friendlyModel("GLM-5.3"), "GLM 5.3");
+eq("GLM 5.3 Flash as RIVER bills it", friendlyModel("zai-org/GLM-5.3-Flash"), "GLM 5.3 Flash");
 eq("Sonnet 5.5", friendlyModel("claude-sonnet-5-5"), "Sonnet 5.5");
 eq("Sonnet 5.5 with context suffix", friendlyModel("claude-sonnet-5-5[1m]"), "Sonnet 5.5");
 eq("Sonnet 5.5 with a date", friendlyModel("claude-sonnet-5-5-20260928"), "Sonnet 5.5");
@@ -54,15 +58,18 @@ eq("the Pro id is its own model, not a Flash alias", friendlyModel("deepseek-v4-
 // menu that listed it all along. A label is only correct where the user reads it.
 section("the DeepSeek menu the picker actually shows");
 const rows = new Map(DEEPSEEK_MODELS);
-eq("four ids, plus the default row", DEEPSEEK_MODELS.length, 5);
-for (const id of ["deepseek-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash", "deepseek-v4-pro"]) {
+eq("six ids, plus the default row", DEEPSEEK_MODELS.length, 7);
+for (const id of ["deepseek-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.3", "glm-5.3-flash"]) {
   eq("the picker can still send " + id, rows.has(id), true);
 }
+// V4 Pro is its own model (DeepSeek-V4-Pro-0813) at its own price, the GLM rows are GLM on RIVER.AI,
+// and every other id is V4.1 Flash.
+const answers: Record<string, string> = { "deepseek-v4-pro": "DeepSeek V4 Pro", "glm-5.3": "GLM 5.3 ·", "glm-5.3-flash": "GLM 5.3 Flash" };
 for (const [id, label] of DEEPSEEK_MODELS) {
-  // V4 Pro is its own model (DeepSeek-V4-Pro-0813) at its own price; every other id is V4.1 Flash.
-  eq(id + " names the model that answers",
-     label.startsWith(id === "deepseek-v4-pro" ? "DeepSeek V4 Pro" : "DeepSeek V4.1 Flash"), true);
+  eq(id + " names the model that answers", label.startsWith(answers[id] ?? "DeepSeek V4.1 Flash"), true);
 }
+eq("the GLM rows say they need RIVER.AI and take text only",
+   ["glm-5.3", "glm-5.3-flash"].every((id) => /RIVER\.AI · text only$/.test(String(rows.get(id)))), true);
 // Vision and text-only must stay visibly apart: the runtime drops an attached picture on a
 // text-only row, so a user who cannot tell them apart picks the wrong one and loses the image.
 eq("the default row offers vision", rows.get("default"), "DeepSeek V4.1 Flash · vision");

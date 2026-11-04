@@ -88,6 +88,9 @@ _DEEPSEEK_PEAK_UTC = ((1, 4), (6, 10))
 _RIVER: dict[str, dict[str, float]] = {
     "deepseek-ai/deepseek-v4.1-flash": {"input": 0.12, "read": 0.0024, "output": 0.48},
     "deepseek-ai/deepseek-v4.1-flash-1017": {"input": 0.12, "read": 0.0024, "output": 0.48},
+    # GLM through the same RIVER key (deepseek_session.RIVER_ONLY), read off the same page 2026-11-02.
+    "glm-5.3": {"input": 1.12, "read": 0.208, "output": 3.52},
+    "zai-org/glm-5.3-flash": {"input": 0.12, "read": 0.024, "output": 0.40},
 }
 
 

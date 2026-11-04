@@ -273,9 +273,9 @@ def _river() -> dict:
     (both checked 2026-10-24; the docs say "402: check your Console balance"). So the bar shows what
     the Studio itself has spent through RIVER, priced at RIVER's published rates (pricing._RIVER),
     and points at the Console for what is left."""
-    from . import spend
+    from . import spend, pricing
     used = sum(float(v or 0) for m, v in (spend.totals().get("by_model") or {}).items()
-               if m.lower().startswith("deepseek-ai/"))
+               if m.lower().startswith("deepseek-ai/") or m.split("[")[0].strip().lower() in pricing._RIVER)
     return {**_balance("deepseek", "RIVER.AI (DeepSeek)", 0.0, "USD", used=used,
                        detail="spent through the Studio · balance at console.river.ai"),
             "balance_unknown": True}
