@@ -25,6 +25,7 @@ import { clipPlanes, defaultFlySpeed, FLY_CODES, flyLook, flySpeedAfterWheel, fl
 import { describeObject } from "./objectLabel";
 import type { TopoStep } from "./meshedit";
 import { shapeDeltas, shapeMoves, type ShapeKey } from "./shapekeys";
+import { applyWeightPaints, brushWeight, setWeight, weightColor, weightOf, type WeightPaint } from "./weightpaint";
 import { PaintEngine } from "./paintGpu";
 import { ParamHandleLayer, type HandleInfo } from "./handles";
 import {
@@ -2084,7 +2085,11 @@ export class EditWorld {
 
   /** The edited mesh's size (the diagonal of its box, own units): the scale a tool's default amount takes. */
   editSize(): number {
-    if (!this.editObj?.geometry) return 1;
+    // Outside edit mode (a weight brush in pose mode): the whole model's size.
+    if (!this.editObj?.geometry) {
+      const box = new this.T.Box3().setFromObject(this.subject);
+      return box.isEmpty() ? 1 : box.getSize(new this.T.Vector3()).length() || 1;
+    }
     this.editObj.geometry.computeBoundingBox?.();
     const b = this.editObj.geometry.boundingBox;
     return b ? Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) || 1 : 1;
@@ -3006,13 +3011,111 @@ export class EditWorld {
     if (weights) this.weightMethod = weights;
     this.rig = buildRig(this.T, specs, mode);
     this.scene.add(this.rig.root);
-    if (mode === "skin") bindSkin(this.T, this.rig, this.subject, 4, this.weightMethod);
+    if (mode === "skin") { bindSkin(this.T, this.rig, this.subject, 4, this.weightMethod); this.applyPaintedWeights(); }
     else bindParts(this.T, this.rig, this.subject);
     applyPose(this.T, this.rig, pose);
     this.rig.setDisplay(this.overlays.bones, this.overlays.bonesInFront);
     highlightBone(this.rig, this.boneSelection, this.activeBone);
     // Binding swaps meshes for skinned meshes, so the key index no longer points at what is drawn.
     this.index();
+  }
+
+  // ------------------------------------------------------------------ weight painting (weightpaint.ts)
+  /** The saved corrections, laid on the automatic weights at every skin bind. */
+  weightPaints: WeightPaint[] = [];
+  private weightView: { bone: string; mats: Map<any, any> } | null = null;
+
+  private skinned(): any[] {
+    return (this.rig?.swapped || []).map((s) => s.to).filter((m: any) => m?.isSkinnedMesh);
+  }
+
+  private applyPaintedWeights() {
+    if (!this.rig || !this.weightPaints.length) return;
+    const names = this.rig.bones.map((b: any) => b.name);
+    for (const sk of this.skinned()) {
+      const g = sk.geometry;
+      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      if (!si || !sw) continue;
+      applyWeightPaints(g.attributes.position.array, si.array, sw.array, si.itemSize, (n) => names.indexOf(n), this.weightPaints);
+      si.needsUpdate = true; sw.needsUpdate = true;
+    }
+  }
+
+  /** Where the cursor meets a skinned mesh, posed, in world space. */
+  skinHit(ndc: { x: number; y: number }): V3 | null {
+    const list = this.skinned();
+    if (!list.length) return null;
+    this.ray.setFromCamera(ndc as any, this.camera);
+    const hit = this.ray.intersectObjects(list, false)[0];
+    return hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
+  }
+
+  /** One dab of the weight brush round a posed world point. Returns the corrections it made, by
+   *  bind-pose place, for the document. */
+  weightDab(bone: string, at: V3, radius: number, strength: number, mode: "add" | "subtract" | "set", value = 1): WeightPaint[] {
+    if (!this.rig) return [];
+    const b = this.rig.bones.findIndex((x: any) => x.name === bone);
+    if (b < 0) return [];
+    const T = this.T;
+    const v = new T.Vector3();
+    const out: WeightPaint[] = [];
+    for (const sk of this.skinned()) {
+      const g = sk.geometry;
+      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight, pos = g.attributes.position;
+      const k = si.itemSize;
+      let touched = false;
+      for (let i = 0; i < pos.count; i++) {
+        sk.getVertexPosition(i, v);
+        v.applyMatrix4(sk.matrixWorld);
+        const d = Math.hypot(v.x - at[0], v.y - at[1], v.z - at[2]);
+        if (d >= radius) continue;
+        const t = d / radius;
+        const f = 1 - t * t * (3 - 2 * t);
+        const w = brushWeight(weightOf(si.array, sw.array, i, k, b), mode, strength * f, value);
+        setWeight(si.array, sw.array, i, k, b, w);
+        out.push({ bone, at: [pos.getX(i), pos.getY(i), pos.getZ(i)], w: Math.round(w * 1e4) / 1e4 });
+        touched = true;
+      }
+      if (touched) { si.needsUpdate = true; sw.needsUpdate = true; }
+    }
+    if (this.weightView) this.showWeights(this.weightView.bone);
+    return out;
+  }
+
+  /** Draw a bone's weights as Blender's heat map (blue 0, red 1); null puts the materials back. */
+  showWeights(bone: string | null) {
+    const T = this.T;
+    const list = this.skinned();
+    if (!bone) {
+      if (this.weightView) for (const [sk, m] of this.weightView.mats) {
+        sk.material = m;
+        const g = sk.geometry;
+        if (g.userData.__savedColor) g.setAttribute("color", g.userData.__savedColor); else g.deleteAttribute("color");
+        g.deleteAttribute("__weightColor");
+        delete g.userData.__savedColor;
+      }
+      this.weightView = null;
+      return;
+    }
+    const b = this.rig?.bones.findIndex((x: any) => x.name === bone) ?? -1;
+    const mats = this.weightView?.mats || new Map<any, any>();
+    for (const sk of list) {
+      const g = sk.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, n = g.attributes.position.count;
+      const c = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const col = weightColor(b < 0 ? 0 : weightOf(si.array, sw.array, i, si.itemSize, b)); c[i * 3] = col[0]; c[i * 3 + 1] = col[1]; c[i * 3 + 2] = col[2]; }
+      g.setAttribute("__weightColor", new T.Float32BufferAttribute(c, 3));
+      if (!mats.has(sk)) mats.set(sk, sk.material);
+      if (!sk.material?.userData?.weightView) {
+        const m = new T.MeshLambertMaterial({ vertexColors: true });
+        m.userData.weightView = true;
+        // three reads `color` for vertex colours: the heat map goes there for the view and back after.
+        sk.material = m;
+      }
+      if (!g.userData.__savedColor) g.userData.__savedColor = g.attributes.color || null;
+      g.setAttribute("color", g.attributes.__weightColor);
+    }
+    this.weightView = { bone, mats };
+    if (!bone) return;
   }
 
   clearRig() {

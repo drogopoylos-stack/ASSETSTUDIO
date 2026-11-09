@@ -274,6 +274,14 @@ three and in a GLB each key is a named morph target, so a game animates
 `mesh.morphTargetInfluences[mesh.morphTargetDictionary.smile]`. A modifier bakes the keys in at their
 values first, as Blender does.
 
+### Weight painting
+
+In Pose mode, with the rig bound as **skin**, **Weights** turns a drag on the mesh into a brush for the
+active bone: add, subtract (Ctrl) or set, with a radius and a strength. The mesh shows that bone's weights
+as Blender's heat map, blue 0 to red 1, and follows the bone you click. The automatic weights (envelope or
+heat) are computed again at every bind, so only the corrections are saved (`weights`: bone, bind-pose
+place, weight) and laid on top; the other bones share what is left, and every corner still sums to 1.
+
 ### Hands for a game
 
 `ops.riggedHand({ side, chunk, fingers })` makes a hand a game can animate: one mesh of about 2,400

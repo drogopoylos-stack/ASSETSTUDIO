@@ -44,6 +44,7 @@ MODULES = [
     ("handrig", "handrig.ts", "forge-ops.js", True),
     ("meshedit", "meshedit.ts", "forge-ops.js", True),
     ("shapekeys", "shapekeys.ts", "forge-ops.js", True),
+    ("weightpaint", "weightpaint.ts", "", False),
 ]
 
 _IDENT = re.compile(r"[A-Za-z0-9_$]")

@@ -37,6 +37,7 @@ import { boneFromObject, uniqueBoneName } from "./rig";
 import { type ElemKind } from "./vertedit";
 import { SCULPT_BRUSHES, runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
 import type { ShapeKey } from "./shapekeys";
+import { mergeWeightPaints, type WeightPaint } from "./weightpaint";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -271,6 +272,14 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   /** The mesh edit mode is on, as state, so the panels that depend on it draw again when it changes. */
   const [editMeshKey, setEditMeshKey] = useState("");
   const [newShapeName, setNewShapeName] = useState("");
+  // WEIGHT PAINT, in Pose mode on a skin-bound rig: the active bone's weights under a brush.
+  const [wpOn, setWpOn] = useState(false);
+  const [wpMode, setWpMode] = useState<"add" | "subtract" | "set">("add");
+  const [wpRadius, setWpRadius] = useState(0);
+  const [wpStrength, setWpStrength] = useState(0.5);
+  const [wpValue, setWpValue] = useState(1);
+  const wpStroke = useRef<Map<string, WeightPaint>>(new Map());
+  const wpOwn = useRef(false);
   /** Where the corners a step leaves selected are; selected again once the rebuild has made them. */
   const pendingSel = useRef<V3[] | null>(null);
 
@@ -612,7 +621,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const [showTimeline, setShowTimeline] = useState(false);
 
   const box = useRef({
-    dragging: false, mode: "" as "" | "nav" | "gizmo" | "box" | "click" | "terrain" | "fly" | "paint" | "sculpt",
+    dragging: false, mode: "" as "" | "nav" | "gizmo" | "box" | "click" | "terrain" | "fly" | "paint" | "sculpt" | "wpaint",
     x0: 0, y0: 0, x1: 0, y1: 0, moved: false, shift: false,
   });
   /** Where the pointer was on the last move of a flight, for a browser that would not lock it. */
@@ -1291,6 +1300,28 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     shapeSeen.current = shapeSig;
     if (phase === "ready") void rebuild(values, "shapes");
   }, [shapeSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const weightSig = JSON.stringify(edits.weights || []);
+  const weightSeen = useRef(weightSig);
+  useEffect(() => {
+    const w = world.current;
+    if (w) w.weightPaints = edits.weights || [];
+    if (weightSeen.current === weightSig) return;
+    weightSeen.current = weightSig;
+    // A stroke's own push changes nothing on screen: the mesh already has those weights.
+    if (wpOwn.current) { wpOwn.current = false; return; }
+    if (w?.rig?.mode === "skin") {
+      // A bind clears the active bone; the brush and the heat map need it back.
+      const keep = w.activeBone;
+      w.buildRigFrom(edits.bones, "skin", edits.pose);
+      if (keep && w.rig?.byName.has(keep)) w.selectBone(keep);
+      if (wpOn && mode === "pose") w.showWeights(w.activeBone || null);
+    }
+  }, [weightSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const w = world.current;
+    if (!w) return;
+    w.showWeights(wpOn && mode === "pose" ? (w.activeBone || null) : null);
+  }, [wpOn, mode]);   // eslint-disable-line react-hooks/exhaustive-deps
   const valueTimer = useRef(0);
   const setShapeValue = (mesh: string, name: string, v: number, commit: boolean) => {
     const live = world.current?.setShapeValue(mesh, name, v);
@@ -1446,6 +1477,19 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       return;
     }
 
+    // WEIGHT PAINT, in pose mode with the brush on: a press on the skin paints the active bone.
+    if (mode === "pose" && wpOn && !e.altKey && w.rig?.mode === "skin") {
+      const at = w.skinHit(n);
+      if (at && w.activeBone) {
+        wpStroke.current = new Map();
+        const r = wpRadius || toolSize() * 0.08;
+        for (const p of w.weightDab(w.activeBone, at, r, wpStrength, e.ctrlKey ? "subtract" : wpMode, wpValue)) wpStroke.current.set(p.bone + "|" + p.at.join(","), p);
+        box.current = { dragging: true, mode: "wpaint", x0: n.px, y0: n.py, x1: n.px, y1: n.py, moved: false, shift: e.ctrlKey };
+        return;
+      }
+      if (at && !w.activeBone) { setToolNote("pick a bone first: the brush paints the active bone's weights"); return; }
+    }
+
     // SCULPT, in edit mode with the Sculpt tool on: a press on the mesh starts a stroke.
     if (mode === "edit" && sculptOn && !e.altKey) {
       const at = w.sculptHit(n);
@@ -1536,6 +1580,15 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       }
     }
 
+    if (b.mode === "wpaint") {
+      const at = w.skinHit(n);
+      if (at && w.activeBone) {
+        const r = wpRadius || toolSize() * 0.08;
+        // Light dabs as the brush moves: a quarter of the strength, so a stroke builds up as in Blender.
+        for (const p of w.weightDab(w.activeBone, at, r, wpStrength * 0.25, b.shift ? "subtract" : wpMode, wpValue)) wpStroke.current.set(p.bone + "|" + p.at.join(","), p);
+      }
+      return;
+    }
     if (b.mode === "sculpt") {
       // A new point every quarter of the radius: dense enough for a curve, sparse enough to save.
       const at = w.sculptHit(n);
@@ -1590,6 +1643,8 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     try { el.releasePointerCapture(e.pointerId); } catch { /* never held */ }
     const b = box.current;
 
+    // The heat map follows the active bone: a click that picks another bone shows its weights.
+    if (mode === "pose" && wpOn) window.setTimeout(() => world.current?.showWeights(world.current.activeBone || null), 0);
     if (b.mode === "fly") {
       w.flyEnd();
       try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* never locked */ }
@@ -1597,6 +1652,15 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       return;
     }
     if (b.mode === "nav") { w.nav.up(); box.current.mode = ""; return; }
+    if (b.mode === "wpaint") {
+      box.current = { ...b, dragging: false, mode: "", moved: false };
+      const add = [...wpStroke.current.values()];
+      wpStroke.current = new Map();
+      if (!add.length) return;
+      wpOwn.current = true;
+      push((ed) => ({ ...ed, weights: mergeWeightPaints(ed.weights || [], add) }));
+      return;
+    }
     if (b.mode === "sculpt") {
       w.showStroke(null);
       box.current = { ...b, dragging: false, mode: "", moved: false };
@@ -2867,6 +2931,37 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
             </>
           );
         })()}
+
+        {mode === "pose" && world.current?.rig?.mode === "skin" && (
+          <>
+            <button className={cls("chip whitespace-nowrap shrink-0", wpOn && "text-brand border-brand/50")}
+              title="Weight paint: drag on the skin to paint the active bone's weights; Ctrl subtracts. Shown as a heat map, blue 0 to red 1."
+              onClick={() => { setWpOn((v) => !v); setWpRadius((r) => r || +(toolSize() * 0.08).toPrecision(3)); }}>Weights</button>
+            {wpOn && (
+              <>
+                <select value={wpMode} onChange={(e) => setWpMode(e.target.value as any)} onKeyDown={(e) => e.stopPropagation()}
+                  className="bg-panel2 border border-line rounded px-1 py-0.5 text-[11px]">
+                  <option value="add">add</option><option value="subtract">subtract</option><option value="set">set</option>
+                </select>
+                {wpMode === "set" && (
+                  <input type="number" min={0} max={1} step={0.05} value={wpValue} title="The weight 'set' paints"
+                    onChange={(e) => setWpValue(Math.max(0, Math.min(1, Number(e.target.value) || 0)))} onKeyDown={(e) => e.stopPropagation()}
+                    className="w-12 rounded border border-line bg-panel2/50 px-1 text-[11px] font-mono" />
+                )}
+                <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0">radius
+                  <input type="number" step={0.01} value={wpRadius} onChange={(e) => setWpRadius(Math.max(0, Number(e.target.value) || 0))}
+                    onKeyDown={(e) => e.stopPropagation()} className="w-14 rounded border border-line bg-panel2/50 px-1 font-mono text-text" /></label>
+                <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0">strength
+                  <input type="number" min={0} max={1} step={0.05} value={wpStrength} onChange={(e) => setWpStrength(Math.max(0, Math.min(1, Number(e.target.value) || 0)))}
+                    onKeyDown={(e) => e.stopPropagation()} className="w-12 rounded border border-line bg-panel2/50 px-1 font-mono text-text" /></label>
+                {(edits.weights?.length || 0) > 0 && (
+                  <button className="chip whitespace-nowrap shrink-0" title="Take every painted correction away: back to the automatic weights"
+                    onClick={() => push((ed) => ({ ...ed, weights: [] }))}>clear ({edits.weights!.length})</button>
+                )}
+              </>
+            )}
+          </>
+        )}
 
         <div className="flex items-center gap-0.5 ml-1">
           {([["move", Move], ["rotate", RotateCw], ["scale", Scaling]] as const).map(([m, Icon]) => (

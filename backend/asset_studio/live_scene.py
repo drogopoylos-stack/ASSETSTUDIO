@@ -2288,7 +2288,7 @@ def merge_part(doc: dict, key: str, values: dict) -> Optional[dict]:
     return prev
 
 
-_SECTIONS = ("parts", "placed", "params", "mods", "verts", "topo", "shapes", "bones", "pose", "clips", "bakes", "world")
+_SECTIONS = ("parts", "placed", "params", "mods", "verts", "topo", "shapes", "weights", "bones", "pose", "clips", "bakes", "world")
 _META = {"version", "asset", "updated", "stage"}
 
 
