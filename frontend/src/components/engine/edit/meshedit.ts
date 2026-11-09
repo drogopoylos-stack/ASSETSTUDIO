@@ -17,10 +17,15 @@
 //
 // Plain numbers and arrays, deterministic, no three.
 
+import { sculptArrays, type Stroke } from "./sculpt";
+
 type V3 = [number, number, number];
 
-export type TopoOp = "extrude" | "inset" | "loopcut" | "knife" | "merge" | "delete" | "fill" | "bridge" | "subdivide" | "move";
-export const TOPO_OPS: TopoOp[] = ["extrude", "inset", "loopcut", "knife", "merge", "delete", "fill", "bridge", "subdivide", "move"];
+export type TopoOp = "extrude" | "inset" | "loopcut" | "knife" | "merge" | "delete" | "fill" | "bridge" | "subdivide" | "move"
+  | "sculpt" | "densify";
+export const TOPO_OPS: TopoOp[] = ["extrude", "inset", "loopcut", "knife", "merge", "delete", "fill", "bridge", "subdivide", "move",
+  "sculpt", "densify"];
+export const SCULPT_BRUSHES: Stroke["kind"][] = ["clay", "inflate", "crease", "ridge", "smooth", "flatten", "pinch", "move", "noise"];
 
 export interface TopoStep {
   /** Stable key of the mesh (as VertEdit.mesh). */
@@ -31,6 +36,8 @@ export interface TopoStep {
   args?: Record<string, number | string | boolean>;
   /** 'move': where each corner went. */
   moves?: { at: V3; to: V3 }[];
+  /** 'sculpt': the stroke's path on the surface, in the mesh's own frame. */
+  path?: V3[];
   off?: boolean;
 }
 
@@ -527,6 +534,109 @@ export function move(m0: WMesh, moves: { at: V3; to: V3 }[]): StepResult {
   return { mesh: m, out };
 }
 
+/**
+ * LONGEST-EDGE CLOSURE: every triangle with a marked edge has its longest edge marked too, repeated
+ * until nothing changes. Splitting a triangle across a short edge alone makes a sliver, and slivers
+ * split again make worse ones; through the longest edge, the halves keep their shape (Rivara's
+ * bisection). New midpoints are made for the edges this adds.
+ */
+function closeLongest(m: WMesh, mid: Map<string, number>): void {
+  for (let guard = 0; guard < 64; guard++) {
+    let added = 0;
+    for (let t = 0; t < nTris(m); t++) {
+      const v = [m.tris[t * 3], m.tris[t * 3 + 1], m.tris[t * 3 + 2]];
+      const keys = [0, 1, 2].map((k) => ek(v[k], v[(k + 1) % 3]));
+      if (!keys.some((k) => mid.has(k))) continue;
+      let lk = 0, ll = -1;
+      for (let k = 0; k < 3; k++) { const l = len(sub(P(m, v[k]), P(m, v[(k + 1) % 3]))); if (l > ll) { ll = l; lk = k; } }
+      if (mid.has(keys[lk])) continue;
+      mid.set(keys[lk], addV(m, mul(add(P(m, v[lk]), P(m, v[(lk + 1) % 3])), 0.5)));
+      added++;
+    }
+    if (!added) return;
+  }
+}
+
+/**
+ * Split the long edges near a path until none near it is longer than `maxEdge`, so a brush has
+ * vertices to move where it works and nowhere else. A whole-mesh densify of a large model for a
+ * small brush would multiply it many times over; this refines the band the stroke touches.
+ */
+export function refineNear(m0: WMesh, path: V3[], reach: number, maxEdge: number, maxTris = 400000): WMesh {
+  const m = copy(m0);
+  if (!path.length || !(maxEdge > 0)) return m;
+  const near = (p: V3) => {
+    for (let i = 0; i < path.length; i++) {
+      const a = path[i], b = path[Math.min(i + 1, path.length - 1)];
+      const ab = sub(b, a), l2 = dot(ab, ab);
+      const t = l2 > 1e-18 ? Math.max(0, Math.min(1, dot(sub(p, a), ab) / l2)) : 0;
+      if (len(sub(p, add(a, mul(ab, t)))) <= reach) return true;
+    }
+    return false;
+  };
+  for (let pass = 0; pass < 12 && nTris(m) < maxTris; pass++) {
+    const mid = new Map<string, number>();
+    for (let t = 0; t < nTris(m); t++) for (let k = 0; k < 3; k++) {
+      const a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3], key = ek(a, b);
+      if (mid.has(key)) continue;
+      const pa = P(m, a), pb = P(m, b);
+      if (len(sub(pa, pb)) <= maxEdge) continue;
+      const c = mul(add(pa, pb), 0.5);
+      if (!near(c) && !near(pa) && !near(pb)) continue;
+      mid.set(key, addV(m, c));
+    }
+    if (!mid.size) break;
+    closeLongest(m, mid);
+    splitMarked(m, mid);
+  }
+  return m;
+}
+
+/** One brush stroke (sculpt.ts) along `path`, after refining the surface under it. */
+export function sculptStep(m0: WMesh, path: V3[], args: Record<string, any> = {}): StepResult {
+  const kind = String(args.brush || "clay") as Stroke["kind"];
+  if (!SCULPT_BRUSHES.includes(kind)) return { mesh: m0, out: [], error: "unknown brush " + kind };
+  const radius = num(args, "radius", 0);
+  if (!(radius > 0)) return { mesh: m0, out: [], error: "a sculpt stroke needs a radius" };
+  if (!path.length) return { mesh: m0, out: [], error: "a sculpt stroke needs a path on the surface" };
+  const m = args.refine === false ? copy(m0) : refineNear(m0, path, radius * 1.3, radius / 3);
+  const stroke: Stroke = { kind, radius };
+  if (kind === "move") {
+    // A drag: the region under the start goes to the end.
+    stroke.at = path[0];
+    stroke.dir = sub(path[path.length - 1], path[0]);
+  } else if (path.length === 1) stroke.at = path[0];
+  else stroke.path = path;
+  if (typeof args.depth === "number" && isFinite(args.depth)) stroke.depth = args.depth;
+  if (typeof args.strength === "number" && isFinite(args.strength)) stroke.strength = args.strength;
+  if (args.mirror === "x" || args.mirror === "y" || args.mirror === "z") stroke.mirror = args.mirror;
+  if (kind !== "move" && path.length > 2) stroke.curve = true;
+  try {
+    const pos = sculptArrays(new Float32Array(m.pos), new Uint32Array(m.tris), [stroke]);
+    const out: WMesh = { pos: Array.from(pos), tris: m.tris };
+    return { mesh: out, out: [] };
+  } catch (e: any) {
+    return { mesh: m0, out: [], error: String(e?.message || e) };
+  }
+}
+
+/** Split every edge longer than `maxEdge`, everywhere: a mesh made fine enough to sculpt anywhere. */
+export function densify(m0: WMesh, maxEdge: number, maxTris = 400000): StepResult {
+  if (!(maxEdge > 0)) return { mesh: m0, out: [], error: "densify needs a positive edge length" };
+  const m = copy(m0);
+  for (let pass = 0; pass < 16 && nTris(m) < maxTris; pass++) {
+    const mid = new Map<string, number>();
+    for (let t = 0; t < nTris(m); t++) for (let k = 0; k < 3; k++) {
+      const a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3], key = ek(a, b);
+      if (!mid.has(key) && len(sub(P(m, a), P(m, b))) > maxEdge) mid.set(key, addV(m, mul(add(P(m, a), P(m, b)), 0.5)));
+    }
+    if (!mid.size) break;
+    closeLongest(m, mid);
+    splitMarked(m, mid);
+  }
+  return { mesh: m, out: [] };
+}
+
 // ------------------------------------------------------------------ one step, by name
 
 const num = (a: Record<string, any> | undefined, k: string, d: number) => (a && typeof a[k] === "number" && isFinite(a[k]) ? a[k] : d);
@@ -539,6 +649,8 @@ const v3 = (a: Record<string, any> | undefined, k: string): V3 | null => {
 
 export function runStep(m: WMesh, step: TopoStep): StepResult {
   if (step.op === "move") return move(m, step.moves || []);
+  if (step.op === "sculpt") return sculptStep(m, step.path || [], step.args);
+  if (step.op === "densify") return densify(m, num(step.args, "edge", 0));
   const S = findVerts(m, step.sel || []);
   if ((step.sel || []).length && S.size < Math.min(1, step.sel.length)) return { mesh: m, out: [], error: "the selected corners are not in this mesh any more" };
   const a = step.args;
@@ -591,6 +703,7 @@ export function cleanSteps(raw: any): TopoStep[] {
     }
     if (s.op === "move") step.moves = (Array.isArray(s.moves) ? s.moves : []).filter((mv: any) => mv && isV3(mv.at) && isV3(mv.to))
       .map((mv: any) => ({ at: mv.at.slice(0, 3) as V3, to: mv.to.slice(0, 3) as V3 }));
+    if (s.op === "sculpt") step.path = (Array.isArray(s.path) ? s.path : []).filter(isV3).map((v: any) => v.slice(0, 3) as V3);
     if (s.off === true) step.off = true;
     out.push(step);
   }

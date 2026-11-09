@@ -35,7 +35,7 @@ import { type PlacedRef, type PlacedItem,
 import { dirOf, joinPath, loadFileAsset, mergeSpecs, type FileAsset, type PcEngine } from "./load";
 import { boneFromObject, uniqueBoneName } from "./rig";
 import { type ElemKind } from "./vertedit";
-import { runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
+import { SCULPT_BRUSHES, runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -259,6 +259,12 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const [propOn, setPropOn] = useState(false);
   const [propRadius, setPropRadius] = useState(0);
   const [mirrorX, setMirrorX] = useState(false);
+  // SCULPT, inside edit mode: a press on the mesh draws a stroke, saved as a step on release.
+  const [sculptOn, setSculptOn] = useState(false);
+  const [sculptBrush, setSculptBrush] = useState<string>("clay");
+  const [brushRadius, setBrushRadius] = useState(0);
+  const [brushDepth, setBrushDepth] = useState(0);
+  const strokePath = useRef<V3[]>([]);
   /** Where the corners a step leaves selected are; selected again once the rebuild has made them. */
   const pendingSel = useRef<V3[] | null>(null);
 
@@ -599,7 +605,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const [showTimeline, setShowTimeline] = useState(false);
 
   const box = useRef({
-    dragging: false, mode: "" as "" | "nav" | "gizmo" | "box" | "click" | "terrain" | "fly" | "paint",
+    dragging: false, mode: "" as "" | "nav" | "gizmo" | "box" | "click" | "terrain" | "fly" | "paint" | "sculpt",
     x0: 0, y0: 0, x1: 0, y1: 0, moved: false, shift: false,
   });
   /** Where the pointer was on the last move of a flight, for a browser that would not lock it. */
@@ -1385,6 +1391,17 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       return;
     }
 
+    // SCULPT, in edit mode with the Sculpt tool on: a press on the mesh starts a stroke.
+    if (mode === "edit" && sculptOn && !e.altKey) {
+      const at = w.sculptHit(n);
+      if (at) {
+        strokePath.current = [at];
+        w.showStroke(strokePath.current);
+        box.current = { dragging: true, mode: "sculpt", x0: n.px, y0: n.py, x1: n.px, y1: n.py, moved: false, shift: e.shiftKey };
+        return;
+      }
+    }
+
     // PAINT. A press starts a stroke; Alt takes a colour (or, with the clone brush, where to copy
     // from); the picker and the fill act on one click.
     if (mode === "paint") {
@@ -1464,6 +1481,19 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       }
     }
 
+    if (b.mode === "sculpt") {
+      // A new point every quarter of the radius: dense enough for a curve, sparse enough to save.
+      const at = w.sculptHit(n);
+      const path = strokePath.current;
+      const last = path[path.length - 1];
+      const r = brushRadius || toolSize() * 0.06;
+      if (at && (!last || Math.hypot(at[0] - last[0], at[1] - last[1], at[2] - last[2]) > r * 0.25)) {
+        path.push(at);
+        w.showStroke(path);
+      }
+      return;
+    }
+
     // The ring follows the cursor whether or not the button is down: seeing the size of the
     // brush BEFORE it takes anything is the whole reason a ring is drawn at all.
     if (mode === "terrain" && (b.mode === "terrain" || !b.dragging)) {
@@ -1512,6 +1542,21 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       return;
     }
     if (b.mode === "nav") { w.nav.up(); box.current.mode = ""; return; }
+    if (b.mode === "sculpt") {
+      w.showStroke(null);
+      box.current = { ...b, dragging: false, mode: "", moved: false };
+      const path = strokePath.current.slice();
+      strokePath.current = [];
+      if (!path.length) return;
+      const radius = brushRadius || +(toolSize() * 0.06).toPrecision(3);
+      const args: Record<string, number | string | boolean> = { brush: sculptBrush, radius };
+      // Ctrl turns the brush over: clay scrapes, inflate deflates, a ridge cuts.
+      if (brushDepth) args.depth = e.ctrlKey ? -brushDepth : brushDepth;
+      else if (e.ctrlKey) args.depth = -radius * 0.25;
+      if (mirrorX) args.mirror = "x";
+      runTool("sculpt", args, { path });
+      return;
+    }
     if (b.mode === "paint") {
       if (w.paint?.end(TOOL_INFO[paintTool].label.toLowerCase())) { setPaintDirty(true); setRecent((r) => pushRecent(r, paintColor)); }
       placer.current = null;
@@ -2094,7 +2139,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
    * One edit-mode tool on the selected corners: tried on the mesh as it stands, so a refusal says
    * why at once and saves nothing; then saved as a step, which the rebuild runs for real.
    */
-  const runTool = (op: TopoOp, args: Record<string, number | string> = {}) => {
+  const runTool = (op: TopoOp, args: Record<string, number | string | boolean> = {}, extra: Partial<TopoStep> = {}) => {
     const w = world.current;
     if (!w || mode !== "edit" || !w.editKey) { setToolNote("Tab into edit mode on a mesh first"); return; }
     const sel = w.selectedPlaces();
@@ -2107,7 +2152,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     }
     const geo = w.editMeshArrays();
     if (!geo) return;
-    const step: TopoStep = { mesh: w.editKey, op, sel, args: a };
+    const step: TopoStep = { mesh: w.editKey, op, sel: op === "sculpt" ? [] : sel, args: a, ...extra };
     let r = runStep(weld(geo.pos, geo.idx), step);
     // F is Blender's "make face": two rims bridge, one rim fills.
     if (op === "fill" && r.error) { const b = runStep(weld(geo.pos, geo.idx), { ...step, op: "bridge" }); if (!b.error) { step.op = "bridge"; r = b; } }
@@ -2731,6 +2776,28 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
               <button className={cls("chip whitespace-nowrap shrink-0", mirrorX && "text-brand border-brand/50")}
                 title="X symmetry: a move on one side moves the mirrored corner on the other"
                 onClick={() => setMirrorX((v) => !v)}>Mirror X</button>
+              <span className="w-px h-4 bg-line mx-1" />
+              <button className={cls("chip whitespace-nowrap shrink-0", sculptOn && "text-brand border-brand/50")}
+                title="Sculpt: drag on the mesh to draw a stroke; Ctrl inverts it. Each stroke is saved as a step."
+                onClick={() => { setSculptOn((v) => !v); setBrushRadius((r) => r || +(toolSize() * 0.06).toPrecision(3)); }}>Sculpt</button>
+              {sculptOn && (
+                <>
+                  <select value={sculptBrush} onChange={(e) => setSculptBrush(e.target.value)} onKeyDown={(e) => e.stopPropagation()}
+                    className="bg-panel2 border border-line rounded px-1 py-0.5 text-[11px]" title="The brush">
+                    {SCULPT_BRUSHES.map((b) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                  <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0" title="Brush radius, in the mesh's units">
+                    radius
+                    <input type="number" step={0.005} value={brushRadius} onChange={(e) => setBrushRadius(Math.max(0, Number(e.target.value) || 0))}
+                      onKeyDown={(e) => e.stopPropagation()} className="w-14 rounded border border-line bg-panel2/50 px-1 font-mono text-text" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0" title="How far the brush pushes, in the mesh's units. 0 is the brush's own default.">
+                    depth
+                    <input type="number" step={0.005} value={brushDepth} onChange={(e) => setBrushDepth(Number(e.target.value) || 0)}
+                      onKeyDown={(e) => e.stopPropagation()} className="w-14 rounded border border-line bg-panel2/50 px-1 font-mono text-text" />
+                  </label>
+                </>
+              )}
               {lastStep && STEP_AMOUNT[lastStep.op] && lastStep.mesh === world.current?.editKey && (
                 <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0" title="Change the last step's amount (Blender's Adjust Last Operation)">
                   {lastStep.op} {STEP_AMOUNT[lastStep.op]!.label}

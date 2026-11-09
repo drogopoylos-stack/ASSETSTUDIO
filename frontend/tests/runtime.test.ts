@@ -110,9 +110,10 @@ section("engine, root and keys");
   if (dist) {
     const js = readFileSync(dist, "utf8");
     ok("the bundle imports nothing: no second engine can ride in", !/(^|[;\s])import\s*[\w*{\s,}]*\s*from\s*["']|^\s*import\s*["']/m.test(js));
-    // 80 KB: the 2D stage (stage.ts) and the edit-mode steps (meshedit.ts) joined it. A shipped game
+    // 100 KB: the 2D stage (stage.ts), the edit-mode steps (meshedit.ts) and the sculpt brushes they
+    // run (sculpt.ts) joined it, about 30 KB over the wire. A shipped game
     // imports this one file, and an extrude saved in the Studio has to run in the game too.
-    ok("the bundle stays under 80 KB", js.length < 80 * 1024, js.length + " bytes");
+    ok("the bundle stays under 100 KB", js.length < 100 * 1024, js.length + " bytes");
     const exported = new Set<string>();
     const m = /export\s*\{([^}]*)\}\s*;?\s*$/m.exec(js);
     for (const part of (m ? m[1] : "").split(",")) {

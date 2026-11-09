@@ -1990,6 +1990,35 @@ export class EditWorld {
     this.selectElems(hit, false);
   }
 
+  /** Where the cursor meets the edited mesh, in the mesh's own frame: where a sculpt stroke lands. */
+  sculptHit(ndc: { x: number; y: number }): V3 | null {
+    if (!this.editObj) return null;
+    this.ray.setFromCamera(ndc as any, this.camera);
+    const hit = this.ray.intersectObject(this.editObj, false)[0];
+    if (!hit) return null;
+    const p = this.editObj.worldToLocal(hit.point.clone());
+    return [p.x, p.y, p.z];
+  }
+
+  private strokeLine: any = null;
+  /** The stroke being drawn, as a line on the surface; null takes it away. */
+  showStroke(points: V3[] | null) {
+    const T = this.T;
+    if (this.strokeLine) {
+      this.strokeLine.parent?.remove(this.strokeLine);
+      this.strokeLine.geometry.dispose();
+      this.strokeLine.material.dispose();
+      this.strokeLine = null;
+    }
+    if (!points || !points.length || !this.editObj) return;
+    const g = new T.BufferGeometry().setFromPoints(points.map((p) => new T.Vector3(p[0], p[1], p[2])));
+    const line = new T.Line(g, new T.LineBasicMaterial({ color: 0xffb347, depthTest: false, transparent: true }));
+    line.renderOrder = 999;
+    line.name = "__studio_stroke";
+    this.editObj.add(line);
+    this.strokeLine = line;
+  }
+
   /** The edited mesh's positions and index, as a tool reads them. */
   editMeshArrays(): { pos: Float32Array; idx: ArrayLike<number> | null } | null {
     const g = this.editObj?.geometry;
