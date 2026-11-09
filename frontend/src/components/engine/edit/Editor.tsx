@@ -36,6 +36,7 @@ import { dirOf, joinPath, loadFileAsset, mergeSpecs, type FileAsset, type PcEngi
 import { boneFromObject, uniqueBoneName } from "./rig";
 import { type ElemKind } from "./vertedit";
 import { SCULPT_BRUSHES, runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
+import type { ShapeKey } from "./shapekeys";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -265,6 +266,11 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const [brushRadius, setBrushRadius] = useState(0);
   const [brushDepth, setBrushDepth] = useState(0);
   const strokePath = useRef<V3[]>([]);
+  /** The shape key being edited, by name, on the mesh in edit mode. */
+  const [shapeEditing, setShapeEditing] = useState("");
+  /** The mesh edit mode is on, as state, so the panels that depend on it draw again when it changes. */
+  const [editMeshKey, setEditMeshKey] = useState("");
+  const [newShapeName, setNewShapeName] = useState("");
   /** Where the corners a step leaves selected are; selected again once the rebuild has made them. */
   const pendingSel = useRef<V3[] | null>(null);
 
@@ -348,8 +354,9 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     w.applyVertEdits(editsRef.current.verts || []);
     // The edit-mode steps are the base mesh too, so they are on in edit mode, unlike the stack.
     const t = w.applyTopoEdits(editsRef.current.topo || []);
+    const k = w.applyShapeEdits(editsRef.current.shapes || []);
     const m = w.applyMods(modeRef.current === "edit" ? [] : editsRef.current.mods);
-    return { applied: m.applied, errors: [...t.errors, ...m.errors] };
+    return { applied: m.applied, errors: [...t.errors, ...k.errors, ...m.errors] };
   };
 
   const undo = useRef<Edits[]>([]);
@@ -901,6 +908,9 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
               ...e,
               verts: [...(e.verts || []).filter((v) => v.mesh !== key), ...(next || [])],
             }));
+          } else if (kind === "shape") {
+            const v = value as { name: string; moves: ShapeKey["moves"] };
+            push((e) => ({ ...e, shapes: (e.shapes || []).map((s) => (s.mesh === key && s.name === v.name ? { ...s, moves: v.moves } : s)) }));
           } else if (kind === "topo") {
             push((e) => ({ ...e, topo: [...(e.topo || []), { mesh: key, ...(value as Omit<TopoStep, "mesh">) }] }));
           } else push((e) => ({ ...e, pose: { ...e.pose, [key]: value } }));
@@ -1216,6 +1226,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   }, [overlays]);
   useEffect(() => {
     world.current?.setMode(mode);
+    setEditMeshKey(world.current?.editKey || "");
     // Leaving mid-stroke: drop the open stroke rather than push half of one.
     if (mode !== "terrain") { tool.current.cancel(); setReadout(""); }
     // Paint: the engine tells the panel when anything changes; leaving drops an open stroke.
@@ -1270,6 +1281,50 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   }, [topoSig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (world.current) { world.current.propRadius = propOn ? propRadius : 0; world.current.mirrorX = mirrorX; } }, [propOn, propRadius, mirrorX]);
+
+  // SHAPE KEYS. A change of what a key IS (new, deleted, its moves) builds again; a change of its
+  // value only moves the morph, live, unless a modifier baked the keys in.
+  const shapeSig = JSON.stringify((edits.shapes || []).map((k) => [k.mesh, k.name, k.moves]));
+  const shapeSeen = useRef(shapeSig);
+  useEffect(() => {
+    if (shapeSeen.current === shapeSig) return;
+    shapeSeen.current = shapeSig;
+    if (phase === "ready") void rebuild(values, "shapes");
+  }, [shapeSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const valueTimer = useRef(0);
+  const setShapeValue = (mesh: string, name: string, v: number, commit: boolean) => {
+    const live = world.current?.setShapeValue(mesh, name, v);
+    const next = (e: Edits) => ({ ...e, shapes: (e.shapes || []).map((s) => (s.mesh === mesh && s.name === name ? { ...s, value: v } : s)) });
+    if (commit) push(next); else setEdits(next);
+    if (!live) { window.clearTimeout(valueTimer.current); valueTimer.current = window.setTimeout(() => { void rebuild(values, "shapes"); }, 150); }
+  };
+  useEffect(() => {
+    // Leaving edit mode ends the editing of a key: what is shown is the mesh with its keys mixed in.
+    if (mode !== "edit" && shapeEditing) { world.current?.endShapeEdit(); setShapeEditing(""); }
+  }, [mode]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const editShape = (name: string) => {
+    const w = world.current;
+    if (!w) return;
+    if (!name || name === shapeEditing) { w.endShapeEdit(); setShapeEditing(""); void rebuild(values, "shapes"); return; }
+    w.beginShapeEdit(name, editsRef.current.shapes || []);
+    setShapeEditing(name);
+    bump();
+  };
+  const addShape = () => {
+    const w = world.current;
+    if (!w?.editKey) return;
+    const taken = new Set((edits.shapes || []).filter((s) => s.mesh === w.editKey).map((s) => s.name));
+    let name = newShapeName.trim() || "Key 1";
+    for (let i = 2; taken.has(name); i++) name = (newShapeName.trim() || "Key") + " " + i;
+    push((e) => ({ ...e, shapes: [...(e.shapes || []), { mesh: w.editKey, name, value: 1, moves: [] }] }));
+    setNewShapeName("");
+    w.beginShapeEdit(name, []);
+    setShapeEditing(name);
+  };
+  const removeShape = (mesh: string, name: string) => {
+    if (shapeEditing === name) { world.current?.endShapeEdit(); setShapeEditing(""); }
+    push((e) => ({ ...e, shapes: (e.shapes || []).filter((s) => !(s.mesh === mesh && s.name === name)) }));
+  };
 
   // A parameter change rebuilds the asset. Debounced while a slider is being dragged, because
   // running the whole asset on every pointer move is what turns a live editor into a slideshow.
@@ -2798,7 +2853,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                   </label>
                 </>
               )}
-              {lastStep && STEP_AMOUNT[lastStep.op] && lastStep.mesh === world.current?.editKey && (
+              {lastStep && STEP_AMOUNT[lastStep.op] && lastStep.mesh === editMeshKey && (
                 <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0" title="Change the last step's amount (Blender's Adjust Last Operation)">
                   {lastStep.op} {STEP_AMOUNT[lastStep.op]!.label}
                   <input key={JSON.stringify(lastStep.args)} type="number" step={STEP_AMOUNT[lastStep.op]!.step}
@@ -3321,6 +3376,36 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                 <MeshPanel report={report} mods={edits.mods} target={active} errors={modErrors}
                   onAdd={addMod} onRemove={removeMod} onToggle={toggleMod} onArg={setModArg} />
               </div>
+            </Section>
+
+            <Section title={"Shape keys" + (edits.shapes?.length ? " (" + edits.shapes.length + ")" : "")} defaultOpen={false}>
+              {mode !== "edit" || !editMeshKey ? (
+                <div className="text-[11px] text-muted">Tab into edit mode on a mesh to add or edit its shape keys.
+                  {(edits.shapes || []).length ? " " + (edits.shapes || []).length + " saved." : ""}</div>
+              ) : (
+                <div className="space-y-1 text-[11px]">
+                  {(edits.shapes || []).filter((s) => s.mesh === editMeshKey).map((s) => (
+                    <div key={s.name} className="flex items-center gap-1.5">
+                      <span className={cls("truncate w-20 shrink-0", shapeEditing === s.name ? "text-brand" : "text-text")} title={s.name}>{s.name}</span>
+                      <input type="range" min={0} max={1} step={0.01} value={s.value} className="flex-1 min-w-0"
+                        onChange={(e) => setShapeValue(s.mesh, s.name, Number(e.target.value), false)}
+                        onPointerUp={(e) => setShapeValue(s.mesh, s.name, Number((e.target as HTMLInputElement).value), true)} />
+                      <span className="w-8 text-right font-mono text-muted">{s.value.toFixed(2)}</span>
+                      <button className={cls("chip !py-0", shapeEditing === s.name && "text-brand border-brand/50")}
+                        title="Edit this key: drags change the key, not the base mesh" onClick={() => editShape(s.name)}>
+                        {shapeEditing === s.name ? "done" : "edit"}</button>
+                      <button className="text-muted hover:text-danger" title="Delete this key" onClick={() => removeShape(s.mesh, s.name)}><X size={11} /></button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <input value={newShapeName} onChange={(e) => setNewShapeName(e.target.value)} placeholder="smile, blink…"
+                      onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") addShape(); }}
+                      className="flex-1 min-w-0 rounded border border-line bg-panel2/50 px-1 py-0.5" />
+                    <button className="chip" onClick={addShape} title="A new key on this mesh, opened for editing">+ key</button>
+                  </div>
+                  {shapeEditing && <div className="text-brand/80">Editing "{shapeEditing}": move corners to shape it; Mirror X and Prop work here too.</div>}
+                </div>
+              )}
             </Section>
 
             <Section title={"Bake" + (edits.bakes?.length ? " (" + edits.bakes.length + ")" : "")} defaultOpen={false}>

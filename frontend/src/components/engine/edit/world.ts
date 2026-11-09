@@ -11,7 +11,7 @@
 
 import { buildFrom, importAny, openAsset, toObject, type AssetRef, type OpenResult } from "./assetOpen";
 import { evalClip, type Clip, type Edits, type Mod, type PartOverride, type V3, type WorldOverride } from "./kit";
-import { applyEdits, applyPlaced, applyTopo, applyVerts, makeOps, placedIdOf, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
+import { applyEdits, applyPlaced, applyShapes, applyTopo, applyVerts, makeOps, placedIdOf, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
 import { buildPcMirror, hideRevealed, revealPlan } from "./pcmirror";
 import { groupOf, parsePieceKey, pieceAt, pieceKey, pieceVertices, piecesOf, type PieceMap } from "./pieces";
 import { cameraOutline, extraIcon, extraKind, lightOutline, type ExtraKind } from "./overlay";
@@ -24,6 +24,7 @@ import type { HandleSpec, ParamHandleCallbacks } from "./configurator";
 import { clipPlanes, defaultFlySpeed, FLY_CODES, flyLook, flySpeedAfterWheel, flyStep, targetFromEye, zoomToward } from "./navmath";
 import { describeObject } from "./objectLabel";
 import type { TopoStep } from "./meshedit";
+import { shapeDeltas, shapeMoves, type ShapeKey } from "./shapekeys";
 import { PaintEngine } from "./paintGpu";
 import { ParamHandleLayer, type HandleInfo } from "./handles";
 import {
@@ -346,7 +347,7 @@ export interface WorldEvents {
   onSelect(keys: string[], active: string): void;
   /** A vert edit hands back the COMPLETE list for that mesh, not a delta, so the document is
    *  replaced wholesale and applying it twice cannot drift. */
-  onEdit(kind: "part" | "pose" | "vert" | "topo", key: string, value: any): void;
+  onEdit(kind: "part" | "pose" | "vert" | "topo" | "shape", key: string, value: any): void;
   onNav(): void;
   /** The scene gained or lost an object. Not a transform — those already arrive as edits — but a
    *  change to WHAT IS THERE, which the sidecar and the outliner both have to hear about. */
@@ -400,6 +401,9 @@ export class EditWorld {
   /** X symmetry: a mirrored corner, to the corner whose move it mirrors; and where it started. */
   private vertMirror: Map<number, number> | null = null;
   private mirror0: Map<number, V3> | null = null;
+  /** The shape key being edited: the edited mesh shows base + key, and a drag changes the key, not
+   *  the base. `base` is the mesh without the key, which the key's moves are measured from. */
+  shapeEdit: { name: string; base: Float32Array } | null = null;
   /** Meshes that carry edit-mode steps: a drag on one is saved as a "move" step, after the steps. */
   topoMeshes = new Set<string>();
   /** Proportional editing (Blender's O): the radius, in the mesh's own units, that a move fades over. 0 is off. */
@@ -1970,6 +1974,58 @@ export class EditWorld {
     return (this.editObj?.userData?.__topoOut as V3[] | undefined) || [];
   }
 
+  /** Shape keys onto the tree, as named morph targets; a key being edited is shown again after it. */
+  applyShapeEdits(keys: ShapeKey[]): { errors: string[] } {
+    const out = { parts: 0, mods: 0, verts: 0, missing: [] as string[], errors: [] as string[] };
+    if (keys.length) applyShapes(this.keyRoot(), keys, out);
+    if (this.shapeEdit) {
+      const name = this.shapeEdit.name;
+      this.shapeEdit = null;
+      if (this.editObj) this.beginShapeEdit(name, keys);
+    }
+    return { errors: [...out.errors, ...out.missing.map((k) => "no mesh called " + k)] };
+  }
+
+  /** Edit one key of the edited mesh: its shape is put into the positions, the morphs are muted. */
+  beginShapeEdit(name: string, keys: ShapeKey[]) {
+    if (this.shapeEdit) this.endShapeEdit();
+    const g = this.editObj?.geometry;
+    if (!g?.attributes?.position) return;
+    const pos = g.attributes.position.array as Float32Array;
+    const base = new Float32Array(pos);
+    const key = keys.find((k) => k.mesh === this.editKey && k.name === name);
+    if (key) {
+      const d = shapeDeltas(base, key.moves).delta;
+      for (let i = 0; i < pos.length; i++) pos[i] = base[i] + d[i];
+    }
+    if (this.editObj.morphTargetInfluences) this.editObj.morphTargetInfluences.fill(0);
+    this.shapeEdit = { name, base };
+    this.afterVertChange();
+  }
+
+  /** Back to the base mesh; the morphs come back with the next apply. */
+  endShapeEdit() {
+    const g = this.editObj?.geometry;
+    if (this.shapeEdit && g?.attributes?.position) {
+      (g.attributes.position.array as Float32Array).set(this.shapeEdit.base);
+      this.shapeEdit = null;
+      this.afterVertChange();
+    }
+    this.shapeEdit = null;
+  }
+
+  /** A key's value, live, without a rebuild. False when the mesh has no such morph (a modifier baked it). */
+  setShapeValue(meshKey: string, name: string, v: number): boolean {
+    for (const [o, k] of stableKeys(this.keyRoot())) {
+      if (k !== meshKey) continue;
+      const i = o.morphTargetDictionary?.[name];
+      if (i === undefined || !o.morphTargetInfluences) return false;
+      o.morphTargetInfluences[i] = v;
+      return true;
+    }
+    return false;
+  }
+
   /** The selected corners, by place, in the edited mesh's own frame: what a step saves. */
   selectedPlaces(): V3[] {
     if (!this.topo || !this.editObj) return [];
@@ -2772,6 +2828,14 @@ export class EditWorld {
   private commitDelta(d: DragDelta) {
     this.previewDelta(d);
     if (this.mode === "edit") {
+      if (this.shapeEdit && this.editObj) {
+        // Editing a key: the key is everything this mesh now differs from its base by.
+        const pos = this.editObj.geometry.attributes.position.array as Float32Array;
+        this.ev.onEdit("shape", this.editKey, { name: this.shapeEdit.name, moves: shapeMoves(this.shapeEdit.base, pos) });
+        this.vert0 = null;
+        this.vertPivot0 = null;
+        return;
+      }
       if (this.topoMeshes.has(this.editKey) && this.topo && this.editObj && this.vert0) {
         // A mesh the steps made: the move is one more step, from where each corner was to where it is.
         const pos = this.editObj.geometry.attributes.position.array as Float32Array;

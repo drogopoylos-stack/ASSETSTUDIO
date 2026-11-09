@@ -261,6 +261,19 @@ modifiers, in the game too. A drag on a mesh that has steps is saved as one more
 a closed mesh closed and its faces pointing out, and the tests check the volumes exactly. New faces
 have no UVs: add an Unwrap modifier after modelling, as in Blender.
 
+### Sculpt and shape keys
+
+**Sculpt** in edit mode turns a drag on the mesh into a brush stroke: clay, inflate, crease, ridge, smooth,
+flatten, pinch, move or noise, with a radius and a depth; Ctrl inverts it and Mirror X sculpts both sides. A
+stroke is saved as a step with its path on the surface. The surface under it is refined there and nowhere
+else, by longest-edge bisection, so it gets detail without slivers.
+
+**Shape keys** (Side panel, in edit mode) are a mesh's other shapes: a smile, a blink, a fat version. **+ key**
+makes one and opens it for editing; drags then shape the key, not the mesh. The slider mixes it in live. In
+three and in a GLB each key is a named morph target, so a game animates
+`mesh.morphTargetInfluences[mesh.morphTargetDictionary.smile]`. A modifier bakes the keys in at their
+values first, as Blender does.
+
 ### Hands for a game
 
 `ops.riggedHand({ side, chunk, fingers })` makes a hand a game can animate: one mesh of about 2,400

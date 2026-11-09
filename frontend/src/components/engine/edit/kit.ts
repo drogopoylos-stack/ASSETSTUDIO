@@ -9,6 +9,7 @@
 // A type-only import: erased at build, so this file stays free of ops.ts at runtime and
 // forge-ops.js keeps bundling on its own.
 import { cleanSteps, type TopoStep } from "./meshedit";
+import { cleanShapes, type ShapeKey } from "./shapekeys";
 import type { VertEdit } from "./ops";
 
 export type { VertEdit };
@@ -134,6 +135,8 @@ export interface Edits {
   /** EDIT-MODE TOOLS, as steps: extrude, inset, loop cut... per mesh, in order, each finding its
    *  corners by place. They run after `verts` and before `mods` (meshedit.ts). */
   topo?: TopoStep[];
+  /** SHAPE KEYS: a mesh's other shapes (a smile, a blink), mixed in by a value; morph targets in three. */
+  shapes?: ShapeKey[];
   world?: WorldOverride;
   bakes?: Bake[];
   /** THINGS THE CODE DID NOT MAKE. A procedural game rebuilds its world every run, so an object
@@ -197,7 +200,7 @@ export function isEmpty(e: Edits): boolean {
 }
 
 export function countEdits(e: Edits): number {
-  return (e.placed?.length || 0) + (e.topo?.length || 0) + Object.keys(e.params).length + Object.keys(e.parts).length
+  return (e.placed?.length || 0) + (e.topo?.length || 0) + (e.shapes?.length || 0) + Object.keys(e.params).length + Object.keys(e.parts).length
     + e.bones.length + Object.keys(e.pose).length + e.clips.length + e.mods.length + worldCount(e.world) + (e.bakes?.length || 0);
 }
 
@@ -318,6 +321,7 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
     }
   }
   if (Array.isArray(raw.topo)) { const t = cleanSteps(raw.topo); if (t.length) e.topo = t; }
+  if (Array.isArray(raw.shapes)) { const k = cleanShapes(raw.shapes); if (k.length) e.shapes = k; }
   if (typeof raw.updated === "number") e.updated = raw.updated;
   return e;
 }

@@ -1767,6 +1767,8 @@ export * from "./hands";
 export * from "./handrig";
 // Blender's edit-mode tools as saved steps: extrude, inset, loop cut, knife... (meshedit.ts).
 export * from "./meshedit";
+// Shape keys: named morph targets, found by place (shapekeys.ts).
+export * from "./shapekeys";
 // Sculpt as data (densify, then strokes), quadric decimation to a game budget, and swept tubes,
 // rolled rims and two-bone reach (sculpt.ts, decimate.ts, sweep.ts).
 export * from "./sculpt";
@@ -2128,6 +2130,72 @@ const OVERRIDE_NUMBERS = ["roughness", "metalness", "intensity", "distance", "an
 export interface AppliedEdits { parts: number; mods: number; verts: number; topo?: number; missing: string[]; errors: string[] }
 
 /**
+ * Shape keys onto the meshes they name, as relative morph targets with the keys' names and values.
+ * A key replaces an earlier one of the same name; morphs the mesh already had (a rigged hand's
+ * correctives) are kept. The attribute class is the mesh's own: no three is imported.
+ */
+export function applyShapes(root: any, keys: ShapeKey[], out?: AppliedEdits): number {
+  const byMesh = new Map<string, ShapeKey[]>();
+  for (const k of keys) { const l = byMesh.get(k.mesh); if (l) l.push(k); else byMesh.set(k.mesh, [k]); }
+  if (!byMesh.size) return 0;
+  const byKey = new Map<string, any>();
+  for (const [o, k] of stableKeys(root)) byKey.set(k, o);
+  let done = 0;
+  for (const [key, list] of byMesh) {
+    const o = byKey.get(key);
+    const g = o?.geometry, attr = g?.attributes?.position;
+    if (!attr?.array) { out?.missing.push(key); continue; }
+    const A = attr.constructor;
+    const mine = new Set(list.map((k) => k.name));
+    const kept = (g.morphAttributes?.position || []).filter((a: any) => !mine.has(a.name));
+    if (g.morphAttributes?.position?.length && !g.morphTargetsRelative) {
+      out?.errors.push(key + ": its own morphs are absolute; shape keys were not added");
+      continue;
+    }
+    const added: any[] = [];
+    for (const k of list) {
+      const r = shapeDeltas(attr.array as ArrayLike<number>, k.moves);
+      if (k.moves.length && !r.found) { out?.errors.push(key + ": shape '" + k.name + "' finds none of its corners"); continue; }
+      const a = new A(r.delta, 3);
+      a.name = k.name;
+      added.push(a);
+    }
+    g.morphAttributes.position = [...kept, ...added];
+    if (g.morphAttributes.normal) delete g.morphAttributes.normal;
+    g.morphTargetsRelative = true;
+    o.updateMorphTargets?.();
+    const values = new Map(list.map((k) => [k.name, k.value]));
+    if (o.morphTargetDictionary && o.morphTargetInfluences) {
+      for (const [name, i] of Object.entries(o.morphTargetDictionary as Record<string, number>)) {
+        if (values.has(name)) o.morphTargetInfluences[i] = values.get(name)!;
+      }
+    }
+    done += added.length;
+  }
+  return done;
+}
+
+/** Morph targets baked into the positions at their current values, and removed. */
+export function bakeShapes(root: any): void {
+  root.traverse?.((o: any) => {
+    const g = o.geometry, list = g?.morphAttributes?.position;
+    if (!list?.length || !o.morphTargetInfluences) return;
+    const pos = g.attributes.position.array as Float32Array;
+    list.forEach((a: any, i: number) => {
+      const w = o.morphTargetInfluences[i] || 0;
+      if (!w) return;
+      const d = a.array as Float32Array;
+      if (g.morphTargetsRelative) for (let j = 0; j < pos.length; j++) pos[j] += d[j] * w;
+      else for (let j = 0; j < pos.length; j++) pos[j] += (d[j] - pos[j]) * w;
+    });
+    g.morphAttributes = {};
+    o.updateMorphTargets?.();
+    g.attributes.position.needsUpdate = true;
+    g.computeVertexNormals?.();
+  });
+}
+
+/**
  * The edit-mode steps (meshedit.ts) onto the meshes they name: each mesh's steps in order, its
  * geometry replaced by the result. Unindexed with a normal per corner, so hard edges stay hard; UV
  * and colour are dropped, because new faces have none (an Unwrap modifier after the steps gives
@@ -2177,6 +2245,7 @@ import { atlasArrays } from "./atlas";
 import { gripPlacement, handField, type GripPlacementResult, type Hand, type HandOpts } from "./hands";
 import { restOpts, rigHand, type HandPoseSpec, type HandRig } from "./handrig";
 import { cleanSteps, runSteps, type TopoStep } from "./meshedit";
+import { cleanShapes, shapeDeltas, type ShapeKey } from "./shapekeys";
 import { densifyArrays, sculptArrays, type Stroke } from "./sculpt";
 import { decimateArrays, type DecimateOptions } from "./decimate";
 import { boundaryLoops, reach, rimArrays, sweepArrays, type SweepOptions } from "./sweep";
@@ -2472,8 +2541,13 @@ export function applyEdits(root: any, edits: any, ops?: Ops, T?: any): AppliedEd
   out.verts = applyVerts(root, edits?.verts, out);
   // ...and so are the edit-mode tools, after the moves they were made on.
   if (Array.isArray(edits?.topo) && edits.topo.length) out.topo = applyTopo(root, cleanSteps(edits.topo), out);
+  // ...and the shape keys, on the mesh those made.
+  if (Array.isArray(edits?.shapes) && edits.shapes.length) applyShapes(root, cleanShapes(edits.shapes), out);
   const mods: any[] = Array.isArray(edits?.mods) ? edits.mods.filter((m: any) => m && !m.off) : [];
   if (mods.length && !ops) { out.errors.push("the stack needs the operations: pass makeOps(THREE)"); return out; }
+  // A modifier makes new geometry, which a morph target cannot follow: the keys are baked in at their
+  // values first, as Blender does when it applies a modifier to a mesh with keys.
+  if (mods.length) bakeShapes(root);
   for (const m of mods) {
     try {
       // A modifier on the whole asset runs on every part in place — Blender's per-object stack —
