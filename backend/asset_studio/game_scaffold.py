@@ -46,9 +46,11 @@ from urllib.parse import quote
 from .config import FRONTEND_DIST, PKG_DIR, settings
 
 TEMPLATES = PKG_DIR / "templates" / "new_game"
-ENGINES = ("three", "playcanvas")
+ENGINES = ("three", "playcanvas", "phaser", "pixi")
 _ALIASES = {"three": "three", "threejs": "three", "three.js": "three",
-            "playcanvas": "playcanvas", "pc": "playcanvas", "play-canvas": "playcanvas"}
+            "playcanvas": "playcanvas", "pc": "playcanvas", "play-canvas": "playcanvas",
+            "phaser": "phaser", "phaser.js": "phaser", "phaserjs": "phaser",
+            "pixi": "pixi", "pixi.js": "pixi", "pixijs": "pixi"}
 # 2: serve.mjs reloads the open page when a file changes. A game made at 1 has no /__studio_live,
 # so a tool that reads studio.game.json can tell which games reload by themselves.
 TEMPLATE_VERSION = 2
@@ -59,7 +61,7 @@ LIVE_RELOAD = "/__studio_live"
 # gets a stub with the same exports that says so, and its imports still work.
 RUNTIME_SRC = FRONTEND_DIST / "studio-runtime.js"
 RUNTIME_EXPORTS = ("version", "engineOf", "rootOf", "studioKeys", "findByKey", "loadStudioEdits",
-                   "applyStudioEdits", "placeStudioItem", "unplaceStudioItem")
+                   "applyStudioEdits", "placeStudioItem", "unplaceStudioItem", "stageCall")
 
 # Files whose text carries placeholders; anything else is copied byte for byte.
 _TEXT_EXT = {".html", ".htm", ".js", ".mjs", ".md", ".css", ".txt", ""}
@@ -92,7 +94,7 @@ def engine_of(value: str = "") -> str:
         raw = str(settings.get("new_game_engine", "three") or "three").strip().lower()
     eng = _ALIASES.get(raw, "")
     if not eng:
-        raise ValueError('unknown engine %r: use "three" or "playcanvas"' % (value or raw))
+        raise ValueError('unknown engine %r: use "three", "playcanvas", "phaser" or "pixi"' % (value or raw))
     return eng
 
 
@@ -401,12 +403,17 @@ def _next_steps(game: Path, engine: str, installing: bool) -> list[str]:
     p = str(game)
     q = json.dumps(p)
     add = "add(m.buildCrate({ app }))" if engine == "playcanvas" else "add(m.buildCrate())"
+    two_d = engine in ("phaser", "pixi")
     steps = [("npm install is running: GET /api/workspace/new-game/status?path=%s until done is true"
               % quote(p)) if installing else ("install the engine first: `npm install` in %s" % p)]
     steps += [
         'open it live: POST /api/live/open {"project": %s} (starts `npm run dev`, which is node serve.mjs)' % q,
+        ("see its objects: GET /api/live/objects?project=%s, and move one with POST /api/live/edit "
+         "{\"project\": %s, \"target\": \"crate-1\", \"move\": [40, 0], \"save\": true}" % (quote(p), q)) if two_d else
         "see one builder: POST /api/live/forge {\"project\": %s, \"js\": \"const m = await import('./src/assets.js'); %s\"}" % (q, add),
         'review it: POST /api/review/render {"project": %s, "mode": "scene"}; one builder: "mode": "isolate", "target": "crate"' % q,
+        ("add a builder: export buildThing({...} = {}) from src/assets.js returning a named canvas, then add its target "
+         "in review/targets.js") if two_d else
         "add a builder: export buildThing({...} = {}) from src/assets.js returning a named group with its feet on y = 0, then add its target to review/targets.js",
         "moves saved in the Studio land in studio.edits.json; src/studio-runtime.js applies them before the first frame",
         "an edit to the game's code reloads the open page by itself within a second (serve.mjs, %s); "

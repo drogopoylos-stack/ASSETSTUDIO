@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>__GAME_TITLE__</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2330; }
+    canvas { display: block; margin: auto; }
+  </style>
+  <!-- No bundler: the import map is what makes `import 'pixi.js'` work. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "pixi.js": "./node_modules/pixi.js/dist/pixi.min.mjs"
+      }
+    }
+  </script>
+  <!-- Live reload. serve.mjs (`npm run dev`, and what the Studio runs) sends `reload` on
+       /__studio_live when a file of the game changes, and this reloads the page, so the page never
+       runs code older than the files. It connects only where serve.mjs served the page (serve.mjs
+       marks it with a Server-Timing entry), never inside a Studio review capture (a reload would
+       cut the capture short), and on a static host it makes no request at all. -->
+  <script>
+    (() => {
+      try {
+        if (window.__review || !/^https?:$/.test(location.protocol)) return;
+        const nav = performance.getEntriesByType('navigation')[0];
+        const marks = nav && nav.serverTiming;
+        if (marks && !marks.some((m) => m.name === 'studio-live')) return;
+        let open = false, misses = 0;
+        const es = new EventSource('/__studio_live');
+        es.onopen = () => { open = true; misses = 0; };
+        es.onmessage = (e) => { if (e.data === 'reload') location.reload(); };
+        // Refused, or not an event stream (a 404): close it, silently. Dropped after it worked
+        // (the dev server restarted): let it reconnect, for about twenty seconds.
+        es.onerror = () => { if (!open || ++misses > 20) es.close(); };
+      } catch {}
+    })();
+  </script>
+</head>
+<body>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

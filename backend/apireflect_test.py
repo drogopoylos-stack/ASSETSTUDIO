@@ -45,7 +45,8 @@ ok("...and says it is not served over HTTP", "not served" in d["vertedit"]["serv
 
 print("\nThe default answer is cheap")
 size = len(json.dumps(d)) // 4
-ok("under 800 tokens", size < 800, "%d tokens" % size)
+# 900 since the game hand (handrig) and the edit-mode steps (meshedit) were listed beside the rest.
+ok("under 900 tokens", size < 900, "%d tokens" % size)
 ok("...and carries no signatures", "params" not in json.dumps(d))
 ok("it says how to get more", "?name=" in d["how"])
 ok("it hands over a paste-able import", "forge-ops.js" in d["import"])

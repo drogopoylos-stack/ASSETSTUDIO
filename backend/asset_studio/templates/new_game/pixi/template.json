@@ -1,0 +1,42 @@
+{
+  "engine": "pixi",
+  "label": "PixiJS",
+  "dependencies": {
+    "pixi.js": "^8.22.0"
+  },
+  "import_map": {
+    "pixi.js": "./node_modules/pixi.js/dist/pixi.min.mjs"
+  },
+  "engine_file": "node_modules/pixi.js/dist/pixi.min.mjs",
+  "handle": "window.__game = { app, PIXI }",
+  "builders": [
+    {
+      "file": "src/assets.js",
+      "export": "buildCrate",
+      "call": "buildCrate({ size: 72 })",
+      "note": "a wooden crate as a canvas; size is its width in pixels"
+    },
+    {
+      "file": "src/assets.js",
+      "export": "buildTree",
+      "call": "buildTree({ height: 170 })",
+      "note": "a simple tree as a canvas; height in pixels"
+    }
+  ],
+  "targets": [
+    "crate",
+    "tree"
+  ],
+  "actions": [
+    "jump"
+  ],
+  "objects": [
+    "ground",
+    "crate-1",
+    "crate-2",
+    "tree-1",
+    "tree-2",
+    "player",
+    "hud"
+  ]
+}

@@ -396,6 +396,32 @@ export const api = {
   liveOpen: (project: string) =>
     req<{ ok?: boolean; engine: string; reachable: boolean; at?: string; tag?: string; hint?: string; error?: string }>(
       "/api/live/open", { method: "POST", body: JSON.stringify({ project }) }),
+  /** Poly Haven's CC0 assets: search, download into a project (with LICENSE.txt), and what a project has. */
+  polyHavenSearch: (type: string, q = "", category = "", limit = 80) =>
+    req<{ ok: boolean; error?: string; total?: number; rows?: PolyHavenRow[]; categories?: Record<string, number> }>(
+      "/api/polyhaven/search?" + new URLSearchParams({ type, q, category, limit: String(limit) }).toString(), { timeoutMs: 45_000 }),
+  polyHavenDownload: (project: string, id: string, type: string, res = "1k") =>
+    req<{ ok: boolean; error?: string; main?: string; folder?: string; references?: Record<string, string> }>(
+      "/api/polyhaven/download", { method: "POST", body: JSON.stringify({ project, id, type, res }), timeoutMs: 600_000 }),
+  polyHavenDownloaded: (project: string) =>
+    req<{ ok: boolean; error?: string; rows?: { id: string; type: string; name: string; folder: string; main: string }[] }>(
+      "/api/polyhaven/downloaded?project=" + encodeURIComponent(project)),
+  /** A 2D game's objects with their boxes on the page: what the 2D Edit tab draws. */
+  liveStage: (project: string) =>
+    req<StageView>("/api/live/stage?project=" + encodeURIComponent(project)),
+  /** A change to the running game: see POST /api/live/edit. `save`, `undo` and `clear` work here too. */
+  liveEdit: (project: string, body: Record<string, unknown>) =>
+    req<{ ok?: boolean; error?: string; [k: string]: unknown }>(
+      "/api/live/edit", { method: "POST", body: JSON.stringify({ project, from_ui: true, ...body }) }),
+  livePlace: (project: string, body: Record<string, unknown>) =>
+    req<{ ok?: boolean; error?: string; key?: string; name?: string; [k: string]: unknown }>(
+      "/api/live/place", { method: "POST", body: JSON.stringify({ project, from_ui: true, ...body }), timeoutMs: 30_000 }),
+  liveStagePause: (project: string, on: boolean) =>
+    req<{ ok?: boolean; paused?: boolean; error?: string }>(
+      "/api/live/stage/pause", { method: "POST", body: JSON.stringify({ project, on }) }),
+  liveReload: (project: string) =>
+    req<{ ok?: boolean; error?: string }>(
+      "/api/live/open", { method: "POST", body: JSON.stringify({ project, reload: true }), timeoutMs: 45_000 }),
   /** What the forge page is holding RIGHT NOW: the code that made the scene currently in it, a
    *  signature for that code, and the camera the agent last looked from.
    *
@@ -859,7 +885,53 @@ export const api = {
     req<NewGameDefaults>(`/api/workspace/new-game/defaults?beside=${encodeURIComponent(beside)}`),
 };
 
-export type NewGameEngine = "three" | "playcanvas";
+export type NewGameEngine = "three" | "playcanvas" | "phaser" | "pixi";
+
+/** One Poly Haven asset, as backend/asset_studio/polyhaven.py lists it. */
+export interface PolyHavenRow {
+  id: string;
+  name: string;
+  type: string;
+  categories: string[];
+  tags: string[];
+  authors: string[];
+  downloads: number;
+  thumb: string;
+  page: string;
+  license: string;
+  dimensions_m?: number[];
+  polycount?: number;
+}
+
+/** One object of a 2D game, as frontend/src/components/engine/edit/stage.ts reads it. */
+export interface StageRow {
+  key: string;
+  name: string;
+  type: string;
+  parent: string;
+  box: [number, number, number, number];
+  point?: boolean;
+  pos: [number, number];
+  rot: number;
+  scale: [number, number];
+  alpha: number;
+  visible: boolean;
+  scene?: string;
+  texture?: string;
+  text?: string;
+  placed?: string;
+}
+
+export interface StageView {
+  ok: boolean;
+  error?: string;
+  engine?: string;
+  view?: [number, number];
+  rows?: StageRow[];
+  total?: number;
+  paused?: boolean;
+  saved?: string[];
+}
 
 export interface NewGameBody {
   name: string;

@@ -201,8 +201,8 @@ curl -s --get 'http://127.0.0.1:8777/api/graphify/query' \
 
 ## 6. The Studio Engine
 
-A second window: **a Blender-shaped 3D editor, a library of the project's own assets, a live mirror
-of the running game, and the forge an agent builds assets in.** Four tabs.
+A second window: **a Blender-shaped 3D editor, a 2D editor, a library of the project's own assets, a
+live mirror of the running game, and the forge an agent builds assets in.** Four tabs.
 
 ### The forge
 
@@ -246,6 +246,70 @@ The modelling library agents import over HTTP: `weld`, `skin`, `check`, convex h
 isosurface, IK, Catmull-Clark subdivision with creases, bevel, UV unwrap with seams and packing,
 texture baking, heat-diffusion skin weights, voxel remesh and relax — plus `applyEdits` and
 `sceneReport` so a sidecar written in the editor does the same thing inside the game.
+
+### Modelling in edit mode
+
+Edit mode (Tab) has Blender's modelling tools on the selected corners: **Extrude** (E), **Inset** (I),
+**Loop cut** (Ctrl+R), **Knife** (K, a level cut through the selection as the view sees it),
+**Subdivide**, **Merge** (M), **Fill** (F, which bridges when two open rims are selected) and **Delete** (X).
+**Prop** (O) is proportional editing, and **Mirror X** moves the mirrored corner too. The field beside the
+tools changes the last step's amount, as Blender's Adjust Last Operation does.
+
+The model is rebuilt from its code, so a tool is saved as a STEP in `studio.edits.json` (`topo`): which
+corners, found by place, and how much. The steps run after the hand-moved vertices and before the
+modifiers, in the game too. A drag on a mesh that has steps is saved as one more step. Every tool keeps
+a closed mesh closed and its faces pointing out, and the tests check the volumes exactly. New faces
+have no UVs: add an Unwrap modifier after modelling, as in Blender.
+
+### Hands for a game
+
+`ops.riggedHand({ side, chunk, fingers })` makes a hand a game can animate: one mesh of about 2,400
+triangles, 20 bones (16 with three fingers), and corrective morphs. `ops.poseHand(mesh, { pose })`
+poses it ('fist', 'grip', 'point', 'relaxed', or a `curl` per finger), and `ops.handClip` makes an
+animation clip for a GLB export.
+
+The anatomy comes from `ops.hand`, the hand made as one smooth field. The rig keeps it, and the tests
+measure that it does:
+
+- The skeleton is the field's own joints. The finger bases do not move between poses and the phalanges
+  keep their lengths, so bones reproduce every pose.
+- The weights come from the skeleton, with one rule from the anatomy: a vertex of a finger takes only
+  that finger's bones and the palm's. No weight crosses to a neighbouring finger.
+- A corrective is the difference between the skinned pose and the field of that pose, stored as a
+  morph. Blender users sculpt these shapes by hand. Measured on the default hand, the mean distance to
+  the anatomical surface falls from 0.57 to 0.39 mm in a grip and from 0.32 to 0.17 mm in a fist.
+
+### Poly Haven references
+
+**Assets → + Poly Haven** searches Poly Haven's free models, textures and HDRIs and downloads one into the
+project. They are CC0: any use, commercial included, with no credit needed. Each download keeps a
+`LICENSE.txt` with the source page, the authors, the date and the words of Poly Haven's license page.
+
+A model is packed into one `.glb` and comes with two renders, textured and clay (the shape alone), and its
+real size in metres. This is how Blender users take these assets: as references. An agent aims the forge
+at the clay render and builds to the real size. Measured on Poly Haven's wooden axe: the real model scores
+0.70 against its own clay render, and a crude axe built in code scores 0.10, so the score shows how far a
+build still has to go. A texture set comes with a `material.json` that names its maps.
+
+### 2D games
+
+Phaser, PixiJS and HTML or React pages open in a 2D edit tab: **Game → Edit live**, or **Edit** on a
+project that has no 3D engine. It shows the running game with its objects as boxes on top. Select,
+drag, resize, turn and hide them, add an image of the project, and pause a moving game to catch
+something. **Play** sends clicks and keys to the game, so you can reach the screen you want to change.
+
+Every change is saved in the same `studio.edits.json` a 3D game uses, and Undo takes it back, live and
+on disk. Agents get the same objects from the same routes (`/api/live/objects`, `/edit`, `/place`), and
+`studio-runtime.js` applies the file in a shipped game: `applyStudioEdits(game, edits)` for Phaser,
+`(app, edits)` for PixiJS and `(document, edits)` for a page. New games can start from a Phaser or a
+PixiJS template.
+
+On an HTML page, `pos` is an offset from where the layout puts the element, and the change is a CSS
+rule found by the element's address, so it survives a re-render. The address is its place in the page,
+so give an element an `id` or a `data-testid` if its place can change.
+
+Not in 2D: a canvas the game draws by hand has no objects to list, so the Studio can only move the
+canvas itself. The forge builds 3D assets only. Placement takes images only.
 
 ### The library
 

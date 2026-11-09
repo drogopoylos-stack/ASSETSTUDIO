@@ -66,3 +66,8 @@ export function unplaceStudioItem() {
   say();
   return 0;
 }
+
+export async function stageCall() {
+  say();
+  return { ok: false, error: 'studio-runtime.js is a stub: nothing was changed' };
+}

@@ -8,6 +8,7 @@
 
 // A type-only import: erased at build, so this file stays free of ops.ts at runtime and
 // forge-ops.js keeps bundling on its own.
+import { cleanSteps, type TopoStep } from "./meshedit";
 import type { VertEdit } from "./ops";
 
 export type { VertEdit };
@@ -130,6 +131,9 @@ export interface Edits {
   /** VERTICES THE HAND MOVED. Keyed by where the vertex was, never by its index, because the code
    *  runs again and an index survives nothing. See VertEdit in ops.ts for why. */
   verts?: VertEdit[];
+  /** EDIT-MODE TOOLS, as steps: extrude, inset, loop cut... per mesh, in order, each finding its
+   *  corners by place. They run after `verts` and before `mods` (meshedit.ts). */
+  topo?: TopoStep[];
   world?: WorldOverride;
   bakes?: Bake[];
   /** THINGS THE CODE DID NOT MAKE. A procedural game rebuilds its world every run, so an object
@@ -193,7 +197,7 @@ export function isEmpty(e: Edits): boolean {
 }
 
 export function countEdits(e: Edits): number {
-  return (e.placed?.length || 0) + Object.keys(e.params).length + Object.keys(e.parts).length
+  return (e.placed?.length || 0) + (e.topo?.length || 0) + Object.keys(e.params).length + Object.keys(e.parts).length
     + e.bones.length + Object.keys(e.pose).length + e.clips.length + e.mods.length + worldCount(e.world) + (e.bakes?.length || 0);
 }
 
@@ -313,6 +317,7 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
       e.mods.push({ op: m.op, target: typeof m.target === "string" ? m.target : "", args, off: m.off === true });
     }
   }
+  if (Array.isArray(raw.topo)) { const t = cleanSteps(raw.topo); if (t.length) e.topo = t; }
   if (typeof raw.updated === "number") e.updated = raw.updated;
   return e;
 }

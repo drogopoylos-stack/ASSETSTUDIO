@@ -11,7 +11,7 @@
 
 import { buildFrom, importAny, openAsset, toObject, type AssetRef, type OpenResult } from "./assetOpen";
 import { evalClip, type Clip, type Edits, type Mod, type PartOverride, type V3, type WorldOverride } from "./kit";
-import { applyEdits, applyPlaced, applyVerts, makeOps, placedIdOf, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
+import { applyEdits, applyPlaced, applyTopo, applyVerts, makeOps, placedIdOf, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
 import { buildPcMirror, hideRevealed, revealPlan } from "./pcmirror";
 import { groupOf, parsePieceKey, pieceAt, pieceKey, pieceVertices, piecesOf, type PieceMap } from "./pieces";
 import { cameraOutline, extraIcon, extraKind, lightOutline, type ExtraKind } from "./overlay";
@@ -23,6 +23,7 @@ import { Gizmo, project, type Axis, type DragDelta, type GizmoMode } from "./giz
 import type { HandleSpec, ParamHandleCallbacks } from "./configurator";
 import { clipPlanes, defaultFlySpeed, FLY_CODES, flyLook, flySpeedAfterWheel, flyStep, targetFromEye, zoomToward } from "./navmath";
 import { describeObject } from "./objectLabel";
+import type { TopoStep } from "./meshedit";
 import { PaintEngine } from "./paintGpu";
 import { ParamHandleLayer, type HandleInfo } from "./handles";
 import {
@@ -345,7 +346,7 @@ export interface WorldEvents {
   onSelect(keys: string[], active: string): void;
   /** A vert edit hands back the COMPLETE list for that mesh, not a delta, so the document is
    *  replaced wholesale and applying it twice cannot drift. */
-  onEdit(kind: "part" | "pose" | "vert", key: string, value: any): void;
+  onEdit(kind: "part" | "pose" | "vert" | "topo", key: string, value: any): void;
   onNav(): void;
   /** The scene gained or lost an object. Not a transform — those already arrive as edits — but a
    *  change to WHAT IS THERE, which the sidecar and the outliner both have to hear about. */
@@ -393,6 +394,18 @@ export class EditWorld {
   private editFaces: any = null;
   private vert0: Map<number, V3> | null = null;
   private vertPivot0: V3 | null = null;
+  /** Per corner in `vert0`, how much of the transform it takes: 1 for a selected corner, less for one
+   *  that proportional editing pulls along. */
+  private vertW: Map<number, number> | null = null;
+  /** X symmetry: a mirrored corner, to the corner whose move it mirrors; and where it started. */
+  private vertMirror: Map<number, number> | null = null;
+  private mirror0: Map<number, V3> | null = null;
+  /** Meshes that carry edit-mode steps: a drag on one is saved as a "move" step, after the steps. */
+  topoMeshes = new Set<string>();
+  /** Proportional editing (Blender's O): the radius, in the mesh's own units, that a move fades over. 0 is off. */
+  propRadius = 0;
+  /** X symmetry in edit mode: a move on one side moves the mirrored corner on the other. */
+  mirrorX = false;
   /** How near the cursor has to be, in pixels. A vertex is a dot; the hand means "that one". */
   pickRadius = 12;
   /** The ground, when there is one. Never inside the subject: a level is ground AND the props
@@ -1942,6 +1955,75 @@ export class EditWorld {
     return { moved, errors: [...out.errors, ...out.missing.map((k) => "no mesh called " + k)] };
   }
 
+  /** The edit-mode steps onto the tree (meshedit.ts): after the vertex moves, before the stack. */
+  applyTopoEdits(steps: TopoStep[]): { done: number; errors: string[] } {
+    this.topoMeshes = new Set(steps.filter((t) => !t.off).map((t) => t.mesh));
+    if (!steps.length) return { done: 0, errors: [] };
+    const out = { parts: 0, mods: 0, verts: 0, missing: [] as string[], errors: [] as string[] };
+    const done = applyTopo(this.keyRoot(), steps, out);
+    if (this.topo && this.editObj) this.rebindEdit();
+    return { done, errors: [...out.errors, ...out.missing.map((k) => "no mesh called " + k)] };
+  }
+
+  /** Where the edited mesh's last step left its selection (empty when it has no steps). */
+  lastStepPlaces(): V3[] {
+    return (this.editObj?.userData?.__topoOut as V3[] | undefined) || [];
+  }
+
+  /** The selected corners, by place, in the edited mesh's own frame: what a step saves. */
+  selectedPlaces(): V3[] {
+    if (!this.topo || !this.editObj) return [];
+    const pos = this.editObj.geometry.attributes.position.array as Float32Array;
+    return [...this.vsel].map((g) => groupAt(pos, this.topo!, g));
+  }
+
+  /** Select the corners at these places (what a step leaves selected), within a millimetre. */
+  selectPlaces(places: V3[]) {
+    if (!this.topo || !this.editObj) return;
+    const pos = this.editObj.geometry.attributes.position.array as Float32Array;
+    const want = new Set(places.map((p) => p.map((x) => Math.round(x / 1e-4)).join(",")));
+    const hit: number[] = [];
+    for (let g = 0; g < this.topo.groups.length; g++) {
+      const a = groupAt(pos, this.topo, g);
+      if (want.has(a.map((x) => Math.round(x / 1e-4)).join(","))) hit.push(g);
+    }
+    this.selectElems(hit, false);
+  }
+
+  /** The edited mesh's positions and index, as a tool reads them. */
+  editMeshArrays(): { pos: Float32Array; idx: ArrayLike<number> | null } | null {
+    const g = this.editObj?.geometry;
+    if (!g?.attributes?.position) return null;
+    return { pos: g.attributes.position.array as Float32Array, idx: g.index ? (g.index.array as ArrayLike<number>) : null };
+  }
+
+  /** The edited mesh's size (the diagonal of its box, own units): the scale a tool's default amount takes. */
+  editSize(): number {
+    if (!this.editObj?.geometry) return 1;
+    this.editObj.geometry.computeBoundingBox?.();
+    const b = this.editObj.geometry.boundingBox;
+    return b ? Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) || 1 : 1;
+  }
+
+  /** A knife plane through the selection's middle (the mesh's, with none), level as the view sees
+   *  it: its normal is the camera's up, carried into the mesh's frame. */
+  knifePlane(): { point: V3; normal: V3 } | null {
+    if (!this.editObj) return null;
+    const T = this.T;
+    const places = this.selectedPlaces();
+    let c: V3 = [0, 0, 0];
+    if (places.length) { for (const q of places) { c[0] += q[0]; c[1] += q[1]; c[2] += q[2]; } c = [c[0] / places.length, c[1] / places.length, c[2] / places.length]; }
+    else {
+      this.editObj.geometry.computeBoundingBox?.();
+      const b = this.editObj.geometry.boundingBox;
+      if (b) c = [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2];
+    }
+    const up = new T.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    const inv = this.editObj.getWorldQuaternion(new T.Quaternion()).invert();
+    up.applyQuaternion(inv).normalize();
+    return { point: c, normal: [up.x, up.y, up.z] };
+  }
+
   /** Every mesh in the asset, by key, for the picker that chooses what to edit. */
   editableMeshes(): Array<{ key: string; name: string; verts: number }> {
     const out: Array<{ key: string; name: string; verts: number }> = [];
@@ -2106,6 +2188,8 @@ export class EditWorld {
    *  Blender there is nothing to go back TO. */
   resetElems(): number {
     if (!this.topo || !this.editObj || !this.vsel.size) return 0;
+    // A mesh the steps made has no "where the code put it" for its new corners: undo is the way back.
+    if (this.topoMeshes.has(this.editKey)) return 0;
     const pos = this.editObj.geometry.attributes.position.array as Float32Array;
     let n = 0;
     for (const g of this.vsel) {
@@ -2484,6 +2568,42 @@ export class EditWorld {
       // The pivot is kept in LOCAL space: a rotate or a scale of a vertex selection turns about
       // the middle of the selection, and doing that in world space would need the matrix twice.
       this.vertPivot0 = [c[0] / n, c[1] / n, c[2] / n];
+      this.vertW = new Map();
+      for (const g of this.vert0.keys()) this.vertW.set(g, 1);
+      // PROPORTIONAL: the corners round the selection come along, fading to nothing at the radius
+      // (Blender's smooth falloff). Skipped on a mesh too large to measure every pair quickly.
+      const ng = this.topo.groups.length;
+      if (this.propRadius > 0 && ng * this.vsel.size < 4e7) {
+        const r = this.propRadius;
+        const sel = [...this.vert0.values()];
+        for (let g = 0; g < ng; g++) {
+          if (this.vert0.has(g)) continue;
+          const a = groupAt(pos, this.topo, g);
+          let d = Infinity;
+          for (const q of sel) d = Math.min(d, Math.hypot(a[0] - q[0], a[1] - q[1], a[2] - q[2]));
+          if (d >= r) continue;
+          const t = d / r;
+          this.vert0.set(g, [a[0], a[1], a[2]]);
+          this.vertW.set(g, 1 - t * t * (3 - 2 * t));
+        }
+      }
+      // X SYMMETRY: the corner at the mirrored place follows, mirrored. A corner on the plane itself
+      // has no partner and keeps x = 0 as it moves only if the move keeps it there.
+      this.vertMirror = new Map();
+      this.mirror0 = new Map();
+      if (this.mirrorX) {
+        const key = (x: number, y: number, z: number) => Math.round(x / 1e-4) + "," + Math.round(y / 1e-4) + "," + Math.round(z / 1e-4);
+        const at = new Map<string, number>();
+        for (let g = 0; g < ng; g++) { const a = groupAt(pos, this.topo, g); at.set(key(a[0], a[1], a[2]), g); }
+        for (const [g, s0] of this.vert0) {
+          if (Math.abs(s0[0]) < 1e-4) continue;
+          const m = at.get(key(-s0[0], s0[1], s0[2]));
+          if (m === undefined || this.vert0.has(m) || this.vertMirror.has(m)) continue;
+          this.vertMirror.set(m, g);
+          const a = groupAt(pos, this.topo, m);
+          this.mirror0.set(m, [a[0], a[1], a[2]]);
+        }
+      }
       return;
     }
     if (this.mode === "pose") {
@@ -2532,6 +2652,7 @@ export class EditWorld {
       }
       const axis = d.rotate ? new T.Vector3(...d.rotate.axis).applyQuaternion(inv).normalize() : null;
       const p = new T.Vector3();
+      const moved = new Map<number, V3>();
       for (const [g, s] of this.vert0) {
         p.set(s[0], s[1], s[2]);
         if (move) p.add(move);
@@ -2541,7 +2662,15 @@ export class EditWorld {
           p.set(p.x * d.scale[0], p.y * d.scale[1], p.z * d.scale[2]);
           p.add(piv);
         }
-        for (const i of this.topo.groups[g]) { pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z; }
+        const w = this.vertW?.get(g) ?? 1;
+        const q: V3 = [s[0] + (p.x - s[0]) * w, s[1] + (p.y - s[1]) * w, s[2] + (p.z - s[2]) * w];
+        moved.set(g, q);
+        for (const i of this.topo.groups[g]) { pos[i * 3] = q[0]; pos[i * 3 + 1] = q[1]; pos[i * 3 + 2] = q[2]; }
+      }
+      for (const [m, g] of this.vertMirror || []) {
+        const q = moved.get(g);
+        if (!q) continue;
+        for (const i of this.topo.groups[m]) { pos[i * 3] = -q[0]; pos[i * 3 + 1] = q[1]; pos[i * 3 + 2] = q[2]; }
       }
       this.afterVertChange();
       return;
@@ -2614,6 +2743,21 @@ export class EditWorld {
   private commitDelta(d: DragDelta) {
     this.previewDelta(d);
     if (this.mode === "edit") {
+      if (this.topoMeshes.has(this.editKey) && this.topo && this.editObj && this.vert0) {
+        // A mesh the steps made: the move is one more step, from where each corner was to where it is.
+        const pos = this.editObj.geometry.attributes.position.array as Float32Array;
+        const moves: { at: V3; to: V3 }[] = [];
+        const take = (g: number, s0: V3) => {
+          const a = groupAt(pos, this.topo!, g);
+          if (Math.hypot(a[0] - s0[0], a[1] - s0[1], a[2] - s0[2]) > 1e-9) moves.push({ at: s0, to: [a[0], a[1], a[2]] });
+        };
+        for (const [g, s0] of this.vert0) take(g, s0);
+        for (const [m, s0] of this.mirror0 || []) take(m, s0);
+        if (moves.length) this.ev.onEdit("topo", this.editKey, { op: "move", sel: [], moves });
+        this.vert0 = null;
+        this.vertPivot0 = null;
+        return;
+      }
       // The whole list for this mesh, not a delta: replacing it wholesale means applying the
       // document twice can never drift, and undo is the previous list rather than an inverse.
       this.ev.onEdit("vert", this.editKey, this.vertEditsNow());
@@ -2644,6 +2788,9 @@ export class EditWorld {
         const pos = this.editObj.geometry.attributes.position.array as Float32Array;
         for (const [g, s] of this.vert0) {
           for (const i of this.topo.groups[g]) { pos[i * 3] = s[0]; pos[i * 3 + 1] = s[1]; pos[i * 3 + 2] = s[2]; }
+        }
+        for (const [m, s] of this.mirror0 || []) {
+          for (const i of this.topo.groups[m]) { pos[i * 3] = s[0]; pos[i * 3 + 1] = s[1]; pos[i * 3 + 2] = s[2]; }
         }
         this.afterVertChange();
       }

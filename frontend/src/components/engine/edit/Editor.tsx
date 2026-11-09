@@ -35,6 +35,7 @@ import { type PlacedRef, type PlacedItem,
 import { dirOf, joinPath, loadFileAsset, mergeSpecs, type FileAsset, type PcEngine } from "./load";
 import { boneFromObject, uniqueBoneName } from "./rig";
 import { type ElemKind } from "./vertedit";
+import { runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -253,6 +254,13 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   /** The Mesh section is open. The defect report is taken only then. */
   const [meshOpen, setMeshOpen] = useState(false);
   const [modErrors, setModErrors] = useState<string[]>([]);
+  // Edit-mode tools: what the last one said, proportional editing and X symmetry.
+  const [toolNote, setToolNote] = useState("");
+  const [propOn, setPropOn] = useState(false);
+  const [propRadius, setPropRadius] = useState(0);
+  const [mirrorX, setMirrorX] = useState(false);
+  /** Where the corners a step leaves selected are; selected again once the rebuild has made them. */
+  const pendingSel = useRef<V3[] | null>(null);
 
   const [specs, setSpecs] = useState<ParamSpec[]>([]);
   // The module's manifest as it was exported, kept from the moment the asset opened: presets and
@@ -332,7 +340,10 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
    */
   const applyMeshEdits = (w: EditWorld) => {
     w.applyVertEdits(editsRef.current.verts || []);
-    return w.applyMods(modeRef.current === "edit" ? [] : editsRef.current.mods);
+    // The edit-mode steps are the base mesh too, so they are on in edit mode, unlike the stack.
+    const t = w.applyTopoEdits(editsRef.current.topo || []);
+    const m = w.applyMods(modeRef.current === "edit" ? [] : editsRef.current.mods);
+    return { applied: m.applied, errors: [...t.errors, ...m.errors] };
   };
 
   const undo = useRef<Edits[]>([]);
@@ -884,6 +895,8 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
               ...e,
               verts: [...(e.verts || []).filter((v) => v.mesh !== key), ...(next || [])],
             }));
+          } else if (kind === "topo") {
+            push((e) => ({ ...e, topo: [...(e.topo || []), { mesh: key, ...(value as Omit<TopoStep, "mesh">) }] }));
           } else push((e) => ({ ...e, pose: { ...e.pose, [key]: value } }));
         },
         onNav: () => navSig.emit(),
@@ -1230,6 +1243,27 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     if (w.activeBone) w.selectBone(w.activeBone);
   }, [ikDepth]);
   useEffect(() => { if (world.current) world.current.worldEdit = edits.world ?? null; }, [edits.world]);
+
+  // A change of edit-mode steps (a new one, an undo, a changed amount) builds again from the code,
+  // because a step runs on the mesh the steps before it made. Then the corners the step left
+  // selected are selected, as Blender leaves the new faces of an extrude selected.
+  const topoSig = JSON.stringify(edits.topo || []);
+  const topoSeen = useRef(topoSig);
+  useEffect(() => {
+    if (topoSeen.current === topoSig) return;
+    topoSeen.current = topoSig;
+    if (phase !== "ready") return;
+    void Promise.resolve(rebuild(values, "topo")).then(() => {
+      // The last step's own output, as the rebuild made it: right after a changed amount too, when
+      // the corners are no longer where they were.
+      const w = world.current;
+      const places = w?.lastStepPlaces() || [];
+      if (w && (places.length || pendingSel.current)) { w.selectPlaces(places.length ? places : pendingSel.current!); bump(); }
+      pendingSel.current = null;
+    });
+  }, [topoSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (world.current) { world.current.propRadius = propOn ? propRadius : 0; world.current.mirrorX = mirrorX; } }, [propOn, propRadius, mirrorX]);
 
   // A parameter change rebuilds the asset. Debounced while a slider is being dragged, because
   // running the whole asset on every pointer move is what turns a live editor into a slideshow.
@@ -1636,6 +1670,26 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       w.gizmo.begin(lastNdc.current, w.camera, { w: r.width, h: r.height }, axis);
       stop();
     };
+    // EDIT-MODE TOOLS, Blender's keys: E extrude, I inset, Ctrl+R loop cut, K knife, M merge, F make
+    // face (fill or bridge), X delete, O proportional editing. They come before the tool keys below,
+    // so in edit mode E extrudes as a modeller expects instead of picking the rotate tool.
+    if (mode === "edit" && !e.altKey && !e.metaKey) {
+      const size = toolSize();
+      if ((k === "r" || k === "R") && e.ctrlKey) { runTool("loopcut", { cuts: 1 }); return stop(); }
+      if (!e.ctrlKey) {
+        if (k === "e" || k === "E") { runTool("extrude", { distance: +(size * 0.1).toPrecision(3) }); return stop(); }
+        if (k === "i" || k === "I") { runTool("inset", { thickness: +(size * 0.04).toPrecision(3) }); return stop(); }
+        if (k === "k" || k === "K") { runTool("knife"); return stop(); }
+        if (k === "m" || k === "M") { runTool("merge"); return stop(); }
+        if (k === "f" || k === "F") { runTool("fill"); return stop(); }
+        if (k === "x" || k === "X" || k === "Delete") { runTool("delete"); return stop(); }
+        if (k === "o" || k === "O") {
+          setPropOn((v) => !v);
+          setPropRadius((r) => r || +(size * 0.25).toPrecision(3));
+          return stop();
+        }
+      }
+    }
     // The tool keys Unity and Godot share: Q select, W move, E rotate — and R scale when the
     // mouse is laid out like Unity's. Otherwise R stays Blender's modal rotate.
     if (!e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2036,6 +2090,54 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     remesh: { res: 48 },
     relax: { iterations: 5 },
   };
+  /**
+   * One edit-mode tool on the selected corners: tried on the mesh as it stands, so a refusal says
+   * why at once and saves nothing; then saved as a step, which the rebuild runs for real.
+   */
+  const runTool = (op: TopoOp, args: Record<string, number | string> = {}) => {
+    const w = world.current;
+    if (!w || mode !== "edit" || !w.editKey) { setToolNote("Tab into edit mode on a mesh first"); return; }
+    const sel = w.selectedPlaces();
+    const a = { ...args };
+    if (op === "knife") {
+      const pl = w.knifePlane();
+      if (!pl) return;
+      a.point = pl.point.join(",");
+      a.normal = pl.normal.join(",");
+    }
+    const geo = w.editMeshArrays();
+    if (!geo) return;
+    const step: TopoStep = { mesh: w.editKey, op, sel, args: a };
+    let r = runStep(weld(geo.pos, geo.idx), step);
+    // F is Blender's "make face": two rims bridge, one rim fills.
+    if (op === "fill" && r.error) { const b = runStep(weld(geo.pos, geo.idx), { ...step, op: "bridge" }); if (!b.error) { step.op = "bridge"; r = b; } }
+    if (r.error) { setToolNote(r.error); return; }
+    setToolNote("");
+    pendingSel.current = r.out.map((v) => [r.mesh.pos[v * 3], r.mesh.pos[v * 3 + 1], r.mesh.pos[v * 3 + 2]] as V3);
+    push((e) => ({ ...e, topo: [...(e.topo || []), step] }));
+  };
+  const toolSize = () => world.current?.editSize() || 1;
+  const lastStep = (edits.topo || [])[(edits.topo || []).length - 1];
+  const STEP_AMOUNT: Partial<Record<TopoOp, { key: string; label: string; step: number }>> = {
+    extrude: { key: "distance", label: "distance", step: 0.01 },
+    inset: { key: "thickness", label: "thickness", step: 0.005 },
+    loopcut: { key: "cuts", label: "cuts", step: 1 },
+  };
+  /** Blender's "adjust last operation": the last step's amount, changed in place. */
+  const setLastAmount = (v: number) => {
+    if (!lastStep) return;
+    const am = STEP_AMOUNT[lastStep.op];
+    if (!am || !isFinite(v)) return;
+    pendingSel.current = null;
+    push((e) => {
+      const t = (e.topo || []).slice();
+      const last = t[t.length - 1];
+      if (!last) return e;
+      t[t.length - 1] = { ...last, args: { ...(last.args || {}), [am.key]: am.key === "cuts" ? Math.max(1, Math.round(v)) : v } };
+      return { ...e, topo: t };
+    });
+  };
+
   const addMod = (op: Mod["op"]) => {
     // `skin` merges the whole asset by nature, so it never takes a part as its target.
     const target = op === "skin" ? "" : active;
@@ -2590,7 +2692,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                   { v: "edge" as ElemKind, label: "Edge", hint: "Both ends of an edge  (2)" },
                   { v: "face" as ElemKind, label: "Face", hint: "All three corners of a face  (3)" },
                 ]} />
-              <span className="text-[10px] text-muted ml-1 tabular-nums" title={
+              <span className="text-[10px] text-muted ml-1 tabular-nums whitespace-nowrap shrink-0" title={
                 "A corner, not a vertex: generated geometry duplicates its corners, and moving one "
                 + "of three coincident vertices would tear the surface open."}>
                 {c.verts} / {c.total} corners
@@ -2603,6 +2705,43 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                   + "because in Blender there is nothing to go back to."}
                   onClick={() => { world.current?.resetElems(); bump(); }}>Reset</button>
               )}
+              <span className="w-px h-4 bg-line mx-1" />
+              {([
+                ["extrude", "Extrude", "E", () => runTool("extrude", { distance: +(toolSize() * 0.1).toPrecision(3) })],
+                ["inset", "Inset", "I", () => runTool("inset", { thickness: +(toolSize() * 0.04).toPrecision(3) })],
+                ["loopcut", "Loop cut", "Ctrl+R", () => runTool("loopcut", { cuts: 1 })],
+                ["knife", "Knife", "K", () => runTool("knife")],
+                ["subdivide", "Subdivide", "", () => runTool("subdivide")],
+                ["merge", "Merge", "M", () => runTool("merge")],
+                ["fill", "Fill", "F", () => runTool("fill")],
+                ["delete", "Delete", "X", () => runTool("delete")],
+              ] as const).map(([op, label, key, fn]) => (
+                <button key={op} className="chip whitespace-nowrap shrink-0" onClick={fn}
+                  title={label + (key ? "  (" + key + ")" : "") + " — saved as a step, found again by place after every rebuild"}>{label}</button>
+              ))}
+              <button className={cls("chip whitespace-nowrap shrink-0", propOn && "text-brand border-brand/50")}
+                title="Proportional editing (O): a move pulls the corners round it along, fading out at the radius"
+                onClick={() => { setPropOn((v) => !v); setPropRadius((r) => r || +(toolSize() * 0.25).toPrecision(3)); }}>Prop</button>
+              {propOn && (
+                <input type="number" step={0.01} value={propRadius} title="Proportional radius, in the mesh's units"
+                  onChange={(e) => setPropRadius(Math.max(0, Number(e.target.value) || 0))}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-16 rounded border border-line bg-panel2/50 px-1 text-[11px] font-mono" />
+              )}
+              <button className={cls("chip whitespace-nowrap shrink-0", mirrorX && "text-brand border-brand/50")}
+                title="X symmetry: a move on one side moves the mirrored corner on the other"
+                onClick={() => setMirrorX((v) => !v)}>Mirror X</button>
+              {lastStep && STEP_AMOUNT[lastStep.op] && lastStep.mesh === world.current?.editKey && (
+                <label className="flex items-center gap-1 text-[11px] text-muted whitespace-nowrap shrink-0" title="Change the last step's amount (Blender's Adjust Last Operation)">
+                  {lastStep.op} {STEP_AMOUNT[lastStep.op]!.label}
+                  <input key={JSON.stringify(lastStep.args)} type="number" step={STEP_AMOUNT[lastStep.op]!.step}
+                    defaultValue={Number(lastStep.args?.[STEP_AMOUNT[lastStep.op]!.key] ?? 0)}
+                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                    onBlur={(e) => setLastAmount(Number(e.target.value))}
+                    className="w-16 rounded border border-line bg-panel2/50 px-1 text-[11px] font-mono text-text" />
+                </label>
+              )}
+              {toolNote && <span className="text-[11px] text-warn truncate max-w-[18rem]" title={toolNote}>{toolNote}</span>}
             </>
           );
         })()}

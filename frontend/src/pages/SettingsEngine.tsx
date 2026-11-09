@@ -22,6 +22,10 @@ const FORGE_VIEWS: { key: string; label: string }[] = [
 ];
 
 const RESTART = "The backend reads this after its next restart.";
+const ENGINE_OPTIONS = [
+  { v: "three", l: "three.js" }, { v: "playcanvas", l: "PlayCanvas" },
+  { v: "phaser", l: "Phaser (2D)" }, { v: "pixi", l: "PixiJS (2D)" },
+];
 
 function Row({ label, hint, children }: { label: string; hint?: string; children?: ReactNode }) {
   return (
@@ -426,8 +430,8 @@ export function EnginePane() {
       <Section title="New games" desc="A game started from the Workspaces panel, or by an agent, is Studio-ready from the first minute.">
         <Row label="Engine for new games" hint="The engine a new game starts on when nobody names one.">
           <Sel value={(flat.new_game_engine || "three") as string}
-            options={[{ v: "three", l: "three.js" }, { v: "playcanvas", l: "PlayCanvas" }]}
-            onChange={(v) => setKey("new_game_engine", v, "New games start on " + (v === "three" ? "three.js" : "PlayCanvas") + ".")} />
+            options={ENGINE_OPTIONS}
+            onChange={(v) => setKey("new_game_engine", v, "New games start on " + (ENGINE_OPTIONS.find((o) => o.v === v)?.l || v) + ".")} />
         </Row>
         <Row label="Where new games go" hint="A folder. Empty puts a new game beside the project that is open.">
           <input className="input !py-1 text-xs w-72" placeholder="beside the open project"

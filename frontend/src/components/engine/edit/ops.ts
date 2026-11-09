@@ -807,6 +807,12 @@ export interface Ops {
   hand(opts: HandOpts, res?: number, paint?: { skin?: string; nail?: string }): any;
   /** Put a hand ON a handle from `a` to `b` (at `t` along it), knuckles toward `face`: moves and turns the object; `wrist` in the answer is where its forearm must end. */
   grip(object: any, o: { a: V3; b: V3; t?: number; face: V3; aim?: V3; hand?: Hand }): GripPlacementResult;
+  /** A hand for a game (handrig.ts): ONE light mesh (`triangles`, default 2400) in the rest pose, a 20-bone skeleton, weights from that skeleton, and per-finger corrective morphs. Returns a SkinnedMesh; pose it with poseHand, animate it with handClip (three). */
+  riggedHand(opts: HandOpts & { triangles?: number; res?: number }, paint?: { skin?: string; nail?: string }): any;
+  /** Put a riggedHand into a pose: { pose, curl, thumb, gripRadius } as hands.ts takes them; `t` 0..1 blends from rest. Returns the morph weights it set. */
+  poseHand(mesh: any, spec: HandPoseSpec, t?: number): Record<string, number>;
+  /** An AnimationClip from rest to a pose (and back with `back: true`) over `seconds`, bones and correctives together, for a GLB export. */
+  handClip(mesh: any, spec: HandPoseSpec, o?: { name?: string; seconds?: number; back?: boolean; steps?: number }): any;
   // ---- sculpt, then a game budget (sculpt.ts, decimate.ts, sweep.ts): Blender's sculpt → decimate → bake, in code ----
   /** Split every edge longer than `maxEdge` metres, so strokes have vertices to move; the surface does not move. uv is not carried: densify and sculpt BEFORE unwrap. */
   densify(geo: any, maxEdge: number): any;
@@ -1153,6 +1159,105 @@ export function makeOps(T: any): Ops {
       // Not enumerable: a GLB export copies userData into extras, and a field of closures has no place there.
       Object.defineProperty(g.userData, "hand", { value: h, enumerable: false, configurable: true });
       return g;
+    },
+    riggedHand(opts, paint) {
+      const base: HandOpts = restOpts(opts);
+      const h = handField(base);
+      const iso = isosurfaceArrays(h.field, h.min, h.max, h.grid(opts.res || 64), 0);
+      const d = decimateArrays(iso.pos, iso.idx, { target: opts.triangles || 2400 });
+      const rig = rigHand(base, d.pos, d.idx);
+      const g = write(T, d.pos, d.idx, smoothNormalsWelded(d.pos, d.idx, 80));
+      g.setAttribute("skinIndex", new T.Uint16BufferAttribute(rig.skinIndex, 4));
+      g.setAttribute("skinWeight", new T.Float32BufferAttribute(rig.skinWeight, 4));
+      // Correctives as RELATIVE morph targets, with their normals, so the shading follows the shape.
+      g.morphTargetsRelative = true;
+      g.morphAttributes.position = [];
+      g.morphAttributes.normal = [];
+      const n0 = g.getAttribute("normal").array as Float32Array;
+      for (const m of rig.morphs) {
+        const a = new T.Float32BufferAttribute(m.delta, 3);
+        a.name = m.name;
+        g.morphAttributes.position.push(a);
+        const moved = new Float32Array(d.pos.length);
+        for (let i = 0; i < moved.length; i++) moved[i] = d.pos[i] + m.delta[i];
+        const n1 = smoothNormalsWelded(moved, d.idx, 80), dn = new Float32Array(n1.length);
+        for (let i = 0; i < dn.length; i++) dn[i] = n1[i] - n0[i];
+        const an = new T.Float32BufferAttribute(dn, 3);
+        an.name = m.name;
+        g.morphAttributes.normal.push(an);
+      }
+      if (paint) {
+        const skin = new T.Color(paint.skin || "#9f9c53"), nail = new T.Color(paint.nail || "#d9cfae");
+        const c = new Float32Array(d.pos.length);
+        for (let i = 0; i < d.pos.length; i += 3) {
+          const k = h.nail(d.pos[i], d.pos[i + 1], d.pos[i + 2]);
+          c[i] = skin.r + (nail.r - skin.r) * k; c[i + 1] = skin.g + (nail.g - skin.g) * k; c[i + 2] = skin.b + (nail.b - skin.b) * k;
+        }
+        g.setAttribute("color", new T.Float32BufferAttribute(c, 3));
+      }
+      // Rest bones carry no rotation: each one's world rotation in a pose IS its rotation from rest.
+      const bones = rig.bones.map((b) => { const o = new T.Bone(); o.name = b.name + (opts.side === "L" ? "_L" : ""); return o; });
+      rig.bones.forEach((b, i) => {
+        const p = b.parent >= 0 ? rig.bones[b.parent].head : [0, 0, 0];
+        bones[i].position.set(b.head[0] - p[0], b.head[1] - p[1], b.head[2] - p[2]);
+        if (b.parent >= 0) bones[b.parent].add(bones[i]);
+      });
+      const mesh = new T.SkinnedMesh(g, new T.MeshStandardMaterial({ color: paint ? 0xffffff : 0xc9a27e, vertexColors: !!paint, roughness: 0.6 }));
+      mesh.name = opts.side === "L" ? "hand_L" : "hand_R";
+      mesh.add(bones[0]);
+      mesh.updateMatrixWorld(true);
+      mesh.bind(new T.Skeleton(bones));
+      mesh.updateMorphTargets();
+      Object.defineProperty(mesh.userData, "handRig", { value: rig, enumerable: false, configurable: true });
+      mesh.userData.triangles = d.idx.length / 3;
+      return mesh;
+    },
+    poseHand(mesh, spec, t = 1) {
+      const rig: HandRig | undefined = mesh?.userData?.handRig;
+      if (!rig) throw new Error("poseHand: not a riggedHand mesh");
+      const r = rig.pose(spec);
+      const bones = mesh.skeleton.bones;
+      const id = new T.Quaternion();
+      const world = r.rotations.map((q) => id.clone().slerp(new T.Quaternion(q[0], q[1], q[2], q[3]), t));
+      const heads = r.heads.map((h, i) => new T.Vector3().lerpVectors(new T.Vector3(...rig.bones[i].head), new T.Vector3(...h), t));
+      rig.bones.forEach((b, i) => {
+        if (b.parent < 0) { bones[i].position.copy(heads[i]); bones[i].quaternion.copy(world[i]); return; }
+        const inv = world[b.parent].clone().invert();
+        bones[i].quaternion.copy(inv.clone().multiply(world[i]));
+        bones[i].position.copy(heads[i].clone().sub(heads[b.parent]).applyQuaternion(inv));
+      });
+      const out: Record<string, number> = {};
+      for (const [k, w] of Object.entries(r.morphs)) {
+        const at = mesh.morphTargetDictionary?.[k];
+        if (at !== undefined) mesh.morphTargetInfluences[at] = w * t;
+        out[k] = w * t;
+      }
+      mesh.updateMatrixWorld(true);
+      return out;
+    },
+    handClip(mesh, spec, o = {}) {
+      const rig: HandRig | undefined = mesh?.userData?.handRig;
+      if (!rig) throw new Error("handClip: not a riggedHand mesh");
+      const steps = Math.max(2, o.steps || 6), secs = o.seconds || 0.4;
+      const times: number[] = [];
+      const ts: number[] = [];
+      for (let i = 0; i < steps; i++) { const u = i / (steps - 1); times.push(u * secs); ts.push(u * u * (3 - 2 * u)); }
+      if (o.back) for (let i = steps - 2; i >= 0; i--) { times.push(secs + ((steps - 1 - i) / (steps - 1)) * secs); ts.push(ts[i]); }
+      const bones = mesh.skeleton.bones;
+      const q: number[][] = bones.map(() => []), p: number[][] = bones.map(() => []), m: number[] = [];
+      for (const t of ts) {
+        ops.poseHand(mesh, spec, t);
+        bones.forEach((b: any, i: number) => { q[i].push(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w); p[i].push(b.position.x, b.position.y, b.position.z); });
+        m.push(...mesh.morphTargetInfluences);
+      }
+      ops.poseHand(mesh, {}, 0);
+      const tracks: any[] = [];
+      bones.forEach((b: any, i: number) => {
+        tracks.push(new T.QuaternionKeyframeTrack(b.name + ".quaternion", times, q[i]));
+        tracks.push(new T.VectorKeyframeTrack(b.name + ".position", times, p[i]));
+      });
+      tracks.push(new T.NumberKeyframeTrack(mesh.name + ".morphTargetInfluences", times, m));
+      return new T.AnimationClip(o.name || String(spec.pose || "pose"), -1, tracks);
     },
     grip(object, o) {
       const hand: Hand | undefined = o.hand || object?.geometry?.userData?.hand || object?.userData?.hand;
@@ -1658,6 +1763,10 @@ export * from "./material";
 export * from "./atlas";
 // Complete stylised hands as one smooth surface, and the grip that puts a fist on a handle (hands.ts).
 export * from "./hands";
+// The same hand for a game: one light mesh, a skeleton, weights and correctives (handrig.ts).
+export * from "./handrig";
+// Blender's edit-mode tools as saved steps: extrude, inset, loop cut, knife... (meshedit.ts).
+export * from "./meshedit";
 // Sculpt as data (densify, then strokes), quadric decimation to a game budget, and swept tubes,
 // rolled rims and two-bone reach (sculpt.ts, decimate.ts, sweep.ts).
 export * from "./sculpt";
@@ -2016,7 +2125,47 @@ export function applyMod(ops: Ops, m: { op: string; args?: Record<string, any> }
 
 const OVERRIDE_NUMBERS = ["roughness", "metalness", "intensity", "distance", "angle", "penumbra", "decay", "fov", "near", "far", "zoom"];
 
-export interface AppliedEdits { parts: number; mods: number; verts: number; missing: string[]; errors: string[] }
+export interface AppliedEdits { parts: number; mods: number; verts: number; topo?: number; missing: string[]; errors: string[] }
+
+/**
+ * The edit-mode steps (meshedit.ts) onto the meshes they name: each mesh's steps in order, its
+ * geometry replaced by the result. Unindexed with a normal per corner, so hard edges stay hard; UV
+ * and colour are dropped, because new faces have none (an Unwrap modifier after the steps gives
+ * them back). The new positions become the mesh's rest, so edit mode keys a later move against
+ * the mesh the steps made. No three is imported: the attribute class is the mesh's own.
+ */
+export function applyTopo(root: any, steps: TopoStep[], out?: AppliedEdits): number {
+  const byMesh = new Map<string, TopoStep[]>();
+  for (const s of steps) if (!s.off) { const l = byMesh.get(s.mesh); if (l) l.push(s); else byMesh.set(s.mesh, [s]); }
+  if (!byMesh.size) return 0;
+  const byKey = new Map<string, any>();
+  for (const [o, k] of stableKeys(root)) byKey.set(k, o);
+  let done = 0;
+  for (const [key, list] of byMesh) {
+    const o = byKey.get(key);
+    const g = o?.geometry;
+    const attr = g?.attributes?.position;
+    if (!attr?.array) { out?.missing.push(key); continue; }
+    const idx = g.index ? (g.index.array as ArrayLike<number>) : null;
+    const r = runSteps(attr.array as ArrayLike<number>, idx, list);
+    for (const e of r.errors) out?.errors.push(key + ": " + e);
+    const A = attr.constructor;
+    g.setIndex?.(null);
+    for (const name of Object.keys(g.attributes)) if (name !== "position" && name !== "normal") g.deleteAttribute?.(name);
+    g.setAttribute("position", new A(r.pos, 3));
+    g.setAttribute("normal", new A(r.normal, 3));
+    g.clearGroups?.();
+    if (Array.isArray(o.material)) o.material = o.material[0];
+    g.computeBoundingBox?.();
+    g.computeBoundingSphere?.();
+    if (!o.userData) o.userData = {};
+    o.userData.__rest = new Float32Array(r.pos);
+    // Where the last step left its selection: the editor selects it again after the rebuild.
+    Object.defineProperty(o.userData, "__topoOut", { value: r.last.map((v) => [r.mesh.pos[v * 3], r.mesh.pos[v * 3 + 1], r.mesh.pos[v * 3 + 2]]), enumerable: false, configurable: true });
+    done += list.length;
+  }
+  return done;
+}
 
 import {
   bakeAO, bakeCurvature, bakeNormalMap, bevelArrays, heatWeightsArrays, relaxArrays, remeshArrays, subdivideCC, unwrapArrays,
@@ -2026,6 +2175,8 @@ import { movePiece, parsePieceKey } from "./pieces";
 import { MATERIALS, applyMaps, bakeAtlas, bakeFunction, bakeMaterial, type SmartMaterial, type Texel } from "./material";
 import { atlasArrays } from "./atlas";
 import { gripPlacement, handField, type GripPlacementResult, type Hand, type HandOpts } from "./hands";
+import { restOpts, rigHand, type HandPoseSpec, type HandRig } from "./handrig";
+import { cleanSteps, runSteps, type TopoStep } from "./meshedit";
 import { densifyArrays, sculptArrays, type Stroke } from "./sculpt";
 import { decimateArrays, type DecimateOptions } from "./decimate";
 import { boundaryLoops, reach, rimArrays, sweepArrays, type SweepOptions } from "./sweep";
@@ -2319,6 +2470,8 @@ export function applyEdits(root: any, edits: any, ops?: Ops, T?: any): AppliedEd
   root.updateMatrixWorld?.(true);
   // Hand-moved vertices are part of the base mesh, so they land before the stack runs over it.
   out.verts = applyVerts(root, edits?.verts, out);
+  // ...and so are the edit-mode tools, after the moves they were made on.
+  if (Array.isArray(edits?.topo) && edits.topo.length) out.topo = applyTopo(root, cleanSteps(edits.topo), out);
   const mods: any[] = Array.isArray(edits?.mods) ? edits.mods.filter((m: any) => m && !m.off) : [];
   if (mods.length && !ops) { out.errors.push("the stack needs the operations: pass makeOps(THREE)"); return out; }
   for (const m of mods) {
@@ -3455,6 +3608,9 @@ export function makeOpsPc(pc: any, device: any): Ops {
       Object.defineProperty(mesh, "__hand", { value: h, enumerable: false, configurable: true });
       return mesh;
     },
+    riggedHand() { throw new Error("riggedHand is three-only for now: build it in a three.js project and export a GLB"); },
+    poseHand() { throw new Error("poseHand is three-only for now"); },
+    handClip() { throw new Error("handClip is three-only for now"); },
     grip(entity, o) {
       const mi = entity?.render?.meshInstances?.[0] || entity?.model?.meshInstances?.[0];
       const hand: Hand | undefined = o.hand || entity?.__hand || mi?.mesh?.__hand;

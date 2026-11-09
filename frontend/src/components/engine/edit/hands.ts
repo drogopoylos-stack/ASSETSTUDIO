@@ -70,6 +70,9 @@ export interface HandOpts {
   thumb?: ThumbPose;
   /** Wrist stub length past the wrist joint, as a fraction of `size` (default 0.55; 0 = none). */
   wrist?: number;
+  /** Multiplies how far the fingers fan out (default 1). handrig.ts builds its rest pose at 2.2, so
+   *  no two fingers touch and the mesh has no skin joining them to tear when one bends alone. */
+  spread?: number;
 }
 
 /**
@@ -560,7 +563,7 @@ function buildRight(o: HandOpts): Built {
       splay = 0;
     }
     const r = rads[i];
-    return fingerChain(spec, J0s[i], splay, flex, lens[i], [r, r * 0.95, r * 0.91, r * 0.9]);
+    return fingerChain(spec, J0s[i], splay * Math.max(0, o.spread ?? 1), flex, lens[i], [r, r * 0.95, r * 0.91, r * 0.9]);
   });
   // Curled fingers (a fist, the three of 'point', or any `curl` near 1) fold under the palm.
   const curledIdx = fingers.map((f, i) => (f.curled ? i : -1)).filter((i) => i >= 0);

@@ -17,6 +17,7 @@ import { HistoryStrip, keyOf, type TypeFilter } from "../components/engine/Histo
 import { MODULE_FILES, type EngineKind } from "../components/engine/studio";
 import Editor, { type EditorSource } from "../components/engine/edit/Editor";
 import { FilePicker, type Picked } from "../components/engine/edit/FilePicker";
+import { Stage2D } from "../components/engine/Stage2D";
 import { cachePrefs, mergePrefs, readCachedPrefs, watchPrefs, type EnginePrefs } from "../components/engine/prefs";
 import { Library } from "../components/engine/Library";
 import { editEngineFor } from "../components/engine/edit/assetOpen";
@@ -175,6 +176,10 @@ export default function Engine() {
   /** A RUNNING game opened in the editor through the live link: its scene mirrored by name. */
   const [liveProject, setLiveProject] = useState("");
   const [liveNote, setLiveNote] = useState("");
+  // A 2D game open in the Edit tab. Apart from `liveProject`, which mirrors a 3D scene.
+  const [stageProject, setStageProject] = useState("");
+  // The 2D editor shows one game, so another game in the rail closes it.
+  useEffect(() => { setStageProject((p) => (p && normPath(p) !== normPath(selProject) ? "" : p)); }, [selProject]);
   const [railOpen, setRailOpen] = useSticky("engine.rail", true);
   const [stripOpen, setStripOpen] = useSticky("engine.strip", true);
   // Stand where the agent stood. On by default while watching: seeing the same angle it
@@ -813,11 +818,22 @@ export default function Engine() {
       const r = await api.liveOpen(selP.path);
       if (r.error) { setLiveNote(r.error); return; }
       if (r.engine !== "three" && r.engine !== "playcanvas") {
-        setLiveNote("Live editing mirrors a three.js or PlayCanvas scene; " + selP.name + " is " + (r.engine || "neither") + ". The live link still reads it.");
+        // Phaser and PixiJS need their object found; a page with no engine has its HTML to edit.
+        if ((r.engine === "phaser" || r.engine === "pixi") && !r.reachable) { setLiveNote(r.hint || "the game's scene is not reachable from the page"); return; }
+        if (r.engine === "babylon" || r.engine === "cocos") {
+          setLiveNote("Live editing does not support " + r.engine + " yet. The live link still reads it.");
+          return;
+        }
+        setEditFile(null);
+        setLiveProject("");
+        setStageProject(selP.path);
+        setMode("edit");
+        setLiveNote("");
         return;
       }
       if (!r.reachable) { setLiveNote(r.hint || "the game's scene is not reachable from the page"); return; }
       setEditFile(null);
+      setStageProject("");
       setLiveProject(selP.path);
       setMode("edit");
       setLiveNote("");
@@ -888,7 +904,7 @@ export default function Engine() {
             ● live · {projects.find((x) => x.path === liveProject)?.name || "game"} ×
           </button>
         )}
-        {mode === "game" && selP?.game && (
+        {mode === "game" && selP && (
           <button onClick={editLive} className="chip" title="Open this running game in the Edit tab: its objects by name, its lights and camera, edits pushed back live">
             Edit live
           </button>
@@ -998,6 +1014,19 @@ export default function Engine() {
             <GameFrame project={selP} detail={detail} loading={detailLoading} onRefresh={() => loadDetail(selProject)} />
           ) : mode === "library" ? (
             <Library project={selP} game={gameSub} onOpenFile={openInEditor} onOpenAsset={openAsset} />
+          ) : mode === "edit" && stageProject ? (
+            <Stage2D project={stageProject} name={selP?.name || stageProject.split(/[\\/]/).filter(Boolean).pop() || "game"}
+              onClose={() => setStageProject("")} />
+          ) : mode === "edit" && !editSource && selP && !/three|playcanvas/i.test(selP.engine || "") ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm">
+              <div className="text-text/80">{selP.name} is not a three.js or PlayCanvas project.</div>
+              <button className="btn" onClick={editLive}>Edit it as a 2D game</button>
+              <div className="text-muted text-xs max-w-md text-center leading-relaxed">
+                The Studio opens the running game, then lets you select, move, resize, turn and hide its objects.
+                This works with Phaser, PixiJS and HTML or React pages.
+              </div>
+              {liveNote && <div className="text-warn text-xs max-w-md text-center">{liveNote}</div>}
+            </div>
           ) : mode === "edit" ? (
             <Editor source={editSource} prefs={prefs}
               aim={matchCam && editSource?.kind === "generation" ? agentAim : undefined}
@@ -1027,7 +1056,8 @@ export default function Engine() {
           that already had a filter bar and a count in exactly those places — so which shelf you
           were on was written across "Review sheets 31". Nothing overlaps now because nothing is
           floated: the bar owns its line, the shelf owns the rest. */}
-      <footer className={cls("shrink-0 border-t border-line bg-panel flex flex-col", stripOpen ? "h-56" : "h-7")}>
+      {/* The shelf of 3D runs and assets has nothing for the 2D editor, which needs the height. */}
+      {!(mode === "edit" && stageProject) && <footer className={cls("shrink-0 border-t border-line bg-panel flex flex-col", stripOpen ? "h-56" : "h-7")}>
         <div className="h-6 shrink-0 flex items-center gap-1 px-2 border-b border-line/60">
           {stripOpen ? (
             <>
@@ -1071,7 +1101,7 @@ export default function Engine() {
             )}
           </div>
         )}
-      </footer>
+      </footer>}
     </div>
   );
 }

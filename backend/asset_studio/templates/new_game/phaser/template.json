@@ -1,0 +1,42 @@
+{
+  "engine": "phaser",
+  "label": "Phaser",
+  "dependencies": {
+    "phaser": "^4.2.1"
+  },
+  "import_map": {
+    "phaser": "./node_modules/phaser/dist/phaser.esm.js"
+  },
+  "engine_file": "node_modules/phaser/dist/phaser.esm.js",
+  "handle": "window.__game = { game, Phaser }",
+  "builders": [
+    {
+      "file": "src/assets.js",
+      "export": "buildCrate",
+      "call": "buildCrate({ size: 72 })",
+      "note": "a wooden crate as a canvas; size is its width in pixels"
+    },
+    {
+      "file": "src/assets.js",
+      "export": "buildTree",
+      "call": "buildTree({ height: 170 })",
+      "note": "a simple tree as a canvas; height in pixels"
+    }
+  ],
+  "targets": [
+    "crate",
+    "tree"
+  ],
+  "actions": [
+    "jump"
+  ],
+  "objects": [
+    "ground",
+    "crate-1",
+    "crate-2",
+    "tree-1",
+    "tree-2",
+    "player",
+    "hud"
+  ]
+}

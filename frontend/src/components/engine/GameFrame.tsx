@@ -263,7 +263,7 @@ function AgentView({ project, st }: { project: EngineProject; st: LiveStreamStat
 // THE FRAMES COME OVER A WEBSOCKET, one JPEG per message, each shown as a blob URL. The MJPEG
 // route in an <img src> held one of the browser's six connections to the Studio for as long as the
 // view was open, and every poll in the app queued on the rest; a WebSocket is not in that pool.
-function StreamImg({ url, onLoad, title }: { url: string; onLoad: () => void; title: string }) {
+export function StreamImg({ url, onLoad, title }: { url: string; onLoad: () => void; title: string }) {
   const ref = useRef<HTMLImageElement | null>(null);
   const loadRef = useRef(onLoad);
   loadRef.current = onLoad;              // a status poll re-renders the parent; that must not reconnect

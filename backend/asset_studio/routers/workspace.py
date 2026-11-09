@@ -286,7 +286,7 @@ async def upload_image(project_path: str = Form(...), file: UploadFile = File(..
 class NewGameBody(BaseModel):
     name: str
     parent: str = ""               # "" = the new_game_parent setting, else beside `beside`
-    engine: str = ""               # "three" | "playcanvas"; "" = the new_game_engine setting
+    engine: str = ""               # "three" | "playcanvas" | "phaser" | "pixi"; "" = the new_game_engine setting
     install: bool | None = None    # `npm install` in the background; None = new_game_install
     open: bool = True              # add it as a workspace root
     beside: str = ""               # the project the caller is in: "" parent puts the game next to it

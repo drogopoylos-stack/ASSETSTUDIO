@@ -317,7 +317,7 @@ export function NewGameButton({ variant, current, onCreated, onOpen }: {
     <>
       {variant === "rail" ? (
         <button className="p-2 rounded text-muted hover:text-text" onClick={click}
-          title="New game: a three.js or PlayCanvas starter the Studio can already see (live link, forge, review, saved edits)">
+          title="New game: a three.js, PlayCanvas, Phaser or PixiJS starter the Studio can already see (live link, forge, review, saved edits)">
           <Gamepad2 size={20} />
         </button>
       ) : (

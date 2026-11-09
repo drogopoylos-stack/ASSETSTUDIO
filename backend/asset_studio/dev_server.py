@@ -129,6 +129,10 @@ def running_servers(project: Path) -> list[dict]:
         conns = psutil.net_connections(kind="inet")
     except Exception:
         return out
+    # A Vite server asked for `localhost` listens on ::1 alone on this kind of PC, and a browser sent to
+    # 127.0.0.1 then shows its own error page beside a server that is running.
+    on_v4 = {int(c.laddr.port) for c in conns if c.status == "LISTEN" and c.laddr
+             and str(c.laddr.ip or "") in ("127.0.0.1", "0.0.0.0", "::")}
     for c in conns:
         if c.status != "LISTEN" or not c.pid or not c.laddr:
             continue
@@ -154,7 +158,7 @@ def running_servers(project: Path) -> list[dict]:
         if not (cwd == root or cwd.startswith(root + os.sep)):
             continue
         seen.add(port)
-        url = f"http://127.0.0.1:{port}/"
+        url = f"http://127.0.0.1:{port}/" if port in on_v4 else f"http://localhost:{port}/"
         out.append({"url": url, "port": port, "proc": name, "title": _title_of(url)})
     # A directory listing is a working server that is not an app. Rank it last, so "the game"
     # wins over "the folder the game is in" even when the folder got the lower port. This is the

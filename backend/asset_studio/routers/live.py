@@ -825,6 +825,25 @@ def scene_objects(project: str, q: str = "", near: str = "", radius: Optional[fl
     return live_scene.objects(project, q, near, radius, in_view, pick, limit, code, scene)
 
 
+@router.get("/stage")
+def stage_view(project: str):
+    """A 2D game's objects with their boxes on the page: what the 2D Edit tab draws."""
+    from .. import live_stage
+    return live_stage.view(project)
+
+
+class StagePauseBody(BaseModel):
+    project: str
+    on: bool = True
+
+
+@router.post("/stage/pause")
+def stage_pause(body: StagePauseBody):
+    """Hold a Phaser or PixiJS game still, so a moving object can be selected."""
+    from .. import live_stage
+    return live_stage.pause(body.project, body.on)
+
+
 @router.post("/edit")
 def scene_edit(body: SceneEditBody):
     """Move, turn, scale, hide or drop an object in the running game; `save` keeps it, `undo` takes

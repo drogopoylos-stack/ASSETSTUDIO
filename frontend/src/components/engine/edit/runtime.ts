@@ -32,6 +32,9 @@
 import type { PlacedItem } from "./kit";
 import { nodeName, sameModel } from "./gamedress";
 import { applyEdits, hexToRgb01, pcApply, quatFromEulerXYZ, stableKeys, walkTree } from "./ops";
+import { applyStage, stageCall, stageEngineOf, type StageEngine } from "./stage";
+
+export { stageCall };
 
 export const version = 1;
 
@@ -65,12 +68,13 @@ const isPcApp = (o: any): boolean => !!(o && o.root && o.graphicsDevice && typeo
 const isPcEntity = (o: any): boolean => !!(o && !o.isObject3D && typeof o.addChild === "function"
   && typeof o.setLocalPosition === "function" && Array.isArray(o.children));
 
-/** Which engine an object belongs to: a three Object3D, or a PlayCanvas app or entity. */
-export function engineOf(target: any): "three" | "playcanvas" | "" {
+/** Which engine an object belongs to: a three Object3D, a PlayCanvas app or entity, a Phaser game,
+ *  a PixiJS app, or a document (an HTML game). */
+export function engineOf(target: any): "three" | "playcanvas" | StageEngine | "" {
   if (!target || typeof target !== "object") return "";
   if (target.isObject3D) return "three";
   if (isPcApp(target) || isPcEntity(target)) return "playcanvas";
-  return "";
+  return stageEngineOf(target);
 }
 
 /** The object keys are counted from: a three object is its own root; a PlayCanvas app's root is
@@ -86,7 +90,7 @@ interface Ctx { engine: "three" | "playcanvas"; root: any; app: any }
 function ctx(target: any): Ctx | null {
   const engine = engineOf(target);
   const root = rootOf(target);
-  if (!engine || !root) return null;
+  if ((engine !== "three" && engine !== "playcanvas") || !root) return null;
   let app: any = null;
   if (engine === "playcanvas") {
     app = isPcApp(target) ? target : root._app || (typeof root.getApplication === "function" ? root.getApplication() : null);
@@ -351,10 +355,11 @@ async function tick(j: Job) {
  * clones of something it has not spawned yet, are retried for `retryMs`: games build late.
  */
 export async function applyStudioEdits(target: any, edits: any, opts: RuntimeOpts = {}): Promise<Report> {
+  if (stageEngineOf(target)) return applyStage(target, edits, opts);
   const rep = emptyReport();
   const c = ctx(target);
   if (!c) {
-    rep.errors.push("not a three.js object or a PlayCanvas app or entity");
+    rep.errors.push("not a three.js object, a PlayCanvas app or entity, a Phaser game, a PixiJS app or a document");
     try { opts.onSettle?.(rep); } catch { /* not ours */ }
     return rep;
   }
@@ -414,6 +419,10 @@ export async function applyStudioEdits(target: any, edits: any, opts: RuntimeOpt
  * replaced, so sending the same item twice leaves one object.
  */
 export async function placeStudioItem(target: any, item: PlacedItem, opts: RuntimeOpts = {}): Promise<PlaceResult> {
+  if (stageEngineOf(target)) {
+    const got = await stageCall(target, "place", { item }, opts);
+    return { ok: !!got.ok, key: got.key, ...(got.error ? { error: got.error } : {}) };
+  }
   const c = ctx(target);
   if (!c) return { ok: false, error: "not a three.js object or a PlayCanvas app or entity" };
   const it = cleanItem(item);
@@ -433,6 +442,7 @@ export async function placeStudioItem(target: any, item: PlacedItem, opts: Runti
 
 /** Take a placement back out. Returns how many objects carried that id. */
 export function unplaceStudioItem(target: any, id: string): number {
+  if (stageEngineOf(target)) { void stageCall(target, "unplace", { ids: [id] }); return 1; }
   const c = ctx(target);
   if (!c) return 0;
   const j = JOBS.get(c.root);

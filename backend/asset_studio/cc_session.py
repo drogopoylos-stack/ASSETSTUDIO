@@ -797,6 +797,14 @@ def _forge_note() -> str:
         " /api/live/compare {\"a\":\"ours.glb\",\"b\":\"theirs.glb\",\"ref\":\"<image>\"}"
         " shoots both with ONE camera and scores both; /api/live/export {\"path\":\"out.glb\"}"
         " writes what the bench holds.\n"
+        # Blender users model against Poly Haven's free assets. The clay render is the shape alone,
+        # which is what the aim's silhouette score wants, and the real size ends a guess.
+        "  6b. A REFERENCE FROM POLY HAVEN (CC0, free for any use): GET /api/polyhaven/search"
+        "?type=models&q=axe lists models with their real size, dimensions_m; POST"
+        " /api/polyhaven/download {\"project\",\"id\",\"type\":\"models\"|\"textures\"|\"hdris\","
+        "\"res\":\"1k\"} puts the glTF (main_path), a LICENSE.txt and two renders in the project. Aim with"
+        " \"ref\":\"<references.reference_clay>\" (the shape alone), build to dimensions_m, and"
+        " compare with 6.; a texture set comes with material.json naming its maps.\n"
         # Terrain is the one thing on this bench a person cannot do faster by hand, and the
         # one thing Unity, Blender and Godot cannot be asked for from a command line at all.
         # Two lines, because the endpoint prints its own shapes: a wrong action answers with
@@ -952,6 +960,11 @@ def _scene_note(cwd: str = "") -> str:
         " Look, then repeat with save:true to keep it in <project>/studio.edits.json. {undo:true} takes"
         " the last call back, live and on disk; {edits:[…]} does several as one; {clear:[keys]|\"all\"}"
         f" takes saved entries out. GET {base}/api/live/edits?project=… is what is saved.\n"
+        "  2D GAMES (Phaser, PixiJS, HTML/React pages) use the same three calls and the same file."
+        " Rows have box [x,y,w,h] in page pixels; pos is [x,y]; move is [dx,dy] in page pixels; rot and"
+        " rotate are [0,0,degrees]; scale is one number or [x,y]; alpha is 0..1. On an HTML page, pos is"
+        " an offset from the layout. place takes {asset:\"path/to/image.png\", pos:[x,y]}: images only."
+        " A canvas drawn by hand has no objects to list.\n"
         f"  POST {base}/api/live/place {{project, asset, near:\"<key>\" | at:[x,y,z], rot, scale, drop,"
         " save} — asset: {\"builder\":\"src/assets.js#buildX\",\"args\":[{…}]} | {\"model\":\"<.glb>\"}"
         " | {\"clone\":\"<key>\"} | {\"primitive\":\"box\",\"color\":\"#ff8800\"} | {\"id\":\"<asset"

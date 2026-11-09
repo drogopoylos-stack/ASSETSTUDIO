@@ -178,7 +178,7 @@ for eng in gs.ENGINES:
     # The LAST call is the one that starts the loop; the loop also re-arms itself inside `frame`.
     check("%s: saved edits applied before the loop starts" % eng,
           main.rindex("await within(4000, applySavedEdits())")
-          < main.rindex("app.start()" if eng == "playcanvas" else "requestAnimationFrame(frame);"))
+          < main.rindex({"playcanvas": "app.start()", "pixi": "app.start()", "phaser": "started = true"}.get(eng, "requestAnimationFrame(frame);")))
     tokens = set()
     for f in d.rglob("*"):
         if f.is_file():
@@ -226,7 +226,7 @@ for eng in gs.ENGINES:
           live_script(html) == LIVE_JS[eng] != "")
     pkg = json.loads((g / "package.json").read_text(encoding="utf-8"))
     check("%s: package.json runs serve.mjs and depends on the engine" % eng,
-          pkg["scripts"]["dev"] == "node serve.mjs" and eng in pkg["dependencies"]
+          pkg["scripts"]["dev"] == "node serve.mjs" and {"pixi": "pixi.js"}.get(eng, eng) in pkg["dependencies"]
           and pkg["name"] == "test-%s-game-co" % eng and pkg["type"] == "module")
     man = json.loads((g / "studio.game.json").read_text(encoding="utf-8"))
     check("%s: studio.game.json names engine, entry, builders and runtime" % eng,
@@ -1069,8 +1069,8 @@ try:
     check("status outside the allowed places -> 403", res.status_code == 403, res.text)
     res = client.get("/api/workspace/new-game/defaults", params={"beside": body["path"]})
     d = res.json()
-    check("GET /new-game/defaults -> parent beside the project, two engines",
-          res.status_code == 200 and d["parent"] == str(ROOT) and len(d["engines"]) == 2, d)
+    check("GET /new-game/defaults -> parent beside the project, four engines",
+          res.status_code == 200 and d["parent"] == str(ROOT) and len(d["engines"]) == 4, d)
 except ImportError as e:
     skipped("routes", "fastapi test client missing: %s" % e)
 

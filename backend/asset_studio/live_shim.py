@@ -485,6 +485,26 @@ var SC = { url: '', studio: '', project: '', from: '', text: '', root: null, eng
 L.sidecarUrl = '';
 L.sidecarApplied = 0;
 
+/* A 2D game's object for the same job: what stage.ts takes. Apart from editTarget, because everything
+   that asks editRoot walks a three.js or PlayCanvas tree. */
+var stageRoot = function () {
+  try {
+    if (L.pinned && L.pinnedKind === 'phaser' && quacksPhaser(L.pinned)) return { engine: 'phaser', target: L.pinned, root: L.pinned };
+    if (L.pinned && L.pinnedKind === 'pixi' && quacksPixi(L.pinned)) return { engine: 'pixi', target: L.pinned, root: L.pinned };
+    var h = hunt();
+    if (h.phaser) return { engine: 'phaser', target: h.phaser, root: h.phaser };
+    if (h.pixi) return { engine: 'pixi', target: h.pixi, root: h.pixi };
+  } catch (e) {}
+  return null;
+};
+/* What the Studio's 2D calls work on: null when this page has a 3D scene to edit instead, and the
+   document when it has no engine, because an HTML game's objects are its elements. */
+L.stageTarget = function () {
+  try { if (editTarget()) return null; } catch (e) {}
+  var s = stageRoot();
+  return s ? s.target : document;
+};
+
 /* The one root the saved edits are keyed from: a PlayCanvas app's root, else the first three.js
    scene, which is the scene the Edit tab mirrors. Exposed so page-side tools key from the same
    root the file is applied to. */
@@ -596,13 +616,16 @@ var runtimeOpts = function (er, edits) {
 var applySidecar = function () {
   if (!SC.url) return;
   if (SC.busy) { SC.again = true; return; }
-  var er = editTarget();
-  if (!er) { watchForRoot(); return; }
+  var er = editTarget() || stageRoot();
   SC.busy = true;
+  var noRoot = false;
   readSidecar().then(function (text) {
     if (text == null) { SC.error = 'no saved edits could be read from ' + SC.url; return; }
-    if (er.root === SC.root && text === SC.text) return;
+    if (er && er.root === SC.root && text === SC.text) return;
     var edits = JSON.parse(text);
+    /* A document is on every page, so only a file saved from an HTML game names it as the target. */
+    if (!er && edits && edits.stage === 'dom') er = { engine: 'dom', target: document, root: document };
+    if (!er) { noRoot = true; return; }
     return loadRuntime().then(function (R) {
       return runtimeOpts(er, edits).then(function (o) { return R.applyStudioEdits(er.target, edits, o); });
     }, function (e) {
@@ -628,7 +651,8 @@ var applySidecar = function () {
     SC.error = String((e && e.message) || e).slice(0, 300);
   }).then(function () {
     SC.busy = false;
-    if (SC.again) { SC.again = false; applySidecar(); }
+    if (noRoot) watchForRoot();
+    else if (SC.again) { SC.again = false; applySidecar(); }
   });
 };
 
@@ -637,10 +661,10 @@ var watchForRoot = function () {
   if (SC.watch) return;
   SC.until = Date.now() + 60000;
   SC.watch = setInterval(function () {
-    if (editTarget()) { clearInterval(SC.watch); SC.watch = 0; applySidecar(); }
+    if (editTarget() || stageRoot()) { clearInterval(SC.watch); SC.watch = 0; applySidecar(); }
     else if (Date.now() > SC.until) {
       clearInterval(SC.watch); SC.watch = 0;
-      SC.error = 'no three.js scene or PlayCanvas app appeared within 60 s to apply the saved edits to';
+      SC.error = 'no three.js scene, PlayCanvas app, Phaser game or PixiJS app appeared within 60 s to apply the saved edits to';
     }
   }, 1000);
 };
@@ -679,13 +703,25 @@ L.pin = function (o, kind) {
     L.pinnedKind = kind;
     if (kind === 'three' && found.three.indexOf(o) < 0) found.three.push(o);
     /* An engine the page could not find alone is one the saved edits could not reach either. */
-    if (SC.url && (kind === 'three' || kind === 'playcanvas')) setTimeout(applySidecar, 0);
+    if (SC.url && (kind === 'three' || kind === 'playcanvas' || kind === 'phaser' || kind === 'pixi')) setTimeout(applySidecar, 0);
     return true;
   } catch (e) { return false; }
 };
 
 var hunt = function () {
   if (found.pc || found.three.length || found.babylon || found.phaser || found.pixi) return found;
+  /* The handle a new game sets for this purpose, asked by name before the walk, whose budget can run
+     out on the page's other globals first. */
+  try {
+    var hand = window.__game;
+    if (hand) {
+      var cands = [['__game.game', hand.game], ['__game.app', hand.app], ['__game', hand]];
+      for (var hc = 0; hc < cands.length; hc++) {
+        if (quacksPhaser(cands[hc][1])) { found.phaser = cands[hc][1]; found.phaserAt = cands[hc][0]; return found; }
+        if (quacksPixi(cands[hc][1])) { found.pixi = cands[hc][1]; found.pixiAt = cands[hc][0]; return found; }
+      }
+    }
+  } catch (e) {}
   var seen = typeof Set === 'function' ? new Set() : null;
   var list = [];
   var budget = 4000;                      /* bounded: this runs on a live frame budget */

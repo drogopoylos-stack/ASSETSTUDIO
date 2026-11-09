@@ -2279,6 +2279,8 @@ def merge_part(doc: dict, key: str, values: dict) -> Optional[dict]:
             cur["hidden"] = bool(v)
         elif f in ("pos", "rot", "scale"):
             cur[f] = [float(x) for x in v]
+        elif f == "alpha":                     # a 2D object's opacity (live_stage.py)
+            cur["alpha"] = float(v)
     if cur:
         parts[key] = cur
     else:
@@ -2286,8 +2288,8 @@ def merge_part(doc: dict, key: str, values: dict) -> Optional[dict]:
     return prev
 
 
-_SECTIONS = ("parts", "placed", "params", "mods", "verts", "bones", "pose", "clips", "bakes", "world")
-_META = {"version", "asset", "updated"}
+_SECTIONS = ("parts", "placed", "params", "mods", "verts", "topo", "bones", "pose", "clips", "bakes", "world")
+_META = {"version", "asset", "updated", "stage"}
 
 
 def is_empty_doc(doc: dict) -> bool:
@@ -2549,6 +2551,11 @@ def objects(project: str, q: str = "", near=None, radius: Optional[float] = None
     bad = _need_open(e)
     if bad:
         return bad
+    from . import live_stage
+    if live_stage.handles(project):
+        got = live_stage.objects(project, q, pick, limit)
+        if not got.get("use3d"):
+            return got
     opts: dict = {"q": str(q or ""), "limit": max(1, min(500, int(limit or 60))), "in_view": bool(in_view)}
     if near not in (None, "", []):
         if isinstance(near, (list, tuple)):
@@ -2603,14 +2610,21 @@ def objects(project: str, q: str = "", near=None, radius: Optional[float] = None
 
 def edit(project: str, body: dict) -> dict:
     """Move, turn, scale, hide or drop objects in the running game; save, undo, clear."""
-    bad = _off() or L._guard(project)
+    body = dict(body or {})
+    # `cc_scene_edit` is the switch of the AGENTS' tools. The 2D Edit tab is a person at the Studio, and
+    # the 3D Edit tab is not behind it either.
+    bad = (None if body.pop("from_ui", False) else _off()) or L._guard(project)
     if bad:
         return bad
-    body = dict(body or {})
     if body.get("undo"):
         return _undo(project)
     if body.get("clear") not in (None, "", [], False):
         return _clear(project, body.get("clear"))
+    from . import live_stage
+    if live_stage.handles(project):
+        got = live_stage.edit(project, body)
+        if got is not None:
+            return got
     specs, err, ignored = _specs(body)
     if err:
         return {"ok": False, "error": err}
@@ -2753,8 +2767,12 @@ def _undo(project: str) -> dict:
             else:
                 try:
                     opts = {"scene": rec["scene"]} if rec.get("scene") is not None else {}
-                    got = _in_tab(project, "__scene.sync(%s, %s, %s)" % (
-                        json.dumps(list(reversed(rec["placed_live"]))), json.dumps(_rt(project)), json.dumps(opts))) or {}
+                    if rec.get("stage"):
+                        from . import live_stage
+                        got = live_stage.sync(project, rec["placed_live"])
+                    else:
+                        got = _in_tab(project, "__scene.sync(%s, %s, %s)" % (
+                            json.dumps(list(reversed(rec["placed_live"]))), json.dumps(_rt(project)), json.dumps(opts))) or {}
                     if got.get("placed"):
                         out["placed_back"] = got["placed"]
                     if got.get("removed"):
@@ -2773,7 +2791,11 @@ def _undo(project: str) -> dict:
                 try:
                     items = list(reversed(rec["live"]))
                     opts = {"scene": rec["scene"]} if rec.get("scene") is not None else {}
-                    got = _in_tab(project, "__scene.restore(%s, %s)" % (json.dumps(items), json.dumps(opts))) or {}
+                    if rec.get("stage"):
+                        from . import live_stage
+                        got = live_stage.restore(project, items) or {}
+                    else:
+                        got = _in_tab(project, "__scene.restore(%s, %s)" % (json.dumps(items), json.dumps(opts))) or {}
                     out["restored"] = got.get("restored", [])
                     if got.get("missing"):
                         out["missing"] = got["missing"]
@@ -2873,8 +2895,13 @@ def _clear(project: str, what) -> dict:
                     live.append("placements: no game is open, so they are simply gone from its next load")
                 else:
                     try:
-                        got = _in_tab(project, "__scene.unplace(%s, %s, {})" % (
-                            json.dumps([it.get("id") for it in gone]), json.dumps(_rt(project)))) or {}
+                        from . import live_stage
+                        if live_stage.handles(project):
+                            got = live_stage.unplace(project, [it.get("id") for it in gone])
+                            got["removed"] = {k: 1 for k in got.get("removed") or []}
+                        else:
+                            got = _in_tab(project, "__scene.unplace(%s, %s, {})" % (
+                                json.dumps([it.get("id") for it in gone]), json.dumps(_rt(project)))) or {}
                         if got.get("ok"):
                             out["removed_live"] = [k for k, n in (got.get("removed") or {}).items() if n]
                             live.append("placements: taken out of the running game as well")
@@ -3281,17 +3308,24 @@ def _hint_names(ref: dict, name: str) -> list:
 
 def place(project: str, body: dict) -> dict:
     """Put one of the game's own things into the running game, where it was asked to stand."""
-    bad = _off() or L._guard(project)
+    body = dict(body or {})
+    bad = (None if body.pop("from_ui", False) else _off()) or L._guard(project)   # as in edit()
     if bad:
         return bad
-    body = dict(body or {})
     if body.get("undo"):
         return _undo(project)
+    from . import live_stage
     if body.get("remove") not in (None, "", False):
+        if live_stage.handles(project):
+            return _clear(project, [str(body["remove"]).replace("placed/", "", 1)])
         return _remove(project, body)
     if body.get("asset") in (None, "", {}, []):
         return {"ok": False, "error": ("nothing to place: give asset — %s. Or remove:<id|key> takes a placement "
                                        "out, undo:true takes the last call back" % _ASSET_FORMS)}
+    if live_stage.handles(project):
+        got = live_stage.place(project, body)
+        if got is not None:
+            return got
     spec, err = _place_spec(project, body)
     if err:
         return {"ok": False, "error": err}
