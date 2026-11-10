@@ -343,7 +343,23 @@ flat strap), the radius, the sides, how smooth the path is, a taper from start t
 the end caps. **Tab** (or **Edit points**) shows the control points: click, Shift+click or drag a box to
 choose them, move them with the gizmo or G, R and S, add one with **E** and delete with **X**. Tab again
 puts them away. Only the recipe is saved (`placed[].ref.curve`), so the game's runtime builds the same
-tube, in three.js and in PlayCanvas. An agent places one with `{"curve": [[x, y, z], …], "radius": 0.05}`.
+tube, in three.js and in PlayCanvas. An agent places one with `{"curve": [[x, y, z], …], "radius": 0.05}`
+when it was asked with `/gamemodel` (below).
+
+### Asking an agent: /gamemodel
+
+The agents are told about these art tools only for a message that starts with **`/gamemodel`**, and the
+message says whether the work is 2D or 3D:
+
+    /gamemodel 3d a short sword with a wrapped grip
+    /gamemodel make a 2d coin that spins, 6 frames
+
+The command is taken off before any engine sees it (Claude, Codex or DeepSeek), and the instructions for
+that one request go in front of the text: for 3D the Poly Haven references, the modelling functions,
+the edits file (modifiers, edit-mode steps, shape keys, weights, constraints, clip eases, texture sets,
+curves) and the editor link; for 2D the sprite files, the atlas format, placing in the running game,
+and the sprite editor link. A message that names neither makes the agent ask first. Without
+`/gamemodel`, the always-on notes do not mention them.
 
 ### Graph editor
 

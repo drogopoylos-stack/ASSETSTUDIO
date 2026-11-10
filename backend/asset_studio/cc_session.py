@@ -797,15 +797,8 @@ def _forge_note() -> str:
         " /api/live/compare {\"a\":\"ours.glb\",\"b\":\"theirs.glb\",\"ref\":\"<image>\"}"
         " shoots both with ONE camera and scores both; /api/live/export {\"path\":\"out.glb\"}"
         " writes what the bench holds.\n"
-        # Blender users model against Poly Haven's free assets. The clay render is the shape alone,
-        # which is what the aim's silhouette score wants, and the real size ends a guess.
-        "  6b. A REFERENCE FROM POLY HAVEN (CC0, free for any use): GET /api/polyhaven/search"
-        "?type=models&q=axe lists models with their real size, dimensions_m; POST"
-        " /api/polyhaven/download {\"project\",\"id\",\"type\":\"models\"|\"textures\"|\"hdris\","
-        "\"res\":\"1k\"} puts the glTF (main_path), a LICENSE.txt and two renders in the project. Aim with"
-        " \"ref\":\"<references.reference_clay>\" (the shape alone), build to dimensions_m, and"
-        " compare with 6.; a texture set comes with material.json naming its maps: put them on a part"
-        " with studio.edits.json parts.<key>.maps {baseColor,normal,arm,...,tile}.\n"
+        # Poly Haven references, the modelling functions and the sprite editor are told only to a
+        # message that starts with /gamemodel (model_cmd.py), as the person asked.
         # Terrain is the one thing on this bench a person cannot do faster by hand, and the
         # one thing Unity, Blender and Godot cannot be asked for from a command line at all.
         # Two lines, because the endpoint prints its own shapes: a wrong action answers with
@@ -968,8 +961,7 @@ def _scene_note(cwd: str = "") -> str:
         " A canvas drawn by hand has no objects to list.\n"
         f"  POST {base}/api/live/place {{project, asset, near:\"<key>\" | at:[x,y,z], rot, scale, drop,"
         " save} — asset: {\"builder\":\"src/assets.js#buildX\",\"args\":[{…}]} | {\"model\":\"<.glb>\"}"
-        " | {\"clone\":\"<key>\"} | {\"primitive\":\"box\",\"color\":\"#ff8800\"}"
-        " | {\"curve\":[[x,y,z],…],\"radius\":0.05,\"profile\":\"round\"} (a tube: cables, rails, horns) | {\"id\":\"<asset"
+        " | {\"clone\":\"<key>\"} | {\"primitive\":\"box\",\"color\":\"#ff8800\"} | {\"id\":\"<asset"
         " id>\"}. Without save it is a try the next reload removes; {remove:\"<id>\"} takes one out."
         f" {base}/api/live/batch runs objects/edit/place/shot/watch in one call.\n"
         "  SEE IT. Every edit and place answers with `look`: a before|after sheet (amber before, green"
@@ -4402,6 +4394,10 @@ def send(
     if command:
         steer = True
         message = message[command.end():]
+    # /gamemodel: the Studio Engine's art tools, for this one request only (model_cmd.py). Taken
+    # off here, so no engine reads it as a command of its own.
+    from . import model_cmd
+    message, _ = model_cmd.apply(message)
     if steer:
         if agent not in ("claude", "codex"):
             return {"ok": False, "error": "Steer is available for Claude and Codex.", "agent": agent}

@@ -2276,6 +2276,7 @@ _BUILTIN_SLASH = [
     ("/clear", "Clear the conversation history"),
     ("/compact", "Summarize & compact the context now"),
     ("/model", "Switch the model"),
+    ("/gamemodel", "Studio Engine art tools for this request: say 2d or 3d (e.g. /gamemodel 3d a short sword)"),
     ("/config", "Open settings"),
     ("/cost", "Show token cost for this session"),
     ("/context", "Show context-window usage"),
