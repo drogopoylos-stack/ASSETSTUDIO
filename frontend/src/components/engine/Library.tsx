@@ -7,6 +7,7 @@ import { EngineChip } from "./EngineChip";
 import ModelViewer from "../ModelViewer";
 import { SUBJECT_ORDER } from "./HistoryStrip";
 import { PolyHaven } from "./PolyHaven";
+import { BaseModels } from "./BaseModels";
 
 // What a game already HAS — its dinos, its brainrots, its hammers, its GLBs, its textures — on
 // the same shelves the history uses. The history is what the forge made; this is what is in the
@@ -137,6 +138,7 @@ export function Library({ project, game = "", onOpenFile, onOpenAsset }: Props) 
 
   const [sel, setSel] = useState<LibraryAsset | null>(null);
   const [haven, setHaven] = useState(false);
+  const [base, setBase] = useState(false);
   useEffect(() => { const t = window.setTimeout(() => setDq(query), 250); return () => window.clearTimeout(t); }, [query]);
 
   const load = useCallback(async (fresh = false) => {
@@ -190,6 +192,14 @@ export function Library({ project, game = "", onOpenFile, onOpenAsset }: Props) 
     );
   }
 
+  if (base) {
+    return (
+      <div className="h-full flex min-w-0 flex-col">
+        <BaseModels project={project.path} onDownloaded={() => load(true)} onClose={() => setBase(false)} />
+      </div>
+    );
+  }
+
   if (haven) {
     return (
       <div className="h-full flex min-w-0 flex-col">
@@ -207,6 +217,10 @@ export function Library({ project, game = "", onOpenFile, onOpenAsset }: Props) 
             <button onClick={() => setHaven(true)} className="chip hover:text-text"
               title="Free CC0 models, textures and HDRIs from Poly Haven, downloaded into this project with their license and reference renders">
               + Poly Haven
+            </button>
+            <button onClick={() => setBase(true)} className="chip hover:text-text"
+              title="What Poly Haven has not: humans at real size (Blender's Human Base Meshes, a human made to order by MPFB2) and Poly Pizza's creatures and game models">
+              + Base models
             </button>
             <span className="text-xs text-brand truncate max-w-[14rem]" title={project.path}>{project.name}</span>
             <div className="flex items-center gap-0.5 ml-1">

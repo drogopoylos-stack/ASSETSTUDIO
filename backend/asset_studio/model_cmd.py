@@ -40,7 +40,12 @@ def note(dim: str, base: str = "") -> str:
     three = (
         "[/gamemodel 3D] Make this a 3D model for the game with the Studio Engine tools (for this request only).\n"
         "- Build it in code: a builder in the game (export function buildX(opts) returning a named THREE.Group, feet on y=0), "
-        "checked on the forge bench as the Forge note says (render, compare with a reference, read the numbers).\n"
+        "checked on the forge bench as the Forge note says (render, compare with a reference, read the numbers). "
+        "BUILD ON THE BENCH AFTER EVERY CHANGE: the person watches the bench live in the Studio Engine while you work, so a "
+        f"change only in a file is a change they cannot see. To show a downloaded reference there too: POST {b}/api/live/glb {{project, path}}.\n"
+        f"- FINISH with POST {b}/api/gamemodel/publish {{project, name, category}} (category: main-character, character, enemy, "
+        "creature, weapon, armor, item, prop, environment, building, vehicle or other): it exports the bench to the game's "
+        "assets/models/<name>.glb, renders a thumbnail and files it in the Catalog. Say the game path and the Catalog shelf in your answer.\n"
         f"- Reference first: GET {b}/api/polyhaven/search?type=models&q=<word> (CC0, with real size dimensions_m); "
         f"POST {b}/api/polyhaven/download {{project,id,type:\"models\"|\"textures\"|\"hdris\",res:\"1k\"}} writes a .glb, "
         "a clay render (references.reference_clay, the shape alone) and LICENSE.txt into the project. Build to dimensions_m and aim the forge at the clay render. "

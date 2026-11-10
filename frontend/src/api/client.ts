@@ -403,6 +403,24 @@ export const api = {
   polyHavenDownload: (project: string, id: string, type: string, res = "1k") =>
     req<{ ok: boolean; error?: string; main?: string; folder?: string; references?: Record<string, string> }>(
       "/api/polyhaven/download", { method: "POST", body: JSON.stringify({ project, id, type, res }), timeoutMs: 600_000 }),
+  /** Human references at real size (Blender's Human Base Meshes, MPFB2): see backend refs.py. */
+  refsSearch: (q = "", kind = "") =>
+    req<{ ok: boolean; total?: number; rows?: RefRow[]; hint?: string; error?: string }>(
+      "/api/refs/search?" + new URLSearchParams({ q, kind, limit: "200" }).toString()),
+  refsStatus: () => req<{ ok: boolean; humans: boolean; mpfb: boolean; blender: boolean }>("/api/refs/status"),
+  refsPrepare: () => req<{ ok: boolean; error?: string; prepared?: string[] }>("/api/refs/prepare", { method: "POST", timeoutMs: 1_800_000 }),
+  refsHuman: (body: { height_m: number; gender: number; age_years: number; muscle: number; weight: number; proportions: number; rig: string; name: string; project?: string }) =>
+    req<RefRow & { ok: boolean; error?: string; project_model?: string }>("/api/refs/human", { method: "POST", body: JSON.stringify(body), timeoutMs: 900_000 }),
+  refsGet: (id: string, project: string) =>
+    req<RefRow & { ok: boolean; error?: string; project_model?: string }>("/api/refs/get", { method: "POST", body: JSON.stringify({ id, project }) }),
+  /** Poly Pizza: low-poly game models, many rigged and animated (backend polypizza.py). */
+  polyPizzaStatus: () => req<{ ok: boolean; key: boolean }>("/api/polypizza/status"),
+  polyPizzaSearch: (q: string, animated: boolean, licence: string) =>
+    req<{ ok: boolean; error?: string; total?: number; rows?: PolyPizzaRow[] }>(
+      "/api/polypizza/search?" + new URLSearchParams({ q, animated: String(animated), licence, limit: "32" }).toString(), { timeoutMs: 60_000 }),
+  polyPizzaDownload: (project: string, id: string) =>
+    req<{ ok: boolean; error?: string; main?: string; dimensions_m?: number[]; animations?: string[]; credit_needed?: boolean; credit?: string }>(
+      "/api/polypizza/download", { method: "POST", body: JSON.stringify({ project, id }), timeoutMs: 400_000 }),
   polyHavenDownloaded: (project: string) =>
     req<{ ok: boolean; error?: string; root?: string; rows?: { id: string; type: string; name: string; folder: string; main: string; maps?: Record<string, string> }[] }>(
       "/api/polyhaven/downloaded?project=" + encodeURIComponent(project)),
@@ -893,6 +911,36 @@ export const api = {
 export type NewGameEngine = "three" | "playcanvas" | "phaser" | "pixi";
 
 /** One Poly Haven asset, as backend/asset_studio/polyhaven.py lists it. */
+export interface RefRow {
+  id: string;
+  name: string;
+  kind: string;
+  style: string;
+  sex?: string;
+  license: string;
+  source: string;
+  dimensions_m: number[];
+  triangles: number;
+  rig?: string;
+  bones?: number;
+  model_path: string;
+  front_path: string;
+  side_path: string;
+}
+
+export interface PolyPizzaRow {
+  id: string;
+  title: string;
+  licence: string;
+  cc0: boolean;
+  creator: string;
+  attribution: string;
+  animated: boolean;
+  triangles: number;
+  category: string;
+  thumb: string;
+}
+
 export interface PolyHavenRow {
   id: string;
   name: string;

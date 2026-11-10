@@ -356,6 +356,19 @@ kept in the OS keychain as `polypizza` (never in a file in the repository, and n
 A library model comes at any scale (Quaternius's wolf measures 3.6 m tall in its file), so scale it to
 the real size before use. Prefer CC0; a CC-BY model must show its credit in the game.
 
+**Library → + Base models** shows both sources in the Studio: the human references with their renders
+and sizes, a "Make a human" form, and Poly Pizza's search with "animated" and "CC0 only" filters. **get**
+copies a model into the game.
+
+### Watching a /gamemodel request, and the Catalog
+
+A `/gamemodel 3d` agent builds on the forge bench after every change, so with **watching** on (the chip
+at the top of the Studio Engine) the Edit tab shows the model live while the agent works. A workspace
+folder that holds its game one level down shows that game's bench. When the model is done, the agent
+calls `POST /api/gamemodel/publish {"project", "name", "category"}`: the bench is exported to the game's
+`assets/models/<name>.glb`, Blender renders a thumbnail, and the model is filed on its Catalog shelf.
+The Forge switch (Settings → Studio engine) must be on.
+
 ### Modifiers and materials
 
 The MESH section stacks Blender's modifiers. It now also has **Array** (copies at a fixed or a relative

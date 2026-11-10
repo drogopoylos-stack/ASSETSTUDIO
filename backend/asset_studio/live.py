@@ -3426,6 +3426,17 @@ def bench(project: str) -> dict:
     with _lock:
         b = dict(_bench.get(k) or {})
         e = _tabs.get(k)
+        if not b:
+            # A WORKSPACE FOLDER WITH ITS GAME ONE LEVEL DOWN. The rail names the folder, the agent
+            # builds for the game inside it, and the two keys never met: the person watched an empty
+            # viewport while the bench was full. The newest bench of a game inside this folder is
+            # this folder's bench.
+            base = os.path.normcase(os.path.abspath(project)).rstrip("\\/") + os.sep
+            inside = [v for v in _bench.values()
+                      if os.path.normcase(os.path.abspath(str(v.get("project") or ""))).startswith(base)]
+            if inside:
+                b = dict(max(inside, key=lambda v: v.get("ts") or 0))
+                e = _tabs.get(key_for(str(b.get("project") or "")))
     if not b:
         return {"ok": True, "open": False, "sig": "", "code": "", "at": {}, "stats": {}}
     b["open"] = bool(e and e.get("target"))
