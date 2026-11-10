@@ -3616,13 +3616,25 @@ def _our_live_processes() -> list:
     return [p for p in found if p["marker"]]
 
 
+def _sig_from_json(v) -> tuple:
+    """A stored session signature as the tuple `want_sig` builds. JSON keeps no tuples: the note
+    switches inside the signature came back as a LIST, a list never equals a tuple, and so the
+    first send after every backend restart replaced an adopted session for a "settings change"
+    nobody made — a cache miss and a warning on the person's screen each time."""
+    if v is None:
+        return ()
+    if isinstance(v, (list, tuple)):
+        return tuple(_sig_from_json(x) for x in v)
+    return v
+
+
 def _adopt_one(rec: dict) -> bool:
     """Rebuild a _Live around a process we inherited, and resume tailing its log."""
     pid = int(rec.get("pid") or 0)
     project_id = str(rec.get("project_id") or "")
     if not pid or not project_id:
         return False
-    live = _Live(project_id, _Adopted(pid), None, tuple(rec.get("sig") or ()),
+    live = _Live(project_id, _Adopted(pid), None, _sig_from_json(rec.get("sig")),
                  rec.get("session_id") or None)
     log = rec.get("log")
     if log:
@@ -4019,6 +4031,11 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
         # money. `_note_sig` and the note switches are in `want_sig`, so toggling a helper mid-chat
         # does it too. Nothing on screen used to mention that.
         sig_changed = bool(live is not None and live.sig != want_sig)
+        if sig_changed:
+            # Which setting, by name: a respawn costs a cache miss, so it must be traceable.
+            names = ("exe", "cwd", "model", "mode", "fork", "effort", "autolearn", "style", "fast", "notes")
+            diff = [n for i, n in enumerate(names) if i >= len(live.sig or ()) or live.sig[i] != want_sig[i]]
+            print("[respawn] %s: settings changed: %s" % (project_id, ", ".join(diff) or "length"), flush=True)
         need_new = (
             live is None
             or new_session
