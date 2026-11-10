@@ -342,6 +342,20 @@ profile (`data/blender_profile`), so your own Blender and its add-ons do not cha
 makes one and copies it into the game's `assets/references/`. Agents are told about these only with
 `/gamemodel 3d`.
 
+### Creatures and game models: Poly Pizza
+
+[Poly Pizza](https://poly.pizza) has more than 10 000 low-poly game models, CC0 or CC-BY, many of them
+rigged and animated, among them Quaternius's animals, characters and monsters. Its API needs a free key,
+kept in the OS keychain as `polypizza` (never in a file in the repository, and never returned by a route).
+
+- `GET /api/polypizza/search?q=wolf&animated=true&licence=CC0` finds models.
+- `POST /api/polypizza/download {"project": "<game>", "id": "<id>"}` writes the `.glb`, a `LICENSE.txt` with
+  the credit a CC-BY model needs, and Blender's front and side renders into the game's
+  `assets/polypizza/<id>/`, and returns the size the file measures and its animations.
+
+A library model comes at any scale (Quaternius's wolf measures 3.6 m tall in its file), so scale it to
+the real size before use. Prefer CC0; a CC-BY model must show its credit in the game.
+
 ### Modifiers and materials
 
 The MESH section stacks Blender's modifiers. It now also has **Array** (copies at a fixed or a relative
