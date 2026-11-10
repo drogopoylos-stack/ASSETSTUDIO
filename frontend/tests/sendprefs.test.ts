@@ -62,7 +62,9 @@ const real = () => new Mem({
   ok("not the agent-wide 'high' the header showed", readEffort(STUDIO, "claude", "claude-opus-5-5", s) !== s.getItem("cc-effort-claude"));
   ok("STUDIO on Fable 5.1 would send Fable's own level", readEffort(STUDIO, "claude", "claude-fable-5-1", s) === "medium");
   ok("thinking and fork follow the chat box's switches", t.thinking === true && t.fork === false);
-  ok("mode with no pin is the Claude default", t.permission_mode === "acceptEdits", t.permission_mode);
+  // No pin on this device: no mode is sent, and the server uses the one picked on any device
+  // (session_modes.py). A fallback here restarted a full-access session in "acceptEdits".
+  ok("mode with no pin is left to the server", t.permission_mode === "", t.permission_mode);
 }
 
 // ---- a folder nobody set up takes the agent-wide default, as the chat box always did
@@ -72,10 +74,12 @@ const real = () => new Mem({
   ok("a folder with no pin takes the agent-wide model", t.model === "claude-opus-5-5", t.model);
   ok("...and the agent-wide effort", t.effort === "high", t.effort);
   ok("the pre-per-agent 'cc-model' key is never read", sendSettings("x", "claude", new Mem({ "cc-model": "opus" })).model === "default");
-  ok("nothing stored: default, default, acceptEdits, no fork, no thinking",
+  ok("nothing stored: default, default, the server's mode, no fork, no thinking",
     JSON.stringify(sendSettings("x", "claude", new Mem())) ===
-    JSON.stringify({ model: "default", effort: "default", permission_mode: "acceptEdits", fork: false, thinking: false }));
-  ok("Codex keeps its own mode default", sendSettings("x", "codex", new Mem()).permission_mode === "full" && modeFallback("codex") === "full");
+    JSON.stringify({ model: "default", effort: "default", permission_mode: "", fork: false, thinking: false }));
+  ok("Codex leaves its mode to the server too, whose fallback for it is full",
+    sendSettings("x", "codex", new Mem()).permission_mode === "" && modeFallback("codex") === "full");
+  ok("a mode this device picked is still sent", sendSettings("x", "claude", new Mem({ "cc-mode:x:claude": "bypassPermissions" })).permission_mode === "bypassPermissions");
   ok("fork on in the chat box is fork on here", sendSettings("x", "claude", new Mem({ "cc-fork": "1" })).fork === true);
   ok("no storage at all is not a crash", sendSettings("x", "claude", null).model === "default" && folderAgent("x", null) === "claude");
 }

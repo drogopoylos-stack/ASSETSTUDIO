@@ -103,7 +103,9 @@ export function sendSettings(pid: string, agent: string, r: Reader | null = stor
   return {
     model,
     effort: readEffort(pid, agent, model, r),
-    permission_mode: readPref("mode", pid, agent, modeFallback(agent), r),
+    // "" when this device never picked one: the server sends the mode picked for this folder on any
+    // device (session_modes.py). A fallback here restarted a full-access session in "acceptEdits".
+    permission_mode: readPref("mode", pid, agent, "", r),
     fork: r?.getItem("cc-fork") === "1",
     thinking: r?.getItem("cc-thinking") === "1",
   };

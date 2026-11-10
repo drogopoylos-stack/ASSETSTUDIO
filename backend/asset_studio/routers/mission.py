@@ -232,7 +232,8 @@ def slash_commands(project_id: str = ""):
 class SendBody(BaseModel):
     message: str
     model: str = "default"
-    permission_mode: str = "acceptEdits"
+    # "" = the mode picked for this folder (session_modes.py), from whichever device picked it.
+    permission_mode: str = ""
     fork: bool = False
     images: list[str] = []
     effort: str = "default"
@@ -251,6 +252,24 @@ def send_message(project_id: str, body: SendBody):
                            body.fork, body.images, body.effort, body.agent,
                            body.new_session, body.session, body.path, body.thinking,
                            companions=body.companions, steer=body.steer)
+
+
+class ModeBody(BaseModel):
+    agent: str = "claude"
+    mode: str
+
+
+@router.get("/projects/{project_id}/mode")
+def get_mode(project_id: str, agent: str = "claude"):
+    """The approval mode picked for this folder and agent, on any device ("" = never picked)."""
+    from .. import session_modes
+    return {"mode": session_modes.get(project_id, agent)}
+
+
+@router.put("/projects/{project_id}/mode")
+def put_mode(project_id: str, body: ModeBody):
+    from .. import session_modes
+    return {"ok": session_modes.put(project_id, body.agent, body.mode)}
 
 
 @router.get("/attention")
@@ -365,7 +384,7 @@ class ScheduleBody(BaseModel):
     message: str
     send_at: float                 # epoch seconds at which to send
     model: str = "default"
-    permission_mode: str = "acceptEdits"
+    permission_mode: str = ""
     effort: str = "default"
     fork: bool = False
     thinking: bool = False
@@ -413,7 +432,7 @@ class RewindBody(BaseModel):
     uuid: str
     message: str
     model: str = "default"
-    permission_mode: str = "acceptEdits"
+    permission_mode: str = ""
     fork: bool = False
     effort: str = "default"
     thinking: bool = False

@@ -73,8 +73,11 @@ def claude(body: ClaudeBody):
     """
     if not body.project_id:
         return {"ok": False, "error": "project_id is required"}
+    from .. import session_modes
+    # The chat's mode when this device never picked one: the same session must not drop to asking.
+    mode = body.permission_mode if body.permission_mode not in ("", "default") else session_modes.get(body.project_id, "claude") or body.permission_mode
     return cc_session.become_terminal(body.project_id, body.cols, body.rows,
-                                      body.model, body.permission_mode, body.effort,
+                                      body.model, mode or "default", body.effort,
                                       body.session, body.fresh, body.cwd)
 
 

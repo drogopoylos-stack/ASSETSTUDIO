@@ -208,7 +208,9 @@ export function ChatComposer({
     const a = initialAgent(projectId);
     return readEffort(projectId, a, readPref("model", projectId, a, "default"));
   });
-  const [mode, setMode] = useState(() => { const a = initialAgent(projectId); return readPref("mode", projectId, a, modeFallback(a)); });
+  // "" until this device or the server knows the folder's mode: a send then names none, and the
+  // server uses the one picked on any device (session_modes.py). The menu shows the fallback.
+  const [mode, setMode] = useState(() => readPref("mode", projectId, initialAgent(projectId), ""));
   const [fork, setFork] = useState(() => localStorage.getItem("cc-fork") === "1");
   const [thinking, setThinking] = useState(() => localStorage.getItem("cc-thinking") === "1");
   const [autolearn, setAutolearn] = useState(() => localStorage.getItem("cc-autolearn") !== "0");
@@ -460,7 +462,24 @@ export function ChatComposer({
     const m = readPref("model", projectId, agentId, "default");
     setModel(m);
     setEffort(readEffort(projectId, agentId, m));
-    setMode(readPref("mode", projectId, agentId, modeFallback(agentId)));
+    setMode(readPref("mode", projectId, agentId, ""));
+    // THE SERVER'S MODE WINS: it is the last one picked on ANY device. A phone that once pinned
+    // "acceptEdits" must not keep sending it after full access was chosen at the desk.
+    let alive = true;
+    if (projectId) {
+      api.sessionMode(projectId, agentId).then((r) => {
+        if (!alive || !r) return;
+        if (!r.mode) {
+          // The server has none yet (a mode picked before it kept them): this device's pin seeds it.
+          const local = readPref("mode", projectId, agentId, "");
+          if (local) api.sessionModeSet(projectId, agentId, local).catch(() => {});
+          return;
+        }
+        writePref("mode", projectId, agentId, r.mode);
+        setMode(r.mode);
+      }).catch(() => {});
+    }
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, projectId]);
 
@@ -678,12 +697,18 @@ export function ChatComposer({
       else if (Date.now() - lastSend.current > 1500) { done(); }   // settled → idle: clear the chips
     }, 600);
   }
+  /** A mode picked in the menu: on this device, and on the server for every other device. */
+  function pickMode(v: string) {
+    writePref("mode", projectId, agentId, v);
+    setMode(v);
+    if (projectId) api.sessionModeSet(projectId, agentId, v).catch(() => {});
+  }
   // Per-agent saved settings — so "/codex …" uses Codex's own model/effort/approval, not Claude's.
   function agentCfg(a: string) {
     return {
       model: readPref("model", projectId, a, "default"),
       effort: readEffort(projectId, a, readPref("model", projectId, a, "default")),
-      mode: readPref("mode", projectId, a, modeFallback(a)),
+      mode: readPref("mode", projectId, a, ""),
     };
   }
   async function dispatch(payload: { full: string; images: string[] }, ov?: { agent: string; model: string; effort: string; mode: string }, steer = false) {
@@ -1444,9 +1469,9 @@ export function ChatComposer({
               )}
             </div>
             <div><label className="label !mb-0.5">Permission mode</label>
-              <select className="input !py-1 text-xs" value={forcePlan ? "plan" : mode} disabled={forcePlan}
+              <select className="input !py-1 text-xs" value={forcePlan ? "plan" : mode || modeFallback(agentId)} disabled={forcePlan}
                 title={forcePlan ? "Settings \u2192 Planning forces plan mode for every message" : ""}
-                onChange={(e) => { writePref("mode", projectId, agentId, e.target.value); setMode(e.target.value); }}>
+                onChange={(e) => pickMode(e.target.value)}>
                 {MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select>
               {forcePlan && <div className="text-[10px] text-muted/70 mt-0.5">forced in Settings &rarr; Planning</div>}</div>
             <label className="flex items-center gap-1.5 cursor-pointer text-muted">
@@ -1455,9 +1480,9 @@ export function ChatComposer({
           </>}
           {agentId === "codex" && (
             <CodexSettings status={codex.status} models={codex.models} def={codex.def} model={model}
-              effort={effort} mode={mode} fast={codexFast} planner={codexPlanner} rootPath={rootPath}
+              effort={effort} mode={mode || modeFallback(agentId)} fast={codexFast} planner={codexPlanner} rootPath={rootPath}
               onEffort={pickEffort} onFast={toggleCodexFast} onPlanner={toggleCodexPlanner}
-              onMode={(v) => { writePref("mode", projectId, agentId, v); setMode(v); }} />
+              onMode={pickMode} />
           )}
           {agentId === "deepseek-harness" && <div className="text-[11px] text-muted space-y-1">
             <div>Permissions: <strong className="text-text">Full access</strong></div>
@@ -1758,7 +1783,7 @@ export function ChatComposer({
         </button>
         {/* settings */}
         <button className={cls(btn, "relative", autolearn && "!text-brand/90")}
-          title={`${model}${(agentId === "claude" || isAltEngine(agent)) ? ` · ${effort} · ${mode}` : ""}${autolearn ? " · auto-learn on" : ""}`}
+          title={`${model}${(agentId === "claude" || isAltEngine(agent)) ? ` · ${effort} · ${mode || modeFallback(agentId)}` : ""}${autolearn ? " · auto-learn on" : ""}`}
           onClick={() => { setCfg((v) => !v); setAgentMenu(false); }}>
           <SlidersHorizontal size={15} />
           {/* auto-learn moved into this popover; its live "working" pulse rides the settings

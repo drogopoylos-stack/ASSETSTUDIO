@@ -4376,7 +4376,7 @@ def send(
     project_id: str,
     message: str,
     model: str = "default",
-    permission_mode: str = "acceptEdits",
+    permission_mode: str = "",
     fork: bool = False,
     images: Optional[list[str]] = None,
     effort: str = "default",
@@ -4392,6 +4392,11 @@ def send(
     # WHICH ENGINE IS ABOUT TO WRITE, read before the alt remap below renames it to "claude". The
     # turn's checkpoint is labelled with this, not with the engine the plumbing ends up running.
     engine = agent
+    # NO MODE NAMED: the one picked for this folder, from any device (session_modes.py). A remote
+    # browser that never picked one must not restart a full-access session in "acceptEdits".
+    from . import session_modes
+    permission_mode = session_modes.resolve(project_id, agent, permission_mode,
+                                            "full" if agent in ("codex", "deepseek-harness") else "acceptEdits")
     # /steer and the button use the same path. Validate before snapshots/BOOST/companions.
     command = re.match(r"^\s*/steer(?:\s+|$)", message or "", flags=re.I)
     if command:
@@ -4840,7 +4845,7 @@ def _revert_to_before(project_id: str, msg_ts_iso: str) -> Optional[dict]:
 
 
 def rewind(project_id: str, msg_uuid: str, message: str, model: str = "default",
-           permission_mode: str = "acceptEdits", fork: bool = False, effort: str = "default",
+           permission_mode: str = "", fork: bool = False, effort: str = "default",
            thinking: bool = False, session: str = "", path: str = "",
            restore_files: bool = False) -> dict:
     """Rewind the conversation to a past user message and resume from an edited version
@@ -4868,7 +4873,8 @@ def rewind(project_id: str, msg_uuid: str, message: str, model: str = "default",
     # Claude CLI against DeepSeek's session home, so editing a DeepSeek prompt either failed or
     # started a second, unrelated conversation.
     resend_agent = engines.for_feed(project_id).id
-    permission_mode = forced_mode(permission_mode)
+    from . import session_modes
+    permission_mode = forced_mode(session_modes.resolve(project_id, "claude", permission_mode))
     _, pdir, _ = mission.project_dir(project_id)
     if not pdir.exists():
         return {"ok": False, "error": "no conversation to rewind for this project"}

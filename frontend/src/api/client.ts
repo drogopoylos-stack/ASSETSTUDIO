@@ -763,6 +763,11 @@ export const api = {
   missionSlash: (projectId = "") => req<{ commands: import("../types").SlashCommand[] }>(`/api/mission/slash-commands${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`),
   sessionSend: (projectId: string, body: { message: string; model: string; permission_mode: string; fork: boolean; images?: string[]; effort?: string; thinking?: boolean; steer?: boolean; agent?: string; new_session?: boolean; session?: string; path?: string; companions?: { id: string; model?: string; effort?: string; permission_mode?: string }[] }) =>
     req<any>(`/api/mission/projects/${encodeURIComponent(projectId)}/send`, { method: "POST", body: JSON.stringify(body) }),
+  /** The approval mode picked for a folder and agent, kept by the server so every device agrees. */
+  sessionMode: (projectId: string, agent: string) =>
+    req<{ mode: string }>(`/api/mission/projects/${encodeURIComponent(projectId)}/mode?agent=${encodeURIComponent(agent)}`),
+  sessionModeSet: (projectId: string, agent: string, mode: string) =>
+    req<{ ok: boolean }>(`/api/mission/projects/${encodeURIComponent(projectId)}/mode`, { method: "PUT", body: JSON.stringify({ agent, mode }) }),
   sessionSending: (projectId: string) =>
     req<{ sending: boolean; pending?: number }>(`/api/mission/projects/${encodeURIComponent(projectId)}/sending`),
   liveStatus: () => req<{ statuses: Record<string, boolean>;
