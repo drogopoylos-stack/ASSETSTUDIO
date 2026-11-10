@@ -860,6 +860,7 @@ function write(T: any, pos: Float32Array, idx: Uint32Array | null, normal?: Floa
 }
 
 export function makeOps(T: any): Ops {
+  if (T?.Texture) TEX = { Texture: T.Texture, repeat: T.RepeatWrapping ?? 1000, srgb: T.SRGBColorSpace ?? "srgb" };
   /**
    * Flatten a whole object tree into ONE geometry in world space.
    *
@@ -2103,10 +2104,49 @@ export function applyVerts(root: any, verts: VertEdit[] | undefined, out?: Appli
 }
 
 /** One modifier, run over one geometry (or, for `skin`, a whole object). Null for an unknown op. */
-export function applyMod(ops: Ops, m: { op: string; args?: Record<string, any> }, geo: any, object?: any): any {
+/** What a modifier may need beyond its own mesh: the mesh object and the parts by key (a boolean's cutter). */
+export interface ModContext { mesh?: any; byKey?: Map<string, any> }
+
+export const DEFORM_KINDS: DeformKind[] = ["taper", "twist", "bend", "stretch"];
+export const BOOLEAN_OPS: BooleanOp[] = ["subtract", "union", "intersect"];
+
+export function applyMod(ops: Ops, m: { op: string; args?: Record<string, any> }, geo: any, object?: any, ctx: ModContext = {}): any {
   const a = m.args || {};
   const num = (k: string, d: number) => (typeof a[k] === "number" ? (a[k] as number) : d);
   switch (m.op) {
+    case "array": {
+      // Blender's relative offset by default: 1 means one mesh's width along that axis.
+      let off: V3 = [num("ox", 1), num("oy", 0), num("oz", 0)];
+      if (num("relative", 1)) {
+        geo.computeBoundingBox?.();
+        const b = geo.boundingBox;
+        if (b) off = [off[0] * (b.max.x - b.min.x), off[1] * (b.max.y - b.min.y), off[2] * (b.max.z - b.min.z)];
+      }
+      return ops.array(geo, Math.max(1, Math.min(256, Math.round(num("count", 3)))), off, !!num("weld", 0));
+    }
+    case "deform":
+      return ops.deform(geo, DEFORM_KINDS[Math.max(0, Math.min(3, Math.round(num("kind", 1))))], num("amount", 0.5), (Math.max(0, Math.min(2, Math.round(num("axis", 1)))) as 0 | 1 | 2));
+    case "decimate":
+      return ops.decimate(geo, { ratio: Math.max(0.01, Math.min(1, num("ratio", 0.5))) });
+    case "boolean": {
+      // The cutter is another part, in this mesh's own frame; Blender hides it, and so does this.
+      const cutter = typeof a.with === "string" && a.with ? ctx.byKey?.get(a.with) : null;
+      if (!cutter || !ctx.mesh) return null;
+      if (cutter === ctx.mesh || cutter.getObjectById?.(ctx.mesh.id)) return null;
+      cutter.updateMatrixWorld?.(true);
+      // merge() flattens in the object's OWN frame and leaves hidden meshes out; the cutter is hidden
+      // by the first apply, so it is shown for the moment of the merge.
+      const shown = cutter.visible;
+      cutter.visible = true;
+      const world = ops.merge(cutter);
+      cutter.visible = shown;
+      if (!world?.attributes?.position?.count) return null;
+      ctx.mesh.updateMatrixWorld?.(true);
+      world.applyMatrix4(ctx.mesh.matrixWorld.clone().invert().multiply(cutter.matrixWorld));
+      const r = ops.boolean(geo, world, BOOLEAN_OPS[Math.max(0, Math.min(2, Math.round(num("op", 0))))]);
+      if (num("hide", 1)) cutter.visible = false;
+      return r;
+    }
     case "weld": return ops.weld(geo, num("tol", 1e-3));
     case "smooth": return ops.smooth(geo, num("angle", 40));
     case "subdivide": return ops.subdivide(geo, num("levels", 1));
@@ -2128,6 +2168,104 @@ export function applyMod(ops: Ops, m: { op: string; args?: Record<string, any> }
 const OVERRIDE_NUMBERS = ["roughness", "metalness", "intensity", "distance", "angle", "penumbra", "decay", "fov", "near", "far", "zoom"];
 
 export interface AppliedEdits { parts: number; mods: number; verts: number; topo?: number; missing: string[]; errors: string[] }
+
+// ------------------------------------------------------------------ texture sets on a part (PartOverride.maps)
+//
+// The classes come from the three that makeOps was given (the editor, the forge). A game that
+// calls only applyEdits has none to give, so a texture already in its scene lends its class; with
+// neither, the maps are reported, not guessed at.
+let TEX: { Texture: any; repeat: number; srgb: any } | null = null;
+let mapUrl: (path: string) => string = (p) => {
+  // A Vite game serves `public/` as its root, and a shipped game sits beside its own files.
+  const s = String(p || "").replace(/\\/g, "/").replace(/^(?:.*\/)?public\//, "");
+  try { return new URL(s, (globalThis as any).document?.baseURI || "http://localhost/").href; } catch { return s; }
+};
+/** Where a part's map paths are fetched from: the editor serves them through the Studio. */
+export function setMapResolver(fn: (path: string) => string) { mapUrl = fn; }
+const texCache = new Map<string, any>();
+
+/** A builder often hands one material to many parts; a colour picked for one part must not paint
+ *  the rest. The part gets its own copy the first time, and keeps it on every apply after. */
+function ownMaterials(part: any, key: string): void {
+  const copies = new Map<any, any>();
+  const own = (m: any) => {
+    if (!m?.clone || m.userData?.__ownedBy === key) return m;
+    let c = copies.get(m);
+    if (!c) { c = m.clone(); c.userData = { ...(m.userData || {}), __ownedBy: key }; copies.set(m, c); }
+    return c;
+  };
+  part.traverse((c: any) => {
+    if (!c.material) return;
+    c.material = Array.isArray(c.material) ? c.material.map(own) : own(c.material);
+  });
+}
+
+function textureClassIn(root: any, T?: any): any {
+  if (TEX) return TEX.Texture;
+  if (T?.Texture) return T.Texture;
+  let found: any = null;
+  root.traverse?.((c: any) => {
+    for (const m of Array.isArray(c.material) ? c.material : c.material ? [c.material] : []) {
+      for (const k of ["map", "normalMap", "roughnessMap", "aoMap", "emissiveMap"]) if (!found && m[k]?.isTexture) found = m[k].constructor;
+    }
+  });
+  return found;
+}
+
+function loadTexture(Texture: any, url: string, color: boolean, tile: number): any {
+  const key = url + "|" + color + "|" + tile;
+  const hit = texCache.get(key);
+  if (hit) return hit;
+  const tex = new Texture();
+  tex.wrapS = tex.wrapT = TEX?.repeat ?? 1000;
+  tex.repeat?.set?.(tile, tile);
+  if (color) tex.colorSpace = TEX?.srgb ?? "srgb";
+  const Img = (globalThis as any).Image;
+  if (Img) {
+    const im = new Img();
+    im.crossOrigin = "anonymous";
+    im.onload = () => { tex.image = im; tex.needsUpdate = true; };
+    im.src = url;
+  }
+  texCache.set(key, tex);
+  return tex;
+}
+
+/** UVs from the position, by the face's main direction, in metres: what lets a tiling texture show on
+ *  a part a code builder made without UVs. */
+function boxUVs(g: any): void {
+  const p = g.attributes.position, n = g.attributes.normal;
+  if (!p || !n) return;
+  const uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    if (ax >= ay && ax >= az) { uv[i * 2] = z; uv[i * 2 + 1] = y; }
+    else if (ay >= az) { uv[i * 2] = x; uv[i * 2 + 1] = z; }
+    else { uv[i * 2] = x; uv[i * 2 + 1] = y; }
+  }
+  g.setAttribute("uv", new p.constructor(uv, 2));
+}
+
+function applyPartMaps(root: any, part: any, maps: any, out: AppliedEdits, T?: any): void {
+  const Texture = textureClassIn(root, T);
+  if (!Texture) { out.errors.push("maps: this scene has no texture class to make textures with (pass makeOps(THREE))"); return; }
+  const tile = typeof maps.tile === "number" && maps.tile > 0 ? maps.tile : 1;
+  const tex = (k: string, color = false) => (maps[k] ? loadTexture(Texture, mapUrl(maps[k]), color, tile) : null);
+  part.traverse((c: any) => {
+    if (!c.isMesh || !c.geometry) return;
+    if (!c.geometry.attributes.uv) boxUVs(c.geometry);
+    for (const m of Array.isArray(c.material) ? c.material : c.material ? [c.material] : []) {
+      if (maps.baseColor && "map" in m) { m.map = tex("baseColor", true); m.color?.set?.(0xffffff); }
+      if (maps.normal && "normalMap" in m) m.normalMap = tex("normal");
+      if (maps.arm && "roughnessMap" in m) { m.roughnessMap = tex("arm"); m.metalnessMap = tex("arm"); m.aoMap = tex("arm"); m.roughness = 1; m.metalness = 1; }
+      if (maps.roughness && "roughnessMap" in m) { m.roughnessMap = tex("roughness"); m.roughness = 1; }
+      if (maps.metalness && "metalnessMap" in m) { m.metalnessMap = tex("metalness"); m.metalness = 1; }
+      if (maps.ao && "aoMap" in m) m.aoMap = tex("ao");
+      m.needsUpdate = true;
+    }
+  });
+}
 
 /**
  * Shape keys onto the meshes they name, as relative morph targets with the keys' names and values.
@@ -2525,6 +2663,9 @@ export function applyEdits(root: any, edits: any, ops?: Ops, T?: any): AppliedEd
     if (o.color && t.isLight && t.color?.set) t.color.set(o.color);
     for (const k of OVERRIDE_NUMBERS) if (typeof o[k] === "number" && k in t) t[k] = o[k];
     if (t.isCamera) t.updateProjectionMatrix?.();
+    const looks = !t.isLight && (o.color || o.roughness !== undefined || o.metalness !== undefined || (o.maps && typeof o.maps === "object"));
+    if (looks) ownMaterials(t, key);
+    if (looks && o.maps && typeof o.maps === "object") applyPartMaps(root, t, o.maps, out, T);
     if (!t.isLight && (o.color || o.roughness !== undefined || o.metalness !== undefined)) {
       t.traverse((c: any) => {
         for (const m of Array.isArray(c.material) ? c.material : c.material ? [c.material] : []) {
@@ -2560,7 +2701,7 @@ export function applyEdits(root: any, edits: any, ops?: Ops, T?: any): AppliedEd
         let touched = 0;
         o.traverse((c: any) => {
           if (!c.isMesh || !c.geometry) return;
-          const next = applyMod(ops!, m, c.geometry);
+          const next = applyMod(ops!, m, c.geometry, undefined, { mesh: c, byKey });
           if (!next) return;
           c.geometry.dispose?.();
           c.geometry = next;

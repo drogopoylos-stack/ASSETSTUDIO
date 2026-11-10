@@ -404,7 +404,7 @@ export const api = {
     req<{ ok: boolean; error?: string; main?: string; folder?: string; references?: Record<string, string> }>(
       "/api/polyhaven/download", { method: "POST", body: JSON.stringify({ project, id, type, res }), timeoutMs: 600_000 }),
   polyHavenDownloaded: (project: string) =>
-    req<{ ok: boolean; error?: string; rows?: { id: string; type: string; name: string; folder: string; main: string }[] }>(
+    req<{ ok: boolean; error?: string; root?: string; rows?: { id: string; type: string; name: string; folder: string; main: string; maps?: Record<string, string> }[] }>(
       "/api/polyhaven/downloaded?project=" + encodeURIComponent(project)),
   /** A 2D game's objects with their boxes on the page: what the 2D Edit tab draws. */
   liveStage: (project: string) =>

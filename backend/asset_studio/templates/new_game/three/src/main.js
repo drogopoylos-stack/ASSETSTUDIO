@@ -144,7 +144,8 @@ async function applySavedEdits() {
     const runtime = await import('./studio-runtime.js');
     const edits = await runtime.loadStudioEdits(new URL('studio.edits.json', BASE).href);
     if (!edits) return null;
-    const options = { base: BASE };
+    // THREE: a part's texture set is made with the game's own three.
+    const options = { base: BASE, THREE };
     // The loader only when a placed model needs one: most games never pay for it.
     if ((edits.placed || []).some((p) => p && p.ref && p.ref.kind === 'model')) {
       options.GLTFLoader = (await import('three/addons/loaders/GLTFLoader.js')).GLTFLoader;

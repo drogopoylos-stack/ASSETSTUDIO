@@ -49,6 +49,17 @@ export interface ParamSpec {
   advanced?: boolean;
 }
 
+export interface PartMaps {
+  baseColor?: string;
+  normal?: string;
+  roughness?: string;
+  ao?: string;
+  arm?: string;
+  metalness?: string;
+  /** Repeats per metre, on box-projected UVs (default 1). */
+  tile?: number;
+}
+
 export interface PartOverride {
   pos?: V3;
   rot?: V3;
@@ -59,6 +70,9 @@ export interface PartOverride {
   color?: string;
   roughness?: number;
   metalness?: number;
+  /** A texture set on the part's material: project-relative image paths (a Poly Haven download's
+   *  material.json names them), and how many times the texture repeats across a metre. */
+  maps?: PartMaps;
   // A light.
   intensity?: number;
   distance?: number;
@@ -142,7 +156,7 @@ export interface Clip { name: string; fps: number; start: number; end: number; l
  *  subdivision that were put on top of it. A baked result could not survive a slider. */
 export interface Mod {
   op: "weld" | "smooth" | "subdivide" | "mirror" | "solidify" | "displace" | "simplify" | "flip" | "skin"
-    | "subsurf" | "bevel" | "unwrap" | "remesh" | "relax";
+    | "subsurf" | "bevel" | "unwrap" | "remesh" | "relax" | "array" | "deform" | "decimate" | "boolean";
   /** A part key, or "" for the whole asset. */
   target: string;
   args: Record<string, number | string | boolean>;
@@ -228,7 +242,7 @@ export interface PlacedItem {
   scale: [number, number, number];
 }
 
-const MOD_OPS = new Set(["weld", "smooth", "subdivide", "mirror", "solidify", "displace", "simplify", "flip", "skin",
+const MOD_OPS = new Set(["weld", "smooth", "subdivide", "mirror", "solidify", "displace", "simplify", "flip", "skin", "array", "deform", "decimate", "boolean",
   "subsurf", "bevel", "unwrap", "remesh", "relax"]);
 
 export function emptyEdits(asset = ""): Edits {
@@ -288,6 +302,12 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
         o.piece = { c: v.piece.c.slice(0, 3) as V3, n: v.piece.n };
       }
       if (typeof v?.color === "string") o.color = v.color;
+      if (v?.maps && typeof v.maps === "object") {
+        const m: PartMaps = {};
+        for (const k of ["baseColor", "normal", "roughness", "ao", "arm", "metalness"] as const) if (typeof v.maps[k] === "string" && v.maps[k]) m[k] = v.maps[k];
+        if (typeof v.maps.tile === "number" && isFinite(v.maps.tile) && v.maps.tile > 0) m.tile = v.maps.tile;
+        if (Object.keys(m).length) o.maps = m;
+      }
       if (typeof v?.shadow === "boolean") o.shadow = v.shadow;
       for (const f of OVERRIDE_NUMBERS) if (typeof v?.[f] === "number" && isFinite(v[f])) o[f] = v[f];
       if (Object.keys(o).length) e.parts[k] = o;
@@ -891,10 +911,12 @@ export function editsAsCode(e: Edits, rootVar = "root"): string {
     }
   }
   const mods = e.mods.filter((m) => !m.off);
-  if (mods.length) {
+  // A texture set needs the image loading applyEdits does; the plain loop above cannot.
+  const mapped = Object.fromEntries(Object.entries(e.parts).filter(([, o]) => o.maps).map(([k, o]) => [k, { maps: o.maps }]));
+  if (mods.length || Object.keys(mapped).length) {
     out.push(
       "const { makeOps, applyEdits } = await import('http://127.0.0.1:8777/forge-ops.js');",
-      "applyEdits(" + rootVar + ", { parts: {}, mods: " + JSON.stringify(mods) + " }, makeOps(THREE));",
+      "applyEdits(" + rootVar + ", { parts: " + JSON.stringify(mapped) + ", mods: " + JSON.stringify(mods) + " }, makeOps(THREE));",
     );
   }
   return out.join("\n");

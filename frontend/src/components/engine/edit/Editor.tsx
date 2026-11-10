@@ -25,7 +25,7 @@ import { X, Image as ImageIcon, Boxes, BoxSelect, Trash2, CopyPlus, Plus,
 import { api } from "../../../api/client";
 import { cls, useSticky as useLocal } from "../../ui";
 import { buildStudio, loadEngine, runGeneration, type EngineKind, type Studio } from "../studio";
-import { placedIdOf, PRIMITIVES, pcSnapshot, threeToPcPlace } from "./ops";
+import { placedIdOf, PRIMITIVES, pcSnapshot, setMapResolver, threeToPcPlace } from "./ops";
 import { dressForGame } from "./gamedress";
 import { type PlacedRef, type PlacedItem,
   applyParams, countEdits, emptyEdits, insertKey, keyFrames, loaderThreeRef, normaliseEdits, removeKeysAt,
@@ -53,9 +53,9 @@ import { CHUNK_SAMPLES, TerrainTool, builderName, emitRes, ensureLayers, packTer
 import { ENGINE_DEFAULTS, worldOptions, type EnginePrefs } from "../prefs";
 import type { Axis, GizmoMode } from "./gizmo";
 import {
-  BakePanel, CameraPanel, Check, Choice, keymapFor, LightPanel, NavGizmo, NumField, Outliner, Popover, RigPanel, Section,
+  BakePanel, CameraPanel, Check, Choice, keymapFor, LightPanel, MaterialPanel, NavGizmo, NumField, Outliner, Popover, RigPanel, Section,
   MeshPanel, StatsBar, TerrainBrushes, TerrainEmit, TerrainLayers, TerrainScatter, TerrainStart, TerrainStats,
-  Timeline, Toolbar, Vec3Field, WorldPanel, type BakeKind, type Tool,
+  Timeline, Toolbar, Vec3Field, WorldPanel, type BakeKind, type TextureSet, type Tool,
 } from "./panels";
 import type { Defects } from "./ops";
 // The configurator (configurator.ts is the contract): presets, handles, the view / day-night bar.
@@ -1294,6 +1294,45 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
 
   // SHAPE KEYS. A change of what a key IS (new, deleted, its moves) builds again; a change of its
   // value only moves the morph, live, unless a modifier baked the keys in.
+  // MATERIALS. A new or changed value goes straight on (an undo too); a value taken away, or a
+  // texture set swapped for another, can only be undone by building again from the code.
+  const matSig = JSON.stringify(Object.entries(edits.parts)
+    .map(([k, o]) => [k, o.color ?? null, o.roughness ?? null, o.metalness ?? null, o.maps ?? null])
+    .filter((r) => r.slice(1).some((x) => x !== null)));
+  const matSeen = useRef(matSig);
+  useEffect(() => {
+    if (matSeen.current === matSig) return;
+    const before: any[][] = JSON.parse(matSeen.current);
+    matSeen.current = matSig;
+    const w = world.current;
+    if (phase !== "ready" || !w) return;
+    const now = new Map<string, any[]>((JSON.parse(matSig) as any[][]).map((r) => [r[0], r]));
+    const lost = before.some((r) => {
+      const n = now.get(r[0]);
+      return !n || [1, 2, 3].some((i) => r[i] !== null && n[i] === null) || (r[4] !== null && JSON.stringify(r[4]) !== JSON.stringify(n[4]));
+    });
+    if (lost) void rebuild(values, "params");
+    else { w.applyOverrides(edits); bump(); }
+  }, [matSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The texture sets this project has, and where their images are served from.
+  const [textureSets, setTextureSets] = useState<TextureSet[]>([]);
+  const [texturesTick, setTexturesTick] = useState(0);
+  // The paths are relative to the GAME folder, which the backend finds from the open file's.
+  useEffect(() => {
+    const project = source?.project;
+    if (!project) { setTextureSets([]); return; }
+    let live = true;
+    api.polyHavenDownloaded((source.path && dirOf(source.path)) || project).then((r) => {
+      if (!live || !r.ok) return;
+      const root = r.root || project;
+      setMapResolver((rel) => api.wsRaw(joinPath(root, rel), project));
+      setTextureSets((r.rows || []).filter((x) => x.type === "textures" && x.maps && x.maps.baseColor)
+        .map((x) => ({ id: x.id, name: x.name || x.id, maps: x.maps! })));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [source?.project, source?.path, texturesTick]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const shapeSig = JSON.stringify((edits.shapes || []).map((k) => [k.mesh, k.name, k.moves]));
   const shapeSeen = useRef(shapeSig);
   useEffect(() => {
@@ -2265,6 +2304,10 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     unwrap: { angle: 66, margin: 0.02 },
     remesh: { res: 48 },
     relax: { iterations: 5 },
+    array: { count: 3, ox: 1, oy: 0, oz: 0, relative: 1, weld: 0 },
+    deform: { kind: 1, amount: 0.5, axis: 1 },
+    decimate: { ratio: 0.5 },
+    boolean: { op: 0, hide: 1 },
   };
   /**
    * One edit-mode tool on the selected corners: tried on the mesh as it stands, so a refusal says
@@ -2323,7 +2366,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const toggleMod = (i: number) => push((e) => ({
     ...e, mods: e.mods.map((m, k) => (k === i ? { ...m, off: !m.off } : m)),
   }));
-  const setModArg = (i: number, key: string, v: number) => setEdits((e) => ({
+  const setModArg = (i: number, key: string, v: number | string) => setEdits((e) => ({
     ...e, mods: e.mods.map((m, k) => (k === i ? { ...m, args: { ...m.args, [key]: v } } : m)),
   }));
 
@@ -3434,6 +3477,27 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
               )}
             </Section>
 
+            {active && !extra?.light && !extra?.camera && w?.meshOf(active) && (
+              <Section title={"Material" + (edits.parts[active]?.maps ? " ·" : "")} defaultOpen={false}
+                onOpen={(open) => { if (open) setTexturesTick((t) => t + 1); }}>
+                <MaterialPanel key={active} textures={textureSets} o={edits.parts[active]}
+                  material={(() => { const m = w.meshOf(active)?.material; return Array.isArray(m) ? m[0] : m; })()}
+                  onPreview={(patch) => {
+                    w.applyOverrides({ ...edits, parts: { [active]: { ...(edits.parts[active] || {}), ...patch } } });
+                    bump();
+                  }}
+                  onCommit={(patch) => {
+                    push((e) => ({ ...e, parts: { ...e.parts, [active]: { ...(e.parts[active] || {}), ...patch } } }));
+                    liveApply({ parts: { [active]: patch } });
+                  }}
+                  onClear={() => push((e) => {
+                    const { color: _c, roughness: _r, metalness: _m, maps: _x, ...rest } = e.parts[active] || {};
+                    const p = { ...e.parts };
+                    if (Object.keys(rest).length) p[active] = rest; else delete p[active];
+                    return { ...e, parts: p };
+                  })} />
+              </Section>
+            )}
             {extra?.light && (
               <Section title="Light" defaultOpen right={<Sun size={11} className="text-muted" />}>
                 <LightPanel light={extra.light}
@@ -3480,7 +3544,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
             <Section title={"Mesh" + (edits.mods.length ? " (" + edits.mods.length + ")" : "")} defaultOpen={false}
               onOpen={setMeshOpen} right={<Shapes size={11} className="text-muted" />}>
               <div className="-mx-2">
-                <MeshPanel report={report} mods={edits.mods} target={active} errors={modErrors}
+                <MeshPanel report={report} mods={edits.mods} target={active} errors={modErrors} parts={parts.map((p) => p.key)}
                   onAdd={addMod} onRemove={removeMod} onToggle={toggleMod} onArg={setModArg} />
               </div>
             </Section>

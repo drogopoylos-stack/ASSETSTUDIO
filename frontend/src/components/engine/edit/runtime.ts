@@ -31,7 +31,7 @@
 
 import type { PlacedItem } from "./kit";
 import { nodeName, sameModel } from "./gamedress";
-import { applyEdits, hexToRgb01, pcApply, quatFromEulerXYZ, stableKeys, walkTree } from "./ops";
+import { applyEdits, hexToRgb01, pcApply, quatFromEulerXYZ, setMapResolver, stableKeys, walkTree } from "./ops";
 import { applyStage, stageCall, stageEngineOf, type StageEngine } from "./stage";
 
 export { stageCall };
@@ -44,6 +44,10 @@ export interface RuntimeOpts {
   /** three's glTF loader, bound to the game's own three: the class or a configured instance.
    *  Needed only for a `model` placement in a three.js game. */
   GLTFLoader?: any;
+  /** three itself (`import * as THREE`), for what the scene may hold no example of yet: the
+   *  Texture a part's texture set is made with. Without it, a texture already in the scene lends
+   *  its class. */
+  THREE?: any;
   /** Put the `placed` list in as well. Default true. */
   placed?: boolean;
   /** How long a placement whose source does not exist yet, or a part whose object has not been
@@ -163,6 +167,11 @@ function cleanDoc(raw: any): Doc {
     if (typeof v.shadow === "boolean") o.shadow = v.shadow;
     for (const f of OVERRIDE_NUMBERS) if (fin(v[f])) o[f] = v[f];
     if (v.piece && v3(v.piece.c) && fin(v.piece.n)) o.piece = { c: [v.piece.c[0], v.piece.c[1], v.piece.c[2]], n: v.piece.n };
+    if (v.maps && typeof v.maps === "object") {
+      const m: any = {};
+      for (const r of ["baseColor", "normal", "roughness", "ao", "arm", "metalness"]) if (typeof v.maps[r] === "string" && v.maps[r]) m[r] = v.maps[r];
+      if (Object.keys(m).length) o.maps = fin(v.maps.tile) && v.maps.tile > 0 ? { ...m, tile: v.maps.tile } : m;
+    }
     if (Object.keys(o).length) doc.parts[k] = o;
   }
   const w = raw.world;
@@ -199,10 +208,10 @@ function cleanItem(it: any): PlacedItem | null {
 
 /** The editor's own appliers, minus the modifier stack: that needs the whole modelling library,
  *  which is exactly what this file exists not to carry. */
-function applyParts(c: Ctx, doc: { parts: Record<string, any>; world?: any; verts?: any[] }): { parts: number; missing: string[]; errors: string[] } {
+function applyParts(c: Ctx, doc: { parts: Record<string, any>; world?: any; verts?: any[] }, three?: any): { parts: number; missing: string[]; errors: string[] } {
   const d = { parts: doc.parts, world: doc.world, verts: doc.verts, mods: [] };
   try {
-    const r = c.engine === "three" ? applyEdits(c.root, d, undefined, doc.world ? worldKit(c.root) : undefined) : pcApply(c.root, d);
+    const r = c.engine === "three" ? applyEdits(c.root, d, undefined, three || (doc.world ? worldKit(c.root) : undefined)) : pcApply(c.root, d);
     return { parts: r.parts, missing: r.missing, errors: r.errors };
   } catch (e: any) {
     return { parts: 0, missing: [], errors: ["parts: " + msgOf(e)] };
@@ -271,7 +280,7 @@ interface Missing { o: any; own: Owner; until: number }
  * clone still waiting for the game to spawn its source. A full apply owns the placement set, so it
  * alone bumps `gen` and drops what an older one was waiting for.
  */
-interface Job { c: Ctx; waiting: Map<string, Waiting>; missing: Map<string, Missing>; gen: number; timer: any; busy: boolean }
+interface Job { c: Ctx; waiting: Map<string, Waiting>; missing: Map<string, Missing>; gen: number; timer: any; busy: boolean; three?: any }
 const JOBS = new WeakMap<object, Job>();
 
 function jobOf(c: Ctx): Job {
@@ -301,7 +310,7 @@ function retryParts(j: Job, owners: Set<Owner>) {
   if (!j.missing.size) return;
   const sub: Record<string, any> = {};
   for (const [k, m] of j.missing) sub[k] = m.o;
-  const r = applyParts(j.c, { parts: sub });
+  const r = applyParts(j.c, { parts: sub }, j.three);
   const still = new Set(r.missing);
   const now = Date.now();
   for (const [k, m] of [...j.missing]) {
@@ -368,8 +377,11 @@ export async function applyStudioEdits(target: any, edits: any, opts: RuntimeOpt
   const own: Owner = { rep, opts, told: false };
   const j = jobOf(c);
   const owners = new Set<Owner>([own]);
+  if (opts.THREE) j.three = opts.THREE;
+  // A texture set's images, from where the game serves its files (a Vite game serves public/ at /).
+  setMapResolver((p) => resolve(p.replace(/^public\//, ""), "image", opts));
 
-  const r = applyParts(c, doc);
+  const r = applyParts(c, doc, j.three);
   rep.parts = r.parts;
   rep.errors.push(...r.errors);
   rep.missing = r.missing.slice();

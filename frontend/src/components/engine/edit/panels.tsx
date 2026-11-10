@@ -11,7 +11,7 @@ import {
   Loader2, Lock, Mountain, Search, Sprout, Sun, Trash2, Video, ZoomIn,
 } from "lucide-react";
 import { cls } from "../../ui";
-import type { BoneSpec, Clip, Mod, WorldOverride } from "./kit";
+import type { BoneSpec, Clip, Mod, PartMaps, PartOverride, WorldOverride } from "./kit";
 import { keyFrames } from "./kit";
 import type { Defects } from "./ops";
 import type { PartInfo, Stats } from "./world";
@@ -393,6 +393,7 @@ const MOD_LABEL: Record<string, string> = {
   skin: "One skin", weld: "Weld", smooth: "Smooth", subdivide: "Subdivide", mirror: "Mirror",
   solidify: "Solidify", displace: "Displace", simplify: "Simplify", flip: "Flip",
   subsurf: "Subdivision surface", bevel: "Bevel", unwrap: "UV unwrap", remesh: "Remesh", relax: "Relax",
+  array: "Array", deform: "Deform", decimate: "Decimate", boolean: "Boolean",
 };
 
 /** What each modifier is for, in the tooltip: the tool is found by its purpose, not its name. */
@@ -411,12 +412,23 @@ const MOD_HINT: Record<string, string> = {
   displace: "Push the surface along its normals with noise",
   simplify: "Fewer triangles, on a grid of the given cell",
   flip: "Turn the faces inside out — for a mesh that check() says is inverted",
+  array: "Copies in a row: count, and the offset as a share of the mesh's size (relative 1) or in world units (relative 0)",
+  deform: "Taper, twist, bend or stretch along an axis",
+  decimate: "Fewer triangles to a game budget, keeping the shape: ratio is the share of triangles kept",
+  boolean: "Cut another part out of this one (subtract), join them (union) or keep their overlap (intersect). The cutter is hidden",
 };
 
-export function MeshPanel({ report, mods, target, onAdd, onRemove, onToggle, onArg, errors }:
+const ARG_CHOICES: Record<string, Record<string, string[]>> = {
+  deform: { kind: ["taper", "twist", "bend", "stretch"], axis: ["X", "Y", "Z"] },
+  boolean: { op: ["subtract", "union", "intersect"], hide: ["show cutter", "hide cutter"] },
+  array: { relative: ["world units", "relative"], weld: ["separate", "weld joins"] },
+  mirror: { axis: ["X", "Y", "Z"] },
+};
+
+export function MeshPanel({ report, mods, target, onAdd, onRemove, onToggle, onArg, errors, parts = [] }:
   { report: Defects | null; mods: Mod[]; target: string;
     onAdd(op: Mod["op"]): void; onRemove(i: number): void; onToggle(i: number): void;
-    onArg(i: number, key: string, v: number): void; errors: string[] }) {
+    onArg(i: number, key: string, v: number | string): void; errors: string[]; parts?: string[] }) {
   return (
     <div className="px-2 py-2 space-y-2">
       {report && (
@@ -443,7 +455,7 @@ export function MeshPanel({ report, mods, target, onAdd, onRemove, onToggle, onA
       )}
 
       <div className="flex flex-wrap gap-1 pt-1 border-t border-line/60">
-        {(["skin", "subsurf", "bevel", "unwrap", "remesh", "relax", "weld", "smooth", "subdivide", "mirror", "solidify", "displace", "simplify", "flip"] as const).map((op) => (
+        {(["skin", "subsurf", "bevel", "unwrap", "remesh", "relax", "weld", "smooth", "subdivide", "mirror", "solidify", "displace", "simplify", "flip", "array", "deform", "decimate", "boolean"] as const).map((op) => (
           <button key={op} onClick={() => onAdd(op)}
             title={MOD_HINT[op] + (target ? " — on " + target : " — on the whole asset")}
             className="px-1.5 h-5 rounded border border-line bg-panel2 text-[10px] text-muted hover:text-text hover:border-brand/50">
@@ -472,11 +484,28 @@ export function MeshPanel({ report, mods, target, onAdd, onRemove, onToggle, onA
             </button>
           </div>
           <div className="grid grid-cols-2 gap-1 mt-1">
-            {Object.entries(m.args).filter(([, v]) => typeof v === "number").map(([k, v]) => (
-              <NumField key={k} label={k} value={v as number} decimals={k === "levels" || k === "axis" ? 0 : 3}
-                step={k === "levels" || k === "axis" ? 1 : k === "angle" ? 1 : 0.001}
-                onChange={(n) => onArg(i, k, n)} />
-            ))}
+            {m.op === "boolean" && (
+              <select value={String(m.args.with || "")} onChange={(e) => onArg(i, "with", e.target.value)} onKeyDown={(e) => e.stopPropagation()}
+                className="col-span-2 bg-panel2 border border-line rounded px-1 py-0.5 text-[10px]" title="The part that cuts">
+                <option value="">cut with…</option>
+                {parts.filter((p) => p !== m.target).map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
+            {Object.entries(m.args).filter(([, v]) => typeof v === "number").map(([k, v]) => {
+              const choices = ARG_CHOICES[m.op]?.[k];
+              if (choices) return (
+                <select key={k} value={String(v)} onChange={(e) => onArg(i, k, Number(e.target.value))} onKeyDown={(e) => e.stopPropagation()}
+                  className="bg-panel2 border border-line rounded px-1 py-0.5 text-[10px]" title={k}>
+                  {choices.map((c, n) => <option key={n} value={n}>{c}</option>)}
+                </select>
+              );
+              const whole = k === "levels" || k === "axis" || k === "count";
+              return (
+                <NumField key={k} label={k} value={v as number} decimals={whole ? 0 : 3}
+                  step={whole ? 1 : k === "angle" ? 1 : 0.001}
+                  onChange={(n) => onArg(i, k, n)} />
+              );
+            })}
           </div>
         </div>
       ))}
@@ -1407,3 +1436,85 @@ export function TerrainEmit({ path, name, engine, engineWhy, lod, res, size, sca
 }
 
 export { Lock };
+
+// ---- material --------------------------------------------------------------------------
+
+/** A texture set the project has (a Poly Haven download): its maps by role, project-relative. */
+export interface TextureSet { id: string; name: string; maps: Record<string, string> }
+
+const MAP_ROLES = ["baseColor", "normal", "roughness", "ao", "arm", "metalness"] as const;
+
+/** The part's look: colour, roughness, metalness, and a texture set tiled over it. `material` is
+ *  the part's first material, read for the values the code gave it; `o` is what the user changed. */
+export function MaterialPanel({ material, o, textures, onPreview, onCommit, onClear }: {
+  material: any; o: PartOverride | undefined; textures: TextureSet[];
+  onPreview(patch: PartOverride): void; onCommit(patch: PartOverride): void; onClear(): void;
+}) {
+  const [tile, setTile] = useState<number>(o?.maps?.tile ?? 1);
+  useEffect(() => { setTile(o?.maps?.tile ?? 1); }, [o?.maps?.tile]);
+  // What a drag showed last: the value to save when it ends, and nothing to save when it never moved.
+  const last = useRef<PartOverride>({});
+  const preview = (patch: PartOverride) => { last.current = { ...last.current, ...patch }; onPreview(patch); };
+  const commitLast = (k: "color" | "roughness" | "metalness") => {
+    const v = last.current[k];
+    if (v === undefined) return;
+    last.current = {};
+    onCommit({ [k]: typeof v === "number" ? Math.round(v * 1000) / 1000 : v });
+  };
+  if (!material) return <div className="text-[11px] text-muted">This part has no material.</div>;
+  const hex = material.color?.getHexString ? "#" + material.color.getHexString() : "";
+  const pbr = typeof material.roughness === "number";
+  const set = o?.maps ? textures.find((t) => t.maps.baseColor === o.maps!.baseColor) : undefined;
+  const pick = (id: string) => {
+    const t = textures.find((x) => x.id === id);
+    if (!t) { onCommit({ maps: undefined }); return; }
+    const maps: PartMaps = { tile };
+    for (const r of MAP_ROLES) if (t.maps[r]) maps[r] = t.maps[r];
+    onCommit({ maps });
+  };
+  const changed = !!o && (o.color !== undefined || o.roughness !== undefined || o.metalness !== undefined || !!o.maps);
+  return (
+    <div className="space-y-1">
+      {hex && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-[42%] shrink-0 text-[11px] text-muted">{o?.maps ? "Tint" : "Colour"}</span>
+          <input type="color" value={hex}
+            onChange={(e) => preview({ color: e.target.value })} onBlur={() => commitLast("color")}
+            className="h-6 flex-1 min-w-0 rounded bg-panel2 border border-line cursor-pointer" />
+        </div>
+      )}
+      {pbr && (
+        <>
+          <NumField label="Roughness" value={material.roughness} min={0} max={1} step={0.01} bar decimals={2}
+            onChange={(v) => preview({ roughness: Math.min(1, Math.max(0, v)) })} onCommit={() => commitLast("roughness")} />
+          <NumField label="Metalness" value={material.metalness} min={0} max={1} step={0.01} bar decimals={2}
+            onChange={(v) => preview({ metalness: Math.min(1, Math.max(0, v)) })} onCommit={() => commitLast("metalness")} />
+        </>
+      )}
+      {pbr && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-[42%] shrink-0 text-[11px] text-muted">Texture</span>
+          <select value={set?.id || ""} onChange={(e) => pick(e.target.value)}
+            className="h-6 flex-1 min-w-0 rounded bg-panel2 border border-line text-[11px] px-1">
+            <option value="">{o?.maps && !set ? "(a set not in this project)" : "None"}</option>
+            {textures.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+      )}
+      {pbr && !textures.length && (
+        <div className="text-[10px] text-muted">Download a texture set from Poly Haven to use it here.</div>
+      )}
+      {o?.maps && (
+        <NumField label="Tiles per metre" value={tile} min={0.05} max={16} step={0.05} bar decimals={2}
+          onChange={(v) => { const t = Math.max(0.05, v); setTile(t); onPreview({ maps: { ...o.maps, tile: t } }); }}
+          onCommit={() => onCommit({ maps: { ...o.maps, tile: Math.round(tile * 100) / 100 } })} />
+      )}
+      {changed && (
+        <button onClick={onClear}
+          className="w-full h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text">
+          Back to the code's material
+        </button>
+      )}
+    </div>
+  );
+}

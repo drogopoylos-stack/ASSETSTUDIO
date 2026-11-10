@@ -804,7 +804,8 @@ def _forge_note() -> str:
         " /api/polyhaven/download {\"project\",\"id\",\"type\":\"models\"|\"textures\"|\"hdris\","
         "\"res\":\"1k\"} puts the glTF (main_path), a LICENSE.txt and two renders in the project. Aim with"
         " \"ref\":\"<references.reference_clay>\" (the shape alone), build to dimensions_m, and"
-        " compare with 6.; a texture set comes with material.json naming its maps.\n"
+        " compare with 6.; a texture set comes with material.json naming its maps: put them on a part"
+        " with studio.edits.json parts.<key>.maps {baseColor,normal,arm,...,tile}.\n"
         # Terrain is the one thing on this bench a person cannot do faster by hand, and the
         # one thing Unity, Blender and Godot cannot be asked for from a command line at all.
         # Two lines, because the endpoint prints its own shapes: a wrong action answers with

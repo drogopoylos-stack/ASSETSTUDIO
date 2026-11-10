@@ -368,13 +368,33 @@ def download(project: str, asset_id: str, kind: str = "models", res: str = "1k")
     return out
 
 
+def _game_root(start: Path) -> Path:
+    """The game folder `start` is in: the nearest folder up that has Poly Haven downloads, or else
+    the nearest that is a game (package.json, studio.game.json). An editor knows the file it has
+    open and the workspace it is in, not always the game between them."""
+    from . import workspace
+    first_game = None
+    for d in [start, *start.parents]:
+        try:
+            workspace._check_browse(str(d))
+        except Exception:                                # noqa: BLE001
+            break
+        if (d / "public" / "assets" / "polyhaven").is_dir() or (d / "assets" / "polyhaven").is_dir():
+            return d
+        if first_game is None and ((d / "package.json").is_file() or (d / "studio.game.json").is_file()):
+            first_game = d
+    return first_game or start
+
+
 def downloaded(project: str) -> dict:
-    """What this project already has from Poly Haven: its polyhaven.json files."""
+    """What this project already has from Poly Haven: its polyhaven.json files. `project` may be
+    any folder or file inside the game; the paths are relative to the game folder, `root`."""
     from . import workspace
     try:
         root = workspace._check_browse(project)
     except Exception as ex:                              # noqa: BLE001
         return {"ok": False, "error": str(ex)}
+    root = _game_root(root.parent if root.is_file() else root)
     rows = []
     for base in (root / "public" / "assets" / "polyhaven", root / "assets" / "polyhaven"):
         if not base.is_dir():
@@ -388,5 +408,6 @@ def downloaded(project: str) -> dict:
             rows.append({"id": m.get("id"), "name": m.get("name"), "type": m.get("type"), "folder": rel,
                          "main": rel + "/" + str(m.get("main") or ""), "resolution": m.get("resolution"),
                          "references": {k: rel + "/" + v for k, v in (m.get("references") or {}).items()},
-                         "dimensions_m": m.get("dimensions_m")})
-    return {"ok": True, "rows": sorted(rows, key=lambda r: (r["type"] or "", r["name"] or ""))}
+                         "dimensions_m": m.get("dimensions_m"),
+                         "maps": {k: rel + "/" + v for k, v in (m.get("maps") or {}).items()}})
+    return {"ok": True, "root": str(root), "rows": sorted(rows, key=lambda r: (r["type"] or "", r["name"] or ""))}

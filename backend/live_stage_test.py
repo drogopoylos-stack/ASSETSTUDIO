@@ -67,6 +67,9 @@ class Base(unittest.TestCase):
         self._entry = L._entry
         self._enabled = L.enabled
         self._guard = L._guard
+        self._scene_off = S._off
+        # The person's own "Scene edit" switch is not what these tests are about.
+        S._off = lambda: None
         L._guard = lambda p: None
         ST._call = self.page
         L.enabled = lambda: True
@@ -79,6 +82,7 @@ class Base(unittest.TestCase):
         L._entry = self._entry
         L.enabled = self._enabled
         L._guard = self._guard
+        S._off = self._scene_off
         self.dir.cleanup()
 
     def doc(self):

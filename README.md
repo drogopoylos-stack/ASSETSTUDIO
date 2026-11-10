@@ -322,6 +322,20 @@ at the clay render and builds to the real size. Measured on Poly Haven's wooden 
 0.70 against its own clay render, and a crude axe built in code scores 0.10, so the score shows how far a
 build still has to go. A texture set comes with a `material.json` that names its maps.
 
+### Modifiers and materials
+
+The MESH section stacks Blender's modifiers. It now also has **Array** (copies at a fixed or a relative
+offset, welded if you want), **Deform** (twist, bend, taper or stretch along an axis), **Decimate** (fewer
+triangles, same size) and **Boolean** (subtract, union or intersect with another part, which is then
+hidden). The cutter's own position counts, so move it with the gizmo and the cut follows.
+
+The MATERIAL section of a selected part sets its colour, roughness and metalness, and puts a downloaded
+Poly Haven texture set on it, tiled per metre. A part made in code with no UVs gets box-projected UVs.
+A part that shares its material with others gets its own copy first, so the change stays on that part.
+The edit is saved as `parts.<key>.maps` with paths from the game folder. The game applies it with
+`studio-runtime.js`; pass `THREE` in its options (a new game does) so it can make textures when its scene
+has none yet.
+
 ### 2D games
 
 Phaser, PixiJS and HTML or React pages open in a 2D edit tab: **Game → Edit live**, or **Edit** on a

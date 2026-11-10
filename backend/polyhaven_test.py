@@ -137,6 +137,13 @@ class Download(Base):
         P.download(str(self.root), "rock", "textures", "1k")
         rows = P.downloaded(str(self.root))["rows"]
         self.assertEqual(sorted((r["type"], r["id"]) for r in rows), [("models", "axe"), ("textures", "rock")])
+        rock = next(r for r in rows if r["id"] == "rock")
+        self.assertEqual(rock["maps"]["normal"], "assets/polyhaven/textures/rock/rock_nor_gl_1k.jpg")
+        inner = self.root / "src" / "deep"
+        inner.mkdir(parents=True, exist_ok=True)
+        r = P.downloaded(str(inner))
+        self.assertEqual(Path(r["root"]).resolve(), self.root.resolve())
+        self.assertEqual(len(r["rows"]), 2)
 
 
 class Search(Base):

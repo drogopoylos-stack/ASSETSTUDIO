@@ -228,6 +228,24 @@ section("three: parts, world, and applying twice");
   eq("no document is nothing to do", [r5.parts, r5.placed, r5.errors], [0, 0, []]);
 }
 
+section("three: a texture set on a part, with the game's own three");
+{
+  const scene = new THREE.Scene();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+  const a = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+  a.name = "wall-a";
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+  b.name = "wall-b";
+  scene.add(a, b);
+  const doc = { parts: { "wall-a": { maps: { baseColor: "public/assets/t/diff.jpg", normal: "assets/t/nor.jpg", tile: 3, bad: 1 } } } };
+  const none = await applyStudioEdits(scene, doc, { retryMs: 0 });
+  ok("with no three and no texture in the scene, it says what to pass", none.errors.some((e) => /texture class/.test(e)), JSON.stringify(none.errors));
+  const r = await applyStudioEdits(scene, doc, { retryMs: 0, THREE, base: "http://game.test/" });
+  const m = a.material as THREE.MeshStandardMaterial;
+  ok("with THREE passed, the maps are made", !r.errors.length && !!m.map?.isTexture && !!m.normalMap?.isTexture && m.map!.repeat.x === 3, JSON.stringify(r.errors));
+  ok("...and only on that part: the material it shared was copied", b.material === mat && m !== mat);
+}
+
 // ------------------------------------------------------------------ three: a piece of a merged mesh
 section("three: a piece of a merged mesh moves from its rest corners");
 {
