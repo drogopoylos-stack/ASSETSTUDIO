@@ -88,6 +88,46 @@ export interface BoneSpec {
   tail: V3;
   /** Which parts this bone drives, when the rig is bound by name rather than by weight. */
   parts?: string[];
+  /** Blender's bone constraints, evaluated after the pose in hierarchy order (rig.ts). */
+  constraints?: BoneConstraint[];
+}
+
+/**
+ * One bone constraint.
+ * - `ik`: this bone's tail reaches for the target bone's head, moving `chain` bones (this one and
+ *   the ones above it; default 2).
+ * - `track`: this bone points at the target bone's head (Blender's Damped Track).
+ * - `copyRotation`: this bone takes the target's turn from its rest, on the chosen axes.
+ * - `limitRotation`: this bone's turn from rest stays within min..max degrees, on the chosen axes.
+ * `influence` 0..1 mixes the result with the pose (default 1).
+ */
+export interface BoneConstraint {
+  type: "ik" | "track" | "copyRotation" | "limitRotation";
+  target?: string;
+  chain?: number;
+  influence?: number;
+  axes?: [boolean, boolean, boolean];
+  min?: V3;
+  max?: V3;
+  off?: boolean;
+}
+const CONSTRAINT_TYPES = new Set(["ik", "track", "copyRotation", "limitRotation"]);
+function normConstraints(raw: any): BoneConstraint[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: BoneConstraint[] = [];
+  for (const c of raw) {
+    if (!c || !CONSTRAINT_TYPES.has(c.type)) continue;
+    const k: BoneConstraint = { type: c.type };
+    if (typeof c.target === "string") k.target = c.target;
+    if (typeof c.chain === "number" && isFinite(c.chain)) k.chain = Math.max(1, Math.min(16, Math.round(c.chain)));
+    if (typeof c.influence === "number" && isFinite(c.influence)) k.influence = Math.max(0, Math.min(1, c.influence));
+    if (Array.isArray(c.axes) && c.axes.length >= 3) k.axes = [!!c.axes[0], !!c.axes[1], !!c.axes[2]];
+    if (isV3(c.min)) k.min = c.min.slice(0, 3) as V3;
+    if (isV3(c.max)) k.max = c.max.slice(0, 3) as V3;
+    if (c.off === true) k.off = true;
+    out.push(k);
+  }
+  return out.length ? out : undefined;
 }
 
 export type TrackProp = "pos" | "rot" | "scale";
@@ -304,6 +344,7 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
         head: b.head.slice(0, 3) as V3,
         tail: b.tail.slice(0, 3) as V3,
         parts: Array.isArray(b.parts) ? b.parts.filter((s: any) => typeof s === "string") : undefined,
+        constraints: normConstraints(b.constraints),
       });
     }
   }

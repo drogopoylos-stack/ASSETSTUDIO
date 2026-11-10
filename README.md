@@ -282,6 +282,16 @@ as Blender's heat map, blue 0 to red 1, and follows the bone you click. The auto
 heat) are computed again at every bind, so only the corrections are saved (`weights`: bone, bind-pose
 place, weight) and laid on top; the other bones share what is left, and every corner still sums to 1.
 
+### Bone constraints
+
+Select a bone in the RIG section and add a constraint: **IK** (the bone's tail reaches for a target bone,
+moving a chain of bones), **Damped track** (it points at a target bone), **Copy rotation** (it takes a bone's
+turn, on the axes you choose) or **Limit rotation** (its turn stays within a minimum and a maximum, in
+degrees). Each has a mix and can be turned off. They run after the pose, parent bones first, as in
+Blender, and are saved on the bone. What the editor saves for a constrained bone is the pose you gave it,
+not the constraint's result, so a constraint never applies twice. A GLB carries the posed result, not the
+constraint: bake an animation before export, as with Blender's glTF exporter.
+
 ### Hands for a game
 
 `ops.riggedHand({ side, chunk, fingers })` makes a hand a game can animate: one mesh of about 2,400

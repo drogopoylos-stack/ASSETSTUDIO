@@ -36,6 +36,7 @@ import { dirOf, joinPath, loadFileAsset, mergeSpecs, type FileAsset, type PcEngi
 import { boneFromObject, uniqueBoneName } from "./rig";
 import { type ElemKind } from "./vertedit";
 import { SCULPT_BRUSHES, runStep, weld, type TopoOp, type TopoStep } from "./meshedit";
+import type { BoneConstraint } from "./kit";
 import type { ShapeKey } from "./shapekeys";
 import { mergeWeightPaints, type WeightPaint } from "./weightpaint";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
@@ -2174,6 +2175,17 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     w.buildRigFrom(bones, "parts", edits.pose);
     setParts(w.parts());
   };
+  /** A bone's constraints replaced, and the rig built again so they run. */
+  const setBoneConstraints = (name: string, list: BoneConstraint[]) => {
+    const bones = edits.bones.map((b) => (b.name === name ? { ...b, constraints: list.length ? list : undefined } : b));
+    push((e) => ({ ...e, bones }));
+    const w = world.current;
+    if (!w) return;
+    const keep = w.activeBone;
+    w.buildRigFrom(bones, w.rig?.mode || "parts", edits.pose);
+    if (keep && w.rig?.byName.has(keep)) w.selectBone(keep);
+    bump();
+  };
   const removeBone = (name: string) => {
     const bones = edits.bones.filter((b) => b.name !== name);
     const pose = { ...edits.pose };
@@ -3518,6 +3530,72 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                   weights={weights} onWeights={changeWeights}
                   onMode={(m) => setMode(m)} onClearPose={clearPose} />
               </div>
+              {activeBone && (() => {
+                const spec = edits.bones.find((b) => b.name === activeBone);
+                if (!spec) return null;
+                const list = spec.constraints || [];
+                const others = edits.bones.filter((b) => b.name !== activeBone).map((b) => b.name);
+                const LABEL: Record<BoneConstraint["type"], string> = { ik: "IK", track: "Damped track", copyRotation: "Copy rotation", limitRotation: "Limit rotation" };
+                const put = (i: number, c: BoneConstraint) => setBoneConstraints(activeBone, list.map((x, k) => (k === i ? c : x)));
+                const stop = (e: React.KeyboardEvent) => e.stopPropagation();
+                const numIn = "w-11 rounded border border-line bg-panel2/50 px-1 font-mono text-text";
+                return (
+                  <div className="pt-2 space-y-1 text-[11px]">
+                    <div className="text-muted">Constraints on <span className="text-text">{activeBone}</span></div>
+                    {list.map((c, i) => (
+                      <div key={i} className={cls("flex flex-wrap items-center gap-1 rounded border border-line p-1", c.off && "opacity-50")}>
+                        <span className="font-medium text-text">{LABEL[c.type]}</span>
+                        {c.type !== "limitRotation" && (
+                          <select value={c.target || ""} onKeyDown={stop} onChange={(e) => put(i, { ...c, target: e.target.value || undefined })}
+                            className="bg-panel2 border border-line rounded px-1 py-0.5" title="The target bone">
+                            <option value="">target…</option>
+                            {others.map((n) => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        )}
+                        {c.type === "ik" && (
+                          <label className="flex items-center gap-1 text-muted" title="How many bones the chain moves, this one included">chain
+                            <input type="number" min={1} max={16} value={c.chain ?? 2} onKeyDown={stop}
+                              onChange={(e) => put(i, { ...c, chain: Math.max(1, Math.min(16, Math.round(Number(e.target.value) || 2))) })} className={numIn} /></label>
+                        )}
+                        {(c.type === "copyRotation" || c.type === "limitRotation") && (["X", "Y", "Z"] as const).map((ax, k) => (
+                          <span key={ax} className="flex items-center gap-0.5">
+                            <label className="flex items-center gap-0.5 text-muted">
+                              <input type="checkbox" checked={(c.axes || [true, true, true])[k]}
+                                onChange={(e) => { const a = [...(c.axes || [true, true, true])] as [boolean, boolean, boolean]; a[k] = e.target.checked; put(i, { ...c, axes: a }); }} />{ax}</label>
+                            {c.type === "limitRotation" && (c.axes || [true, true, true])[k] && (
+                              <>
+                                <input type="number" title={ax + " minimum, degrees"} defaultValue={c.min?.[k] ?? -180} onKeyDown={stop}
+                                  onBlur={(e) => { const m = [...(c.min || [-180, -180, -180])] as V3; m[k] = Number(e.target.value) || 0; put(i, { ...c, min: m }); }} className={numIn} />
+                                <input type="number" title={ax + " maximum, degrees"} defaultValue={c.max?.[k] ?? 180} onKeyDown={stop}
+                                  onBlur={(e) => { const m = [...(c.max || [180, 180, 180])] as V3; m[k] = Number(e.target.value) || 0; put(i, { ...c, max: m }); }} className={numIn} />
+                              </>
+                            )}
+                          </span>
+                        ))}
+                        <label className="flex items-center gap-1 text-muted" title="How much of the constraint is mixed in">mix
+                          <input type="number" min={0} max={1} step={0.1} defaultValue={c.influence ?? 1} onKeyDown={stop}
+                            onBlur={(e) => put(i, { ...c, influence: Math.max(0, Math.min(1, Number(e.target.value))) })} className={numIn} /></label>
+                        <button className="ml-auto text-muted hover:text-text" title={c.off ? "Turn on" : "Turn off"}
+                          onClick={() => put(i, { ...c, off: !c.off })}>{c.off ? "off" : "on"}</button>
+                        <button className="text-muted hover:text-danger" title="Remove" onClick={() => setBoneConstraints(activeBone, list.filter((_, k) => k !== i))}><X size={11} /></button>
+                      </div>
+                    ))}
+                    <select value="" onKeyDown={stop} onChange={(e) => {
+                      const type = e.target.value as BoneConstraint["type"];
+                      if (!type) return;
+                      const c: BoneConstraint = type === "limitRotation" ? { type, axes: [true, false, false], min: [0, -180, -180], max: [90, 180, 180] }
+                        : type === "ik" ? { type, chain: 2 } : { type };
+                      setBoneConstraints(activeBone, [...list, c]);
+                    }} className="bg-panel2 border border-line rounded px-1 py-0.5 w-full" title="Add a bone constraint">
+                      <option value="">+ constraint…</option>
+                      <option value="ik">IK: reach for a target bone</option>
+                      <option value="track">Damped track: point at a target bone</option>
+                      <option value="copyRotation">Copy rotation from a bone</option>
+                      <option value="limitRotation">Limit rotation</option>
+                    </select>
+                  </div>
+                );
+              })()}
               {mode === "pose" && (
                 <div className="flex items-center gap-1.5 pt-1.5">
                   <span className="w-[42%] shrink-0 text-[11px] text-muted" title="How many bones above the selected one may move when its tip is dragged. 0 turns inverse kinematics off.">IK reach</span>

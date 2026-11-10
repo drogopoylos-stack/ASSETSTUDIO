@@ -15,7 +15,7 @@
 // Bones are oriented so their own +Y runs head to tail. That is what makes a pose readable: an
 // animator rotating an upper arm expects the twist to be about the arm, not about the world.
 
-import type { BoneSpec, V3 } from "./kit";
+import type { BoneConstraint, BoneSpec, V3 } from "./kit";
 import { THEME, boneGeometry } from "./overlay";
 import { fabrik } from "./ops";
 import { heatWeightsArrays } from "./model";
@@ -38,6 +38,11 @@ export interface Rig {
   bodies: any[];
   setDisplay(on: boolean, inFront: boolean): void;
   pose(pose: Record<string, V3>): void;
+  /** The pose the rig was last given, before its constraints: what the editor saves for a bone a
+   *  constraint moved, so a constraint's result is never saved as if it were posed by hand. */
+  inputPose?: Record<string, V3>;
+  /** The bones the constraints moved in the last evaluation. */
+  constrained?: Set<string>;
   /** Bone bodies for the raycaster, each carrying userData.bone. */
   pickables(): any[];
   dispose(): void;
@@ -223,10 +228,86 @@ export function applyPose(T: any, rig: Rig, pose: Record<string, V3>) {
     b.quaternion.copy(b.userData.restQuat).multiply(q);
   }
   rig.root.updateMatrixWorld(true);
+  rig.inputPose = { ...pose };
+  rig.constrained = applyConstraints(T, rig, pose);
   for (const s of rig.swapped) {
     // A skinned mesh recomputes its bone matrices from the skeleton, which has just moved.
     try { s.to.skeleton?.update?.(); } catch { /* not skinned after all */ }
   }
+}
+
+// ------------------------------------------------------------------ constraints
+
+const DEG2RAD = Math.PI / 180;
+
+/** A bone's turn from its rest, as the pose stores it (XYZ euler, radians). */
+function restEuler(T: any, b: any): V3 {
+  const e = new T.Euler().setFromQuaternion(b.userData.restQuat.clone().invert().multiply(b.quaternion), "XYZ");
+  return [e.x, e.y, e.z];
+}
+function setRestEuler(T: any, b: any, e: V3) {
+  b.quaternion.copy(b.userData.restQuat).multiply(new T.Quaternion().setFromEuler(new T.Euler(e[0], e[1], e[2], "XYZ")));
+  b.updateMatrixWorld(true);
+}
+
+/**
+ * Every bone's constraints, in hierarchy order (the bones are built parent first), each on the
+ * pose the ones before it left: Blender's evaluation. Returns the bones they moved.
+ */
+export function applyConstraints(T: any, rig: Rig, pose: Record<string, V3>): Set<string> {
+  const moved = new Set<string>();
+  for (const b of rig.bones) {
+    const list: BoneConstraint[] = (b.userData.spec?.constraints || []).filter((c: BoneConstraint) => !c.off);
+    for (const c of list) {
+      const inf = c.influence ?? 1;
+      if (inf <= 0) continue;
+      const t = c.target ? rig.byName.get(c.target) : null;
+      const axes = c.axes || [true, true, true];
+      if (c.type === "limitRotation") {
+        const e = restEuler(T, b);
+        const out: V3 = [...e] as V3;
+        for (let i = 0; i < 3; i++) {
+          if (!axes[i]) continue;
+          const lo = (c.min?.[i] ?? -180) * DEG2RAD, hi = (c.max?.[i] ?? 180) * DEG2RAD;
+          const v = Math.min(hi, Math.max(lo, e[i]));
+          out[i] = e[i] + (v - e[i]) * inf;
+        }
+        setRestEuler(T, b, out);
+      } else if (c.type === "copyRotation") {
+        if (!t || t === b) continue;
+        const e = restEuler(T, b), et = restEuler(T, t);
+        const out: V3 = [...e] as V3;
+        for (let i = 0; i < 3; i++) if (axes[i]) out[i] = e[i] + (et[i] - e[i]) * inf;
+        setRestEuler(T, b, out);
+      } else if (c.type === "track") {
+        if (!t || t === b) continue;
+        b.updateWorldMatrix(true, false);
+        const head = b.getWorldPosition(new T.Vector3());
+        const cur = b.localToWorld(new T.Vector3(0, 1, 0)).sub(head).normalize();
+        const want = t.getWorldPosition(new T.Vector3()).sub(head);
+        if (want.lengthSq() < 1e-12 || cur.lengthSq() < 1e-12) continue;
+        const swing = new T.Quaternion().setFromUnitVectors(cur, want.normalize());
+        const part = new T.Quaternion().slerp(swing, inf);
+        const world = part.multiply(b.getWorldQuaternion(new T.Quaternion()));
+        const parentQ = b.parent ? b.parent.getWorldQuaternion(new T.Quaternion()) : new T.Quaternion();
+        b.quaternion.copy(parentQ.invert().multiply(world));
+        b.updateMatrixWorld(true);
+      } else if (c.type === "ik") {
+        if (!t || t === b) continue;
+        const goal = t.getWorldPosition(new T.Vector3());
+        const before = new Map(rig.bones.map((x: any) => [x.name, x.quaternion.clone()]));
+        const r = solveChain(T, rig, b.name, [goal.x, goal.y, goal.z], Math.max(1, (c.chain ?? 2) - 1), pose);
+        for (const n of r.chain) {
+          const x = rig.byName.get(n);
+          if (inf < 1 && x) { x.quaternion.copy(before.get(n)!.clone().slerp(x.quaternion, inf)); }
+          moved.add(n);
+        }
+        rig.root.updateMatrixWorld(true);
+      }
+      moved.add(b.name);
+    }
+  }
+  return moved;
 }
 
 // ------------------------------------------------------------------ binding

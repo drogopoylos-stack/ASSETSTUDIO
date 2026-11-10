@@ -2920,6 +2920,13 @@ export class EditWorld {
     const out: Record<string, V3> = {};
     if (!this.rig) return out;
     for (const b of this.rig.bones) {
+      // A bone its constraints moved is saved as it was POSED, not as the constraint left it: the
+      // constraint runs again on load, and saving its result would apply it twice.
+      if (this.rig.constrained?.has(b.name)) {
+        const e = this.rig.inputPose?.[b.name];
+        if (e && Math.abs(e[0]) + Math.abs(e[1]) + Math.abs(e[2]) > 1e-6) out[b.name] = [r5(e[0]), r5(e[1]), r5(e[2])];
+        continue;
+      }
       const e = new this.T.Euler().setFromQuaternion(
         b.userData.restQuat.clone().invert().multiply(b.quaternion), "XYZ");
       if (Math.abs(e.x) + Math.abs(e.y) + Math.abs(e.z) > 1e-6) out[b.name] = [r5(e.x), r5(e.y), r5(e.z)];
