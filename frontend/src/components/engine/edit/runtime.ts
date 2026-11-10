@@ -32,6 +32,7 @@
 import type { PlacedItem } from "./kit";
 import { nodeName, sameModel } from "./gamedress";
 import { applyEdits, hexToRgb01, pcApply, quatFromEulerXYZ, setMapResolver, stableKeys, walkTree } from "./ops";
+import { cleanCurve, curveArrays } from "./curve";
 import { applyStage, stageCall, stageEngineOf, type StageEngine } from "./stage";
 
 export { stageCall };
@@ -143,7 +144,7 @@ export async function loadStudioEdits(url = "studio.edits.json"): Promise<any | 
 }
 
 const OVERRIDE_NUMBERS = ["roughness", "metalness", "intensity", "distance", "angle", "penumbra", "decay", "fov", "near", "far", "zoom"];
-const KINDS = ["primitive", "code", "model", "image", "clone"];
+const KINDS = ["primitive", "code", "model", "image", "clone", "curve"];
 const fin = (n: any): boolean => typeof n === "number" && isFinite(n);
 const v3 = (v: any): boolean => Array.isArray(v) && v.length >= 3 && fin(v[0]) && fin(v[1]) && fin(v[2]);
 const take3 = (v: any, d: [number, number, number]): [number, number, number] => (v3(v) ? [v[0], v[1], v[2]] : d);
@@ -532,7 +533,7 @@ function waitingFor(it: PlacedItem): string {
  *  in the scene to learn the classes from. Everything else can always try. */
 function ready(c: Ctx, it: PlacedItem): boolean {
   if (it.ref.kind === "clone") return !!findByKey(c.root, it.ref.of || "");
-  if (c.engine === "three" && (it.ref.kind === "primitive" || it.ref.kind === "image")) return !!threeKit(c.root);
+  if (c.engine === "three" && (it.ref.kind === "primitive" || it.ref.kind === "image" || it.ref.kind === "curve")) return !!threeKit(c.root);
   return true;
 }
 
@@ -562,6 +563,15 @@ async function build(c: Ctx, it: PlacedItem, opts: RuntimeOpts): Promise<any> {
       return { object: threeShape(k, shape, color), how: "a " + shape };
     }
     return { object: pcShape(pcKit(c), shape, color, it.name), how: "a " + shape };
+  }
+  if (ref.kind === "curve") {
+    const cv = cleanCurve(ref.curve);
+    if (!cv) throw new Error("a curve needs at least two points (three when closed)");
+    const r = curveArrays(cv), color = String(ref.color || "#9aa7b8");
+    const a: Arrays = { pos: r.pos, nor: r.normal, uv: r.uv, idx: Array.from(r.idx) };
+    if (c.engine !== "three") return { object: pcShape(pcKit(c), "curve", color, it.name, a), how: "a curve" };
+    const k = threeKit(c.root);
+    return k ? { object: threeShape(k, "curve", color, a), how: "a curve" } : WAIT;
   }
   if (ref.kind === "model") return c.engine === "three" ? threeModel(it, opts) : pcModel(c, it, opts);
   if (ref.kind === "code") return codeBuild(c, it, opts);
@@ -720,7 +730,7 @@ function threeKit(root: any): ThreeKit | null {
   return k;
 }
 
-function threeShape(k: ThreeKit, shape: string, color: string): any {
+function threeShape(k: ThreeKit, shape: string, color: string, arrays?: Arrays): any {
   if (shape === "pointLight" || shape === "spotLight" || shape === "dirLight") {
     const L = k.lights[shape];
     if (!L) throw new Error("the game has no " + shape + " to take three's class from — add one in code");
@@ -728,7 +738,7 @@ function threeShape(k: ThreeKit, shape: string, color: string): any {
     l.castShadow = true;
     return l;
   }
-  const a = shapeArrays(shape);
+  const a = arrays || shapeArrays(shape);
   const g = new k.Geometry();
   g.setAttribute("position", new k.Attr(a.pos, 3));
   g.setAttribute("normal", new k.Attr(a.nor, 3));
@@ -845,7 +855,7 @@ const PC_LIGHTS: Record<string, string> = { pointLight: "omni", spotLight: "spot
 /** A primitive as a PlayCanvas mesh built from the SAME arrays three's geometry has, so a box
  *  placed in either engine is the same box: the render component's own shapes differ from three's
  *  (its torus is 0.5 across, three's 1.12). */
-function pcShape(k: PcKit, shape: string, color: string, name: string): any {
+function pcShape(k: PcKit, shape: string, color: string, name: string, arrays?: Arrays): any {
   const e = new k.Entity(name, k.app);
   const rgb = hexToRgb01(color);
   if (PC_LIGHTS[shape]) {
@@ -854,12 +864,12 @@ function pcShape(k: PcKit, shape: string, color: string, name: string): any {
     e.addComponent("light", data);
     return e;
   }
-  const a = shapeArrays(shape);
+  const a = arrays || shapeArrays(shape);
   const mesh = new k.Mesh(k.app.graphicsDevice);
   mesh.setPositions(a.pos);
   mesh.setNormals(a.nor);
   mesh.setUvs(0, a.uv);
-  mesh.setIndices(new Uint16Array(a.idx));
+  mesh.setIndices(a.pos.length / 3 > 65535 ? new Uint32Array(a.idx) : new Uint16Array(a.idx));
   mesh.update(4, true);                                 // PRIMITIVE_TRIANGLES, and the bounds
   const mat = new k.Material();
   try { mat.diffuse.set(rgb[0], rgb[1], rgb[2]); } catch { /* a material with no diffuse */ }

@@ -9,6 +9,7 @@
 // A type-only import: erased at build, so this file stays free of ops.ts at runtime and
 // forge-ops.js keeps bundling on its own.
 import { cleanSteps, type TopoStep } from "./meshedit";
+import { cleanCurve, type CurveSpec } from "./curve";
 import { cleanShapes, type ShapeKey } from "./shapekeys";
 import { cleanWeightPaints, type WeightPaint } from "./weightpaint";
 import type { VertEdit } from "./ops";
@@ -205,7 +206,9 @@ export interface Edits {
 }
 
 export interface PlacedRef {
-  kind: "primitive" | "code" | "model" | "image" | "clone";
+  kind: "primitive" | "code" | "model" | "image" | "clone" | "curve";
+  /** curve: the control points and how to dress them (curve.ts). */
+  curve?: CurveSpec;
   /** primitive: which shape, and its colour. */
   shape?: string;
   color?: string;
@@ -323,7 +326,9 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
     for (const it of raw.placed) {
       const ref = it?.ref;
       if (!it || typeof it.id !== "string" || !ref || typeof ref !== "object") continue;
-      if (!["primitive", "code", "model", "image", "clone"].includes(ref.kind)) continue;
+      if (!["primitive", "code", "model", "image", "clone", "curve"].includes(ref.kind)) continue;
+      const curve = ref.kind === "curve" ? cleanCurve(ref.curve) : null;
+      if (ref.kind === "curve" && !curve) continue;
       placed.push({
         id: it.id,
         name: typeof it.name === "string" ? it.name : it.id,
@@ -336,6 +341,7 @@ export function normaliseEdits(raw: any, asset = ""): Edits {
           ...(typeof ref.url === "string" ? { url: ref.url } : {}),
           ...(typeof ref.of === "string" ? { of: ref.of } : {}),
           ...(Array.isArray(ref.args) ? { args: ref.args } : {}),
+          ...(curve ? { curve } : {}),
         },
         pos: isV3(it.pos) ? (it.pos.slice(0, 3) as V3) : [0, 0, 0],
         rot: isV3(it.rot) ? (it.rot.slice(0, 3) as V3) : [0, 0, 0],

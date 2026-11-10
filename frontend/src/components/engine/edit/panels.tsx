@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cls } from "../../ui";
 import type { BoneSpec, Clip, Mod, PartMaps, PartOverride, WorldOverride } from "./kit";
+import type { CurveProfile, CurveSpec } from "./curve";
 import { keyFrames } from "./kit";
 import type { Defects } from "./ops";
 import type { PartInfo, Stats } from "./world";
@@ -1515,6 +1516,56 @@ export function MaterialPanel({ material, o, textures, onPreview, onCommit, onCl
           Back to the code's material
         </button>
       )}
+    </div>
+  );
+}
+
+// ---- curve -----------------------------------------------------------------------------
+
+/** A placed curve's recipe: its thickness and outline, how smooth, a taper, open or closed; and
+ *  the way into its points. A slider shows while it moves and is saved when it is let go. */
+export function CurvePanel({ spec, editing, selected, onToggleEdit, onPreview, onCommit, onAddPoint, onDeletePoints }: {
+  spec: CurveSpec; editing: boolean; selected: number;
+  onToggleEdit(): void; onPreview(patch: Partial<CurveSpec>): void; onCommit(patch: Partial<CurveSpec>): void;
+  onAddPoint(): void; onDeletePoints(): void;
+}) {
+  const last = useRef<Partial<CurveSpec>>({});
+  const preview = (patch: Partial<CurveSpec>) => { last.current = { ...last.current, ...patch }; onPreview(patch); };
+  const commit = () => { const p = last.current; last.current = {}; if (Object.keys(p).length) onCommit(p); };
+  const taper = spec.taper || [1, 1];
+  const min = spec.closed ? 3 : 2;
+  return (
+    <div className="space-y-1">
+      <button onClick={onToggleEdit} title="Tab: move the control points with the gizmo"
+        className={cls("w-full h-6 rounded border text-[11px]", editing ? "border-brand/60 bg-brand/10 text-brand" : "border-line bg-panel2 text-muted hover:text-text")}>
+        {editing ? "Editing points — Tab to stop" : "Edit points (Tab)"}
+      </button>
+      {editing && (
+        <div className="flex items-center gap-1">
+          <button onClick={onAddPoint} title="E: a new point after the chosen one (or at the end)"
+            className="flex-1 h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text">Add point (E)</button>
+          <button onClick={onDeletePoints} disabled={!selected || spec.points.length - selected < min} title="X: delete the chosen points"
+            className="flex-1 h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text disabled:opacity-40">Delete (X)</button>
+        </div>
+      )}
+      <div className="text-[10px] text-muted">{spec.points.length} points{editing ? " · " + selected + " chosen · click, Shift+click, drag a box" : ""}</div>
+      <Choice<CurveProfile> value={spec.profile || "round"} onChange={(v) => onCommit({ profile: v })}
+        options={[{ v: "round", label: "Round" }, { v: "square", label: "Square" }, { v: "flat", label: "Strap" }]} />
+      <NumField label="Radius" value={spec.radius ?? 0.05} min={0.001} max={Math.max(0.5, (spec.radius ?? 0.05) * 3)} step={0.005} bar decimals={3}
+        onChange={(v) => preview({ radius: Math.max(0.001, v) })} onCommit={commit} />
+      {(spec.profile || "round") === "round" && (
+        <NumField label="Sides" value={spec.sides ?? 12} min={3} max={48} step={1} bar decimals={0}
+          onChange={(v) => preview({ sides: Math.round(Math.max(3, v)) })} onCommit={commit} />
+      )}
+      <NumField label="Smooth" value={spec.smooth ?? 8} min={0} max={24} step={1} bar decimals={0}
+        onChange={(v) => preview({ smooth: Math.round(Math.max(0, v)) })} onCommit={commit} />
+      <NumField label="Taper start" value={taper[0]} min={0} max={3} step={0.05} bar decimals={2}
+        onChange={(v) => preview({ taper: [Math.max(0, v), taper[1]] })} onCommit={commit} />
+      <NumField label="Taper end" value={taper[1]} min={0} max={3} step={0.05} bar decimals={2}
+        onChange={(v) => preview({ taper: [taper[0], Math.max(0, v)] })} onCommit={commit} />
+      <Check label="Closed loop" on={!!spec.closed} onChange={(v) => onCommit({ closed: v })}
+        hint={spec.points.length < 3 ? "a loop needs three points" : "the last point joins the first"} />
+      {!spec.closed && <Check label="Caps on the ends" on={spec.caps !== false} onChange={(v) => onCommit({ caps: v })} />}
     </div>
   );
 }

@@ -39,6 +39,7 @@ import { SCULPT_BRUSHES, runStep, weld, type TopoOp, type TopoStep } from "./mes
 import type { BoneConstraint } from "./kit";
 import type { ShapeKey } from "./shapekeys";
 import { mergeWeightPaints, type WeightPaint } from "./weightpaint";
+import { cleanCurve, defaultCurve, extendCurve, type CurveSpec } from "./curve";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -53,7 +54,7 @@ import { CHUNK_SAMPLES, TerrainTool, builderName, emitRes, ensureLayers, packTer
 import { ENGINE_DEFAULTS, worldOptions, type EnginePrefs } from "../prefs";
 import type { Axis, GizmoMode } from "./gizmo";
 import {
-  BakePanel, CameraPanel, Check, Choice, keymapFor, LightPanel, MaterialPanel, NavGizmo, NumField, Outliner, Popover, RigPanel, Section,
+  BakePanel, CameraPanel, Check, Choice, CurvePanel, keymapFor, LightPanel, MaterialPanel, NavGizmo, NumField, Outliner, Popover, RigPanel, Section,
   MeshPanel, StatsBar, TerrainBrushes, TerrainEmit, TerrainLayers, TerrainScatter, TerrainStart, TerrainStats,
   Timeline, Toolbar, Vec3Field, WorldPanel, type BakeKind, type TextureSet, type Tool,
 } from "./panels";
@@ -270,6 +271,8 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const strokePath = useRef<V3[]>([]);
   /** The shape key being edited, by name, on the mesh in edit mode. */
   const [shapeEditing, setShapeEditing] = useState("");
+  // The placed curve whose points are being moved, by key ("" when none).
+  const [curveKey, setCurveKey] = useState("");
   /** The mesh edit mode is on, as state, so the panels that depend on it draw again when it changes. */
   const [editMeshKey, setEditMeshKey] = useState("");
   const [newShapeName, setNewShapeName] = useState("");
@@ -923,6 +926,16 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
             push((e) => ({ ...e, shapes: (e.shapes || []).map((s) => (s.mesh === key && s.name === v.name ? { ...s, moves: v.moves } : s)) }));
           } else if (kind === "topo") {
             push((e) => ({ ...e, topo: [...(e.topo || []), { mesh: key, ...(value as Omit<TopoStep, "mesh">) }] }));
+          } else if (kind === "curve") {
+            // Points moved with the gizmo: the placement's recipe gets the new list.
+            const o = world.current?.objectOf(key);
+            const id = o ? placedIdOf(o) : "";
+            if (!id) return;
+            push((e) => ({ ...e, placed: (e.placed || []).map((p) => {
+              if (p.id !== id || !p.ref.curve) return p;
+              const curve = cleanCurve({ ...p.ref.curve, points: value.points });
+              return curve ? { ...p, ref: { ...p.ref, curve } } : p;
+            }) }));
           } else push((e) => ({ ...e, pose: { ...e.pose, [key]: value } }));
         },
         onNav: () => navSig.emit(),
@@ -1333,6 +1346,19 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     return () => { live = false; };
   }, [source?.project, source?.path, texturesTick]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // CURVES. The placement holds the recipe; the scene follows it on any change, undo included.
+  const curveSig = JSON.stringify((edits.placed || []).filter((p) => p.ref.kind === "curve").map((p) => [p.id, p.ref.curve]));
+  useEffect(() => {
+    const w = world.current;
+    if (!w) return;
+    for (const p of edits.placed || []) if (p.ref.kind === "curve" && p.ref.curve) w.setCurveById(p.id, p.ref.curve);
+    bump();
+  }, [curveSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // Another part chosen, or another mode: the points are put away.
+  useEffect(() => {
+    if (curveKey && (active !== curveKey || mode !== "object")) { world.current?.endCurveEdit(); setCurveKey(""); }
+  }, [active, mode]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const shapeSig = JSON.stringify((edits.shapes || []).map((k) => [k.mesh, k.name, k.moves]));
   const shapeSeen = useRef(shapeSig);
   useEffect(() => {
@@ -1738,7 +1764,11 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
         w.gizmo.end(false);
         setReadout("");
         box.current = { ...b, dragging: false, mode: "", moved: false };
-        if (mode === "object") {
+        if (w.curveEdit) {
+          const i = w.pickCurvePoint(b.x0, b.y0);
+          w.selectCurvePoints(i >= 0 ? [i] : [], b.shift);
+          bump();
+        } else if (mode === "object") {
           const keys = w.pickMany(ndcOf(e), b.shift);
           if (keys.length) w.select(keys, b.shift);
           // Nothing under the handle: the same click on empty space that deselects everywhere else.
@@ -1749,14 +1779,21 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       w.gizmo.end(true); setReadout(""); box.current.mode = ""; return;
     }
     if (b.mode === "box") {
-      if (mode === "edit") w.boxSelectElems({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, b.shift);
+      if (w.curveEdit) w.boxCurvePoints({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, b.shift);
+      else if (mode === "edit") w.boxSelectElems({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, b.shift);
       else w.boxSelect({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, b.shift);
       setRect(null);
       setParts(w.parts());
       bump();
     } else if (b.mode === "click") {
       const n = ndcOf(e);
-      if (mode === "edit") {
+      if (w.curveEdit) {
+        // Points only: a click beside them keeps the curve, as a click beside a vertex keeps the mesh.
+        const i = w.pickCurvePoint(n.px, n.py);
+        if (i >= 0) w.selectCurvePoints([i], b.shift);
+        else if (!b.shift) w.selectCurvePoints([], false);
+        bump();
+      } else if (mode === "edit") {
         // Pixels, not normalised coordinates: a corner is a dot a few pixels across, and "the one
         // nearest the cursor" is the only rule that feels the same at every zoom.
         const hit = w.pickElem(n.px, n.py);
@@ -1824,6 +1861,17 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       return;
     }
 
+    // A CURVE'S POINTS: Tab in and out, as on a mesh; E adds a point, X deletes, A chooses all.
+    if (mode === "object" && !e.ctrlKey && !e.metaKey) {
+      if (k === "Tab" && (curveKey || curveItemOf(active))) { if (curveKey) stopCurveEdit(); else startCurveEdit(); return stop(); }
+      if (curveKey && w.curveEdit) {
+        if (k === "Escape") { if (w.curveEdit.sel.size) { w.selectCurvePoints([], false); bump(); } else stopCurveEdit(); return stop(); }
+        if (k === "Delete" || k === "x" || k === "X") { curveDeletePoints(); return stop(); }
+        if (k === "e" || k === "E") { curveAddPoint(); return stop(); }
+        if (k === "a" || k === "A") { w.selectCurvePoints(e.altKey ? [] : w.curveEdit.spec.points.map((_, i) => i), false); bump(); return stop(); }
+      }
+    }
+
     // PAINT'S KEYS COME FIRST in paint mode, for the reason Terrain's do: several of them are
     // letters the object modes have spent (E, R, S, X, G), and none of those means anything here.
     // P opens paint mode from any other mode.
@@ -1865,7 +1913,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
 
     // Blender's modal transform: press the key, then move the mouse.
     const modal = (m: GizmoMode, axis: Axis) => {
-      if (mode === "pose" ? !w.activeBone : !w.selection.size) return;
+      if (w.curveEdit ? !w.curveEdit.sel.size : mode === "pose" ? !w.activeBone : !w.selection.size) return;
       const el = canvasBox.current!;
       const r = el.getBoundingClientRect();
       setGizmoMode(m);
@@ -2552,6 +2600,55 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
         : "placed — in the editor and in the running game." + (how ? " " + how : ""));
     } else if (how) setPlaceNote("placed. " + how);
   }, [resolveRef, push, source, livePlace]);
+
+  /** The placement behind a key, when it is a curve. */
+  function curveItemOf(key: string): PlacedItem | null {
+    const o = key ? world.current?.objectOf(key) : null;
+    const id = o?.userData?.studioCurve ? placedIdOf(o) : "";
+    return id ? (edits.placed || []).find((p) => p.id === id && p.ref.kind === "curve" && !!p.ref.curve) || null : null;
+  }
+  function startCurveEdit() {
+    const it = curveItemOf(active);
+    if (it?.ref.curve && world.current?.beginCurveEdit(active, it.ref.curve)) { setCurveKey(active); bump(); }
+  }
+  function stopCurveEdit() {
+    world.current?.endCurveEdit();
+    setCurveKey("");
+    bump();
+  }
+  /** A change to the recipe, saved: the effect on curveSig puts it on the tube. */
+  function updateCurve(patch: Partial<CurveSpec>, key = curveKey || active): boolean {
+    const it = curveItemOf(key);
+    const next = it?.ref.curve ? cleanCurve({ ...it.ref.curve, ...patch }) : null;
+    if (!it || !next) return false;
+    push((e) => ({ ...e, placed: (e.placed || []).map((p) => (p.id === it.id ? { ...p, ref: { ...p.ref, curve: next } } : p)) }));
+    return true;
+  }
+  /** A slider on its way: the tube shows it, nothing is saved yet. */
+  function previewCurve(patch: Partial<CurveSpec>) {
+    const it = curveItemOf(curveKey || active);
+    const next = it?.ref.curve ? cleanCurve({ ...it.ref.curve, ...patch }) : null;
+    if (it && next) { world.current?.setCurveById(it.id, next); bump(); }
+  }
+  function curveAddPoint() {
+    const ce = world.current?.curveEdit;
+    if (!ce) return;
+    const sel = [...ce.sel].sort((a, b) => a - b);
+    const after = sel.length ? sel[sel.length - 1] : ce.spec.points.length - 1;
+    if (updateCurve({ points: extendCurve(ce.spec, after) })) {
+      world.current!.setCurveSpec({ ...ce.spec, points: extendCurve(ce.spec, after) });
+      world.current!.selectCurvePoints([after + 1], false);
+      bump();
+    }
+  }
+  function curveDeletePoints() {
+    const ce = world.current?.curveEdit;
+    if (!ce || !ce.sel.size) return;
+    const left = ce.spec.points.filter((_, i) => !ce.sel.has(i));
+    if (left.length < (ce.spec.closed ? 3 : 2)) { setReadout(ce.spec.closed ? "a closed curve keeps three points" : "a curve keeps two points"); return; }
+    world.current!.selectCurvePoints([], false);
+    updateCurve({ points: left });
+  }
 
   /** Delete means delete for something the editor put there, and HIDE for something the game's
    *  own code built — because the code will build it again next run, and a sidecar that claimed
@@ -3477,6 +3574,19 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
               )}
             </Section>
 
+            {(() => {
+              const it = curveItemOf(active);
+              if (!it?.ref.curve) return null;
+              const spec = (curveKey === active && w?.curveEdit?.spec) || it.ref.curve;
+              return (
+                <Section title="Curve" defaultOpen>
+                  <CurvePanel spec={spec} editing={curveKey === active} selected={curveKey === active ? w?.curveEdit?.sel.size || 0 : 0}
+                    onToggleEdit={() => (curveKey ? stopCurveEdit() : startCurveEdit())}
+                    onPreview={previewCurve} onCommit={(patch) => { updateCurve(patch); }}
+                    onAddPoint={curveAddPoint} onDeletePoints={curveDeletePoints} />
+                </Section>
+              );
+            })()}
             {active && !extra?.light && !extra?.camera && w?.meshOf(active) && (
               <Section title={"Material" + (edits.parts[active]?.maps ? " ·" : "")} defaultOpen={false}
                 onOpen={(open) => { if (open) setTexturesTick((t) => t + 1); }}>
@@ -3865,6 +3975,8 @@ function Palette({ project, root = "", onPlace, onClose, note }: {
             <button key={sh} onClick={() => onPlace({ kind: "primitive", shape: sh }, sh)}
               className="chip hover:text-text" title={`Place a ${sh}`}>{sh.replace("Light", " light")}</button>
           ))}
+          <button onClick={() => onPlace({ kind: "curve", curve: defaultCurve() }, "curve")}
+            className="chip hover:text-text" title="Place a curve: a tube through points you move (Tab)">curve</button>
         </div>
       </div>
 

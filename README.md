@@ -336,6 +336,15 @@ The edit is saved as `parts.<key>.maps` with paths from the game folder. The gam
 `studio-runtime.js`; pass `THREE` in its options (a new game does) so it can make textures when its scene
 has none yet.
 
+### Curves
+
+**Add → curve** places a tube through four points. Its CURVE section sets the profile (round, square or a
+flat strap), the radius, the sides, how smooth the path is, a taper from start to end, a closed loop and
+the end caps. **Tab** (or **Edit points**) shows the control points: click, Shift+click or drag a box to
+choose them, move them with the gizmo or G, R and S, add one with **E** and delete with **X**. Tab again
+puts them away. Only the recipe is saved (`placed[].ref.curve`), so the game's runtime builds the same
+tube, in three.js and in PlayCanvas. An agent places one with `{"curve": [[x, y, z], …], "radius": 0.05}`.
+
 ### 2D games
 
 Phaser, PixiJS and HTML or React pages open in a 2D edit tab: **Game → Edit live**, or **Edit** on a

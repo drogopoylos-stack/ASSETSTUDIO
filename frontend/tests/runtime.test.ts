@@ -113,7 +113,9 @@ section("engine, root and keys");
     // 100 KB: the 2D stage (stage.ts), the edit-mode steps (meshedit.ts) and the sculpt brushes they
     // run (sculpt.ts) joined it, about 30 KB over the wire. A shipped game
     // imports this one file, and an extrude saved in the Studio has to run in the game too.
-    ok("the bundle stays under 100 KB", js.length < 100 * 1024, js.length + " bytes");
+    // 120 KB: placed curves brought the sweep (sweep.ts, about 7 KB), so a curve drawn in the Studio
+    // is the same tube in the game. About 41 KB over the wire.
+    ok("the bundle stays under 120 KB", js.length < 120 * 1024, js.length + " bytes");
     const exported = new Set<string>();
     const m = /export\s*\{([^}]*)\}\s*;?\s*$/m.exec(js);
     for (const part of (m ? m[1] : "").split(",")) {
@@ -326,6 +328,17 @@ const base = pathToFileURL(tmp + "/").href;
   let marked = 0; scene.traverse((n: any) => { if (n.userData.studioPlaced === "p-box") marked++; });
   ok("the same id twice leaves one object, the new one", again.ok && marked === 1 && again.object.geometry.attributes.position.count === 693 && !o.parent);
   eq("and the one it replaced gave its geometry and material back", freed, 2);
+
+  const cv = { points: [[0, 0, 0], [1, 1, 0], [2, 0, 0]], radius: 0.1, profile: "square", smooth: 4 };
+  const curve = await placeStudioItem(scene, item("p-curve", { kind: "curve", curve: cv, color: "#3366ff" }, [0, 1, 0], { name: "rail" }));
+  const co = curve.object;
+  ok("a curve is placed, made with the game's Mesh class", curve.ok && co?.constructor === Mesh && co.material.color.getHexString() === "3366ff", curve.error);
+  co.geometry.computeBoundingBox();
+  const cb = co.geometry.boundingBox;
+  ok("...the tube runs through its points: two metres long, a little over one high",
+    cb.min.x > -0.15 && cb.min.x < 0 && cb.max.x > 2 && cb.max.x < 2.15 && cb.max.y > 1 && cb.max.y < 1.3, JSON.stringify([cb.min, cb.max]));
+  const bad = await placeStudioItem(scene, item("p-bad", { kind: "curve", curve: { points: [[0, 0, 0]] } }));
+  ok("a curve with one point is refused, and says why", !bad.ok && /two points/.test(bad.error || ""), bad.error);
 
   const plane = await placeStudioItem(scene, item("p-plane", { kind: "primitive", shape: "plane", color: "#ffffff" }, [0, 0, 0], { rot: [-Math.PI / 2, 0, 0] }));
   ok("a plane is double-sided, laid flat by its own rotation", plane.object.material.side === THREE.DoubleSide && Math.abs(plane.object.rotation.x + Math.PI / 2) < 1e-12);
@@ -635,6 +648,8 @@ section("PlayCanvas: placements");
   await placeStudioItem(app, item("q-box", { kind: "primitive", shape: "cone" }, [0, 0, 0], { name: "crate-1" }));
   let n = 0; for (const c of app.root.children) if (c.__studioPlaced === "q-box") n++;
   ok("the same id twice leaves one entity, and the old one is destroyed", n === 1 && e.destroyed);
+  const pcCurve = await placeStudioItem(app, item("q-curve", { kind: "curve", curve: { points: [[0, 0, 0], [1, 0.5, 0], [2, 0, 0]], radius: 0.1 } }));
+  ok("a curve is an entity with the swept tube's arrays", pcCurve.ok && pcCurve.object.render.meshInstances[0].mesh.pos.length > 100, pcCurve.error);
 
   const empty = pcApp({ withMesh: false });
   const first = await placeStudioItem(empty, item("q-first", { kind: "primitive", shape: "sphere" }));

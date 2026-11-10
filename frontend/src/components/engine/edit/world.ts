@@ -11,7 +11,7 @@
 
 import { buildFrom, importAny, openAsset, toObject, type AssetRef, type OpenResult } from "./assetOpen";
 import { evalClip, type Clip, type Edits, type Mod, type PartOverride, type V3, type WorldOverride } from "./kit";
-import { applyEdits, applyPlaced, applyShapes, applyTopo, applyVerts, makeOps, placedIdOf, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
+import { applyEdits, applyPlaced, applyShapes, applyTopo, applyVerts, curveGeometry, makeOps, placedIdOf, type CurveSpec, restBuffer, sceneReport, stableKeys, type Defects, type Ops, type PcSnapshot, type SceneReport } from "./ops";
 import { buildPcMirror, hideRevealed, revealPlan } from "./pcmirror";
 import { groupOf, parsePieceKey, pieceAt, pieceKey, pieceVertices, piecesOf, type PieceMap } from "./pieces";
 import { cameraOutline, extraIcon, extraKind, lightOutline, type ExtraKind } from "./overlay";
@@ -348,7 +348,7 @@ export interface WorldEvents {
   onSelect(keys: string[], active: string): void;
   /** A vert edit hands back the COMPLETE list for that mesh, not a delta, so the document is
    *  replaced wholesale and applying it twice cannot drift. */
-  onEdit(kind: "part" | "pose" | "vert" | "topo" | "shape", key: string, value: any): void;
+  onEdit(kind: "part" | "pose" | "vert" | "topo" | "shape" | "curve", key: string, value: any): void;
   onNav(): void;
   /** The scene gained or lost an object. Not a transform — those already arrive as edits — but a
    *  change to WHAT IS THERE, which the sidecar and the outliner both have to hear about. */
@@ -405,6 +405,9 @@ export class EditWorld {
   /** The shape key being edited: the edited mesh shows base + key, and a drag changes the key, not
    *  the base. `base` is the mesh without the key, which the key's moves are measured from. */
   shapeEdit: { name: string; base: Float32Array } | null = null;
+  /** A placed curve whose control points the gizmo moves instead of the object. */
+  curveEdit: { key: string; obj: any; spec: CurveSpec; sel: Set<number>; p0: V3[] | null } | null = null;
+  private curveHelp: any = null;
   /** Meshes that carry edit-mode steps: a drag on one is saved as a "move" step, after the steps. */
   topoMeshes = new Set<string>();
   /** Proportional editing (Blender's O): the radius, in the mesh's own units, that a move fades over. 0 is off. */
@@ -1704,6 +1707,11 @@ export class EditWorld {
       });
     }
     this.rebuildExtras();
+    // A rebuild made the curve again: follow it to the new object, or stop if it is gone.
+    if (this.curveEdit) {
+      const o = this.objs.get(this.curveEdit.key);
+      if (o?.userData?.studioCurve) { this.curveEdit.obj = o; this.drawCurveHelp(); } else this.endCurveEdit();
+    }
   }
 
   private rebuildExtras() {
@@ -2608,6 +2616,18 @@ export class EditWorld {
     const T = this.T;
     // A brush in the hand: the move arrows would sit in the middle of what is being painted.
     if (this.mode === "paint") { this.gizmo.show(false); return; }
+    if (this.curveEdit) {
+      const ce = this.curveEdit;
+      if (!ce.sel.size) { this.gizmo.show(false); return; }
+      const c = new T.Vector3();
+      for (const i of ce.sel) c.add(new T.Vector3(...ce.spec.points[i]));
+      c.divideScalar(ce.sel.size);
+      ce.obj.updateMatrixWorld(true);
+      c.applyMatrix4(ce.obj.matrixWorld);
+      this.gizmo.place([c.x, c.y, c.z], ce.obj.getWorldQuaternion(new T.Quaternion()));
+      this.gizmo.show(true);
+      return;
+    }
     if (this.mode === "edit") {
       // On the middle of what is chosen, in world space, exactly as a multi-part selection does.
       if (!this.topo || !this.editObj || !this.vsel.size) { this.gizmo.show(false); return; }
@@ -2642,8 +2662,128 @@ export class EditWorld {
     this.gizmo.show(true);
   }
 
+  // ------------------------------------------------------------------ curve points
+  //
+  // Blender's edit mode on a curve: the control points are shown, clicked and moved with the
+  // gizmo; the tube follows while the drag lasts, and the saved edit is the new list of points.
+
+  beginCurveEdit(key: string, spec: CurveSpec): boolean {
+    const o = this.objs.get(key);
+    if (!o?.userData?.studioCurve) return false;
+    this.curveEdit = { key, obj: o, spec: { ...spec, points: spec.points.map((p) => [...p] as V3) }, sel: new Set(), p0: null };
+    this.drawCurveHelp();
+    this.placeGizmo();
+    return true;
+  }
+
+  endCurveEdit() {
+    this.curveEdit = null;
+    if (this.curveHelp) { drop(this.gizmoScene, this.curveHelp); this.curveHelp = null; }
+    this.placeGizmo();
+  }
+
+  /** A new recipe for the curve being edited (a radius, a profile, a point added): the tube now. */
+  setCurveSpec(spec: CurveSpec) {
+    const ce = this.curveEdit;
+    if (!ce) return;
+    ce.spec = { ...spec, points: spec.points.map((p) => [...p] as V3) };
+    for (const i of [...ce.sel]) if (i >= ce.spec.points.length) ce.sel.delete(i);
+    this.remakeCurve();
+    this.placeGizmo();
+  }
+
+  /** A placed curve's recipe, by its placement id: an undo, a slider, a file read again. The tube
+   *  is made again only when the recipe changed. */
+  setCurveById(id: string, spec: CurveSpec) {
+    const o = this.placedObject(id);
+    if (!o?.userData?.studioCurve) return;
+    const sig = JSON.stringify(spec);
+    if (o.userData.__curveSig === sig) return;
+    o.userData.__curveSig = sig;
+    if (this.curveEdit?.obj === o) { this.setCurveSpec(spec); return; }
+    try {
+      const g = curveGeometry(this.T, spec);
+      o.geometry?.dispose?.();
+      o.geometry = g;
+    } catch { /* too few points for a tube: keep the last one */ }
+  }
+
+  /** The points inside a dragged rectangle, in pixels. */
+  boxCurvePoints(r: { x0: number; y0: number; x1: number; y1: number }, additive: boolean) {
+    const ce = this.curveEdit;
+    if (!ce) return;
+    const [x0, x1] = [Math.min(r.x0, r.x1), Math.max(r.x0, r.x1)], [y0, y1] = [Math.min(r.y0, r.y1), Math.max(r.y0, r.y1)];
+    ce.obj.updateMatrixWorld(true);
+    const hit: number[] = [];
+    ce.spec.points.forEach((p, i) => {
+      const s = project(this.T, new this.T.Vector3(...p).applyMatrix4(ce.obj.matrixWorld), this.camera, this.size);
+      if (!s.behind && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) hit.push(i);
+    });
+    if (!additive) ce.sel.clear();
+    for (const i of hit) ce.sel.add(i);
+    this.drawCurveHelp();
+    this.placeGizmo();
+  }
+
+  /** The control point nearest the cursor, within a few pixels, or -1. */
+  pickCurvePoint(px: number, py: number): number {
+    const ce = this.curveEdit;
+    if (!ce) return -1;
+    ce.obj.updateMatrixWorld(true);
+    let best = -1, bd = 14;
+    ce.spec.points.forEach((p, i) => {
+      const s = project(this.T, new this.T.Vector3(...p).applyMatrix4(ce.obj.matrixWorld), this.camera, this.size);
+      const d = Math.hypot(s.x - px, s.y - py);
+      if (!s.behind && d < bd) { bd = d; best = i; }
+    });
+    return best;
+  }
+
+  selectCurvePoints(idx: number[], additive = false) {
+    const ce = this.curveEdit;
+    if (!ce) return;
+    if (!additive) ce.sel.clear();
+    for (const i of idx) { if (additive && ce.sel.has(i)) ce.sel.delete(i); else ce.sel.add(i); }
+    this.drawCurveHelp();
+    this.placeGizmo();
+  }
+
+  private remakeCurve() {
+    const ce = this.curveEdit;
+    if (!ce) return;
+    try {
+      const g = curveGeometry(this.T, ce.spec);
+      ce.obj.geometry?.dispose?.();
+      ce.obj.geometry = g;
+    } catch { /* too few points for a tube: keep the last one */ }
+    this.drawCurveHelp();
+  }
+
+  /** The points as dots (the chosen ones orange) and the line through them, over everything. */
+  private drawCurveHelp() {
+    const T = this.T, ce = this.curveEdit;
+    if (this.curveHelp) { drop(this.gizmoScene, this.curveHelp); this.curveHelp = null; }
+    if (!ce) return;
+    ce.obj.updateMatrixWorld(true);
+    const pts = ce.spec.points.map((p) => new T.Vector3(...p).applyMatrix4(ce.obj.matrixWorld));
+    const g = new T.Group();
+    g.name = "__curvePoints";
+    const line = new (ce.spec.closed ? T.LineLoop : T.Line)(new T.BufferGeometry().setFromPoints(pts),
+      new T.LineBasicMaterial({ color: 0xcfd6e2, depthTest: false, transparent: true, opacity: 0.55 }));
+    const dg = new T.BufferGeometry().setFromPoints(pts);
+    const col = new Float32Array(pts.length * 3);
+    pts.forEach((_: any, i: number) => col.set(ce.sel.has(i) ? [1, 0.55, 0.1] : [1, 1, 1], i * 3));
+    dg.setAttribute("color", new T.BufferAttribute(col, 3));
+    const dots = new T.Points(dg, new T.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false }));
+    line.renderOrder = dots.renderOrder = 990;
+    g.add(line, dots);
+    this.gizmoScene.add(g);
+    this.curveHelp = g;
+  }
+
   // ------------------------------------------------------------------ transforms
   beginDrag() {
+    if (this.curveEdit) { this.curveEdit.p0 = this.curveEdit.spec.points.map((p) => [...p] as V3); return; }
     if (this.mode === "edit") {
       this.vert0 = new Map();
       if (!this.topo || !this.editObj) return;
@@ -2725,6 +2865,30 @@ export class EditWorld {
 
   private previewDelta(d: DragDelta) {
     const T = this.T;
+    if (this.curveEdit) {
+      const ce = this.curveEdit;
+      if (!ce.p0) return;
+      // As a vertex: the gizmo speaks world, a point lives in the curve's own frame.
+      const wq = ce.obj.getWorldQuaternion(new T.Quaternion());
+      const ws = ce.obj.getWorldScale(new T.Vector3());
+      const inv = wq.clone().invert();
+      const move = d.move ? new T.Vector3(...d.move).applyQuaternion(inv).divide(new T.Vector3(ws.x || 1, ws.y || 1, ws.z || 1)) : null;
+      const axis = d.rotate ? new T.Vector3(...d.rotate.axis).applyQuaternion(inv).normalize() : null;
+      const piv = new T.Vector3();
+      for (const i of ce.sel) piv.add(new T.Vector3(...ce.p0[i]));
+      piv.divideScalar(Math.max(1, ce.sel.size));
+      const pts = ce.p0.map((p) => [...p] as V3);
+      for (const i of ce.sel) {
+        const v = new T.Vector3(...ce.p0[i]);
+        if (move) v.add(move);
+        if (axis && d.rotate) v.sub(piv).applyAxisAngle(axis, d.rotate.angle).add(piv);
+        if (d.scale) { v.sub(piv); v.set(v.x * d.scale[0], v.y * d.scale[1], v.z * d.scale[2]); v.add(piv); }
+        pts[i] = [v.x, v.y, v.z];
+      }
+      ce.spec = { ...ce.spec, points: pts };
+      this.remakeCurve();
+      return;
+    }
     if (this.mode === "edit") {
       if (!this.vert0 || !this.topo || !this.editObj || !this.vertPivot0) return;
       const pos = this.editObj.geometry.attributes.position.array as Float32Array;
@@ -2832,6 +2996,13 @@ export class EditWorld {
 
   private commitDelta(d: DragDelta) {
     this.previewDelta(d);
+    if (this.curveEdit) {
+      const ce = this.curveEdit;
+      const r = (v: number) => Math.round(v * 1e5) / 1e5;
+      if (ce.p0) this.ev.onEdit("curve", ce.key, { points: ce.spec.points.map((p) => [r(p[0]), r(p[1]), r(p[2])]) });
+      ce.p0 = null;
+      return;
+    }
     if (this.mode === "edit") {
       if (this.shapeEdit && this.editObj) {
         // Editing a key: the key is everything this mesh now differs from its base by.
@@ -2881,6 +3052,12 @@ export class EditWorld {
   }
 
   private revertDelta() {
+    if (this.curveEdit) {
+      const ce = this.curveEdit;
+      if (ce.p0) { ce.spec = { ...ce.spec, points: ce.p0 }; this.remakeCurve(); }
+      ce.p0 = null;
+      return;
+    }
     if (this.mode === "edit") {
       if (this.vert0 && this.topo && this.editObj) {
         const pos = this.editObj.geometry.attributes.position.array as Float32Array;

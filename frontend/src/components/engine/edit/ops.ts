@@ -1775,6 +1775,7 @@ export * from "./shapekeys";
 export * from "./sculpt";
 export * from "./decimate";
 export * from "./sweep";
+export * from "./curve";
 
 // ------------------------------------------------------------------ a scene, by name
 //
@@ -2387,6 +2388,7 @@ import { cleanShapes, shapeDeltas, type ShapeKey } from "./shapekeys";
 import { densifyArrays, sculptArrays, type Stroke } from "./sculpt";
 import { decimateArrays, type DecimateOptions } from "./decimate";
 import { boundaryLoops, reach, rimArrays, sweepArrays, type SweepOptions } from "./sweep";
+import { curveArrays, type CurveSpec } from "./curve";
 import { smoothNormalsWelded } from "./atlas";
 
 /** A three attribute as plain floats, read through getX so a normalised or interleaved buffer comes
@@ -2507,7 +2509,8 @@ function movePiecePc(e: any, t0: number, t1: number, o: any): { moved: number; e
 // ---------------------------------------------------------------------------
 
 export interface PlacedRef {
-  kind: "primitive" | "code" | "model" | "image" | "clone";
+  kind: "primitive" | "code" | "model" | "image" | "clone" | "curve";
+  curve?: CurveSpec;
   shape?: string;
   color?: string;
   file?: string;
@@ -2568,6 +2571,27 @@ export function makePrimitive(T: any, shape: string, color = "#9aa7b8"): any {
   }
 }
 
+/** A curve's tube as geometry: what a placed curve is, and what a moved point rebuilds. */
+export function curveGeometry(T: any, spec: CurveSpec): any {
+  const a = curveArrays(spec);
+  const g = new T.BufferGeometry();
+  g.setAttribute("position", new T.BufferAttribute(a.pos, 3));
+  g.setAttribute("normal", new T.BufferAttribute(a.normal, 3));
+  g.setAttribute("uv", new T.BufferAttribute(a.uv, 2));
+  g.setIndex(new T.BufferAttribute(a.idx, 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** A placed curve: the tube, in a material like a primitive's. */
+export function makeCurve(T: any, spec: CurveSpec, color = "#9aa7b8"): any {
+  const m = new T.Mesh(curveGeometry(T, spec), new T.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05 }));
+  m.castShadow = true;
+  m.receiveShadow = true;
+  m.userData.studioCurve = true;
+  return m;
+}
+
 /** A picture standing up in the world: one quad, alpha kept, lit flatly so a sprite reads as art
  *  rather than as a surface. Two-sided, because a flat thing seen from behind should not vanish. */
 export function makeSprite(T: any, url: string): any {
@@ -2596,6 +2620,7 @@ export async function applyPlaced(
     let obj: any = null;
     try {
       obj = it.ref.kind === "primitive" ? makePrimitive(T, it.ref.shape || "box", it.ref.color)
+          : it.ref.kind === "curve" && it.ref.curve ? makeCurve(T, it.ref.curve, it.ref.color)
           : it.ref.kind === "image" && it.ref.url ? makeSprite(T, it.ref.url)
           : it.ref.kind === "clone" ? cloneOf(root, it.ref.of || "")
           : await resolve(it.ref);

@@ -717,11 +717,16 @@ try:
     check("primitive -> {shape, color}; a number colour becomes #rrggbb", ref == {"kind": "primitive", "shape": "box", "color": "#ff8800"}, ref)
     ref, nm, err = S.asset_ref(str(gp), "torus")
     check("…and a shape's name alone is a primitive", ref and ref["kind"] == "primitive" and ref["shape"] == "torus", ref)
+    ref, nm, err = S.asset_ref(str(gp), {"curve": [[0, 0, 0], [1, 0.5, 0], [2, 0, 0]], "radius": 0.04, "profile": "flat", "taper": [1, 0.5]})
+    check("curve -> curve {points, radius, profile, taper}", err == "" and nm == "curve" and ref["kind"] == "curve"
+          and ref["curve"]["profile"] == "flat" and ref["curve"]["taper"] == [1, 0.5] and len(ref["curve"]["points"]) == 3, (ref, err))
     for asset, word in (({"builder": "src/nope.js#x"}, "no src/nope.js"), ({"builder": "src/assets.js#1bad"}, "not the name"),
                         ({"builder": "assets#x"}, "no code file"), ({"model": "models/none.glb"}, "no models/none.glb"),
                         ({"primitive": "blob"}, "not one of"), ({"primitive": "box", "color": "red"}, "color"),
                         ({"model": "a.glb", "clone": "x"}, "exactly one"), ({}, "must be one of"), (42, "must be one of"),
-                        ({"model": "src/assets.js"}, "not a .glb"), ({"model": "../outside.glb"}, "no ../outside.glb")):
+                        ({"model": "src/assets.js"}, "not a .glb"), ({"model": "../outside.glb"}, "no ../outside.glb"),
+                        ({"curve": [[0, 0, 0]]}, "two"), ({"curve": [[0, 0, 0], [1, 0, 0]], "closed": True}, "three"),
+                        ({"curve": [[0, 0, 0], [1, 0, 0]], "profile": "star"}, "profile")):
         ref, nm, err = S.asset_ref(str(gp), asset)
         if not (ref is None and word in err):
             check("refused before a browser is touched: %r" % (asset,), False, err)

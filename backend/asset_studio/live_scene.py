@@ -2975,7 +2975,8 @@ _SHAPES = ("box", "sphere", "cylinder", "cone", "plane", "torus", "pointLight", 
 _PLACE_KEYS = {"project", "asset", "name", "id", "at", "near", "pos", "rot", "scale", "drop", "gap", "wait",
                "save", "remove", "undo", "code", "scene", "look"}
 _ASSET_FORMS = ('{"builder": "src/assets.js#buildCrystal", "args": [{…}]}, {"model": "<project-relative .glb>"}, '
-                '{"clone": "<key>"}, {"primitive": "box", "color": "#ff8800"} or '
+                '{"clone": "<key>"}, {"primitive": "box", "color": "#ff8800"}, '
+                '{"curve": [[x, y, z], …], "radius": 0.05, "profile": "round"|"square"|"flat"} or '
                 '{"id": "<asset id from /api/engine/assets>"}')
 _BUILD_PREFIX = re.compile(r"^(?:build|make|create|spawn|new|gen|generate)(?=[A-Z0-9_])")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -3075,6 +3076,42 @@ def _args_of(asset: dict) -> list:
     return args if isinstance(args, list) else [args]
 
 
+def _curve_ref(asset: dict) -> tuple[Optional[dict], str, str]:
+    """A tube through points (curve.ts), checked here as the editor's parser checks it."""
+    real = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)  # noqa: E731
+    pts = asset.get("curve")
+    closed = asset.get("closed") is True
+    if not (isinstance(pts, list) and len(pts) >= (3 if closed else 2)
+            and all(isinstance(p, (list, tuple)) and len(p) == 3 and all(real(x) for x in p) for p in pts)):
+        return None, "", ('curve: a list of [x, y, z] points, %s at least, e.g. {"curve": [[0, 0, 0], [1, 0.5, 0], '
+                          '[2, 0, 0]], "radius": 0.05}' % ("three for a closed one" if closed else "two"))
+    spec: dict = {"points": [[float(x) for x in p] for p in pts]}
+    for f, lo, hi in (("radius", 1e-4, 100), ("sides", 3, 64), ("smooth", 0, 32)):
+        if f in asset:
+            if not real(asset[f]) or not lo <= asset[f] <= hi:
+                return None, "", "curve: %s is a number from %g to %g" % (f, lo, hi)
+            spec[f] = asset[f]
+    if "profile" in asset:
+        if asset["profile"] not in ("round", "square", "flat"):
+            return None, "", 'curve: profile is "round", "square" or "flat"'
+        spec["profile"] = asset["profile"]
+    t = asset.get("taper")
+    if t is not None:
+        if not (isinstance(t, list) and len(t) == 2 and all(real(x) and 0 <= x <= 10 for x in t)):
+            return None, "", "curve: taper is [start, end], each a share of the radius from 0 to 10"
+        spec["taper"] = list(t)
+    if closed:
+        spec["closed"] = True
+    if asset.get("caps") is False:
+        spec["caps"] = False
+    color = asset.get("color", "#9aa7b8")
+    if isinstance(color, int) and not isinstance(color, bool) and 0 <= color <= 0xFFFFFF:
+        color = "#%06x" % color
+    if not isinstance(color, str) or not _HEX.match(color):
+        return None, "", 'curve: color is "#rrggbb" (or a number such as 0xff8800)'
+    return {"kind": "curve", "curve": spec, "color": color.lower()}, "curve", ""
+
+
 def asset_ref(project: str, asset) -> tuple[Optional[dict], str, str]:
     """`asset` as the runtime's PlacedItem.ref, with a name for the placement: (ref, name, error).
 
@@ -3097,9 +3134,9 @@ def asset_ref(project: str, asset) -> tuple[Optional[dict], str, str]:
             asset = {"clone": s}
     if not isinstance(asset, dict) or not asset:
         return None, "", "asset must be one of " + _ASSET_FORMS
-    forms = [k for k in ("builder", "model", "clone", "primitive", "id") if asset.get(k) not in (None, "")]
+    forms = [k for k in ("builder", "model", "clone", "primitive", "curve", "id") if asset.get(k) not in (None, "")]
     if len(forms) != 1:
-        return None, "", ("asset names %s — give exactly one of builder, model, clone, primitive or id"
+        return None, "", ("asset names %s — give exactly one of builder, model, clone, primitive, curve or id"
                           % (" and ".join(forms) if forms else "none of them"))
     kind = forms[0]
     if kind == "builder":
@@ -3132,6 +3169,8 @@ def asset_ref(project: str, asset) -> tuple[Optional[dict], str, str]:
         # names the copy after the object the path reaches.
         name = "" if ("[" in key or key.startswith("__")) else re.sub(r"\.\d{3}$", "", key)
         return {"kind": "clone", "of": key}, name, ""
+    if kind == "curve":
+        return _curve_ref(asset)
     if kind == "primitive":
         shape = str(asset["primitive"]).strip()
         if shape not in _SHAPES:
