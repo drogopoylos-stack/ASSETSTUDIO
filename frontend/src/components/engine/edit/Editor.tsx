@@ -40,6 +40,7 @@ import type { BoneConstraint } from "./kit";
 import type { ShapeKey } from "./shapekeys";
 import { mergeWeightPaints, type WeightPaint } from "./weightpaint";
 import { cleanCurve, defaultCurve, extendCurve, type CurveSpec } from "./curve";
+import { GraphEditor } from "./GraphEditor";
 import { DabPlacer, TOOL_DEFAULTS, clamp, paintDocPath, paintKey, parsePaintDoc, pressureOf, pushRecent,
   type BrushSettings, type Dab, type PaintKeyAction, type PaintPreset, type PaintTool, type Projection } from "./paintCore";
 import type { ScreenDab, StrokeOptions } from "./paintGpu";
@@ -623,6 +624,8 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
   const [playing, setPlaying] = useState(false);
   const [clipIdx, setClipIdx] = useState(0);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [graphOn, setGraphOn] = useLocal("edit.graph", false);
+  const importInput = useRef<HTMLInputElement>(null);
 
   const box = useRef({
     dragging: false, mode: "" as "" | "nav" | "gizmo" | "box" | "click" | "terrain" | "fly" | "paint" | "sculpt" | "wpaint",
@@ -2795,6 +2798,8 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       if (!Exporter) throw new Error("the exporter did not load from " + url);
       const clips: any[] = [];
       w0.subject.traverse((o: any) => { if (Array.isArray(o.animations)) for (const c of o.animations) if (c && !clips.includes(c)) clips.push(c); });
+      // ...and the clips made here, in the Animation panel and the graph editor, baked frame by frame.
+      clips.push(...w0.bakeClips(edits.clips, edits.pose));
       const restore = w0.paint ? w0.paint.exportSwap() : () => {};
       let buf: ArrayBuffer;
       try {
@@ -2805,7 +2810,7 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
       }
       const dir = source.path ? dirOf(source.path) : (source.project || "");
       const base = (source.path ? String(source.path.split(/[\\/]/).pop()) : (source.label || "asset")).replace(/\.(glb|gltf|m?[jt]sx?)$/i, "");
-      const name = base + ".painted.glb";
+      const name = base + (mode === "paint" ? ".painted.glb" : ".export.glb");
       if (lastExport.current) await api.wsDelete(lastExport.current).catch(() => { /* already gone */ });
       const fd = new FormData();
       fd.append("dest_dir", dir);
@@ -2822,6 +2827,83 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
     }
   };
 
+  /** A three.js example module (an exporter, a loader), bound to the three this viewport runs. */
+  const exampleModule = async (name: string): Promise<any> => {
+    const loader = world.current?.loaderUrl || api.engineLoaderUrl(source?.project || "");
+    const url = loader.includes("name=") ? loader.replace(/name=[^&]*/, "name=" + name) : loader + (loader.includes("?") ? "&" : "?") + "name=" + name;
+    return import(/* @vite-ignore */ url);
+  };
+  const uploadTo = async (dir: string, name: string, blob: Blob): Promise<string> => {
+    const fd = new FormData();
+    fd.append("dest_dir", dir);
+    fd.append("file", blob, name);
+    const res = await fetch("/api/workspace/upload-file", { method: "POST", body: fd });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j?.path) throw new Error(j?.detail || "the file could not be written");
+    return String(j.path);
+  };
+
+  /** OBJ: the geometry as it stands (modifiers, curves and placements in), for any other tool.
+   *  OBJ carries no rig, no animation and no materials of three's kind; GLB is the full export. */
+  const exportObj = async () => {
+    const w0 = world.current;
+    if (!w0 || !source) return;
+    setExporting(true);
+    setExportNote("");
+    try {
+      const mod = await exampleModule("OBJExporter.js");
+      const text: string = new mod.OBJExporter().parse(w0.subject);
+      const dir = source.path ? dirOf(source.path) : (source.project || "");
+      const base = (source.path ? String(source.path.split(/[\\/]/).pop()) : (source.label || "asset")).replace(/\.(glb|gltf|obj|fbx|m?[jt]sx?)$/i, "");
+      const path = await uploadTo(dir, base + ".obj", new Blob([text], { type: "text/plain" }));
+      setExportNote("exported " + path + " (" + Math.round(text.length / 1024) + " KB, geometry only)");
+    } catch (e: any) {
+      setExportNote("export failed: " + String(e?.message || e).slice(0, 220));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /** OBJ or FBX in: made a .glb in the project's assets/imported/, then placed like any model, so
+   *  the game's runtime can place it too. An FBX in centimetres (most of them) is put in metres. */
+  const importModel = async (file: File) => {
+    const w0 = world.current;
+    if (!w0 || !source?.project) return;
+    setExporting(true);
+    setExportNote("");
+    try {
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      if (ext !== "obj" && ext !== "fbx") throw new Error("open an .obj or an .fbx");
+      const mod = await exampleModule(ext === "fbx" ? "FBXLoader.js" : "OBJLoader.js");
+      const obj = ext === "fbx" ? new mod.FBXLoader().parse(await file.arrayBuffer(), "") : new mod.OBJLoader().parse(await file.text());
+      obj.updateMatrixWorld(true);
+      const T = w0.T;
+      const size = new T.Box3().setFromObject(obj).getSize(new T.Vector3());
+      const big = Math.max(size.x, size.y, size.z);
+      let note = "";
+      if (ext === "fbx" && big > 50) { obj.scale.multiplyScalar(0.01); note = " · centimetres put in metres"; }
+      const ex = await exampleModule("GLTFExporter.js");
+      const buf = await new Promise<ArrayBuffer>((res, rej) => new ex.GLTFExporter().parse(obj, res, rej, { binary: true, animations: obj.animations || [] }));
+      // Into the GAME's folder, which the workspace may hold one level down: the backend finds it
+      // from the open file's folder (polyhaven.downloaded returns it as `root`).
+      const game = source.path
+        ? await api.polyHavenDownloaded(dirOf(source.path)).then((r) => r.root || source.project).catch(() => source.project)
+        : source.project;
+      const dir = joinPath(game, "assets/imported");
+      await api.wsMkdir(dir).catch(() => { /* there already */ });
+      const base = file.name.replace(/\.(obj|fbx)$/i, "");
+      const path = (await uploadTo(dir, base + ".glb", new Blob([buf], { type: "model/gltf-binary" }))).replace(/\\/g, "/");
+      const root = source.project.replace(/\\/g, "/").replace(/\/+$/, "");
+      const rel = path.toLowerCase().startsWith(root.toLowerCase() + "/") ? path.slice(root.length + 1) : path;
+      await placeRef({ kind: "model", url: rel }, base);
+      setExportNote("imported " + file.name + " as " + rel + " (" + Math.round(buf.byteLength / 1024) + " KB"
+        + ((obj.animations || []).length ? ", " + obj.animations.length + " animation clip" + (obj.animations.length === 1 ? "" : "s") : "") + note + ")");
+    } catch (e: any) {
+      setExportNote("import failed: " + String(e?.message || e).slice(0, 220));
+    } finally {
+      setExporting(false);
+    }
+  };
   const save = async () => {
     if (!source || !canWrite) return;
     setSaving(true);
@@ -3415,13 +3497,31 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
           </div>
 
           {showTimeline && (
-            <div className="h-24 shrink-0 border-t border-line">
+            <div className={cls("shrink-0 border-t border-line flex flex-col", graphOn && clip ? "h-64" : "h-24")}>
+              <div className={graphOn && clip ? "h-16 shrink-0" : "h-full"}>
               <Timeline clip={clip} frame={frame} playing={playing} onFrame={gotoFrame} onPlay={setPlaying}
                 onKey={insertKeyHere} onDeleteKey={deleteKeyHere}
                 target={mode === "pose" ? activeBone : active}
                 onRange={(s, en) => push((e) => ({
                   ...e, clips: e.clips.map((c, i) => (i === clipIdx ? { ...c, start: s, end: en } : c)),
-                }))} />
+                }))}
+                extra={clip && (
+                  <button onClick={() => setGraphOn(!graphOn)} title="The graph editor: the curves of the selection's keys"
+                    className={cls("chip", graphOn && "text-brand border-brand/50 bg-brand/10")}>graph</button>
+                )} />
+              </div>
+              {graphOn && clip && (
+                <div className="flex-1 min-h-0 border-t border-line">
+                  <GraphEditor clip={clip} frame={frame} target={mode === "pose" ? activeBone : active}
+                    onFrame={gotoFrame}
+                    onPreview={(c) => { const w = world.current; if (w) { w.clip = c; w.setFrame(frame, edits.pose); } }}
+                    onCommit={(c) => {
+                      push((e) => ({ ...e, clips: e.clips.map((x, i) => (i === clipIdx ? c : x)) }));
+                      const w = world.current;
+                      if (w) { w.clip = c; w.setFrame(frame, edits.pose); }
+                    }} />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -3687,6 +3787,25 @@ export default function Editor({ source, notice, prefs, aim }: Props) {
                   {shapeEditing && <div className="text-brand/80">Editing "{shapeEditing}": move corners to shape it; Mirror X and Prop work here too.</div>}
                 </div>
               )}
+            </Section>
+
+            <Section title="Export / import" defaultOpen={false}>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1">
+                  <button onClick={exportGlb} disabled={exporting || !(source?.path || source?.project)}
+                    title="GLB: meshes, materials, rig and every clip (the editor's clips baked frame by frame)"
+                    className="flex-1 h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text disabled:opacity-40">GLB</button>
+                  <button onClick={exportObj} disabled={exporting || !(source?.path || source?.project)}
+                    title="OBJ: the geometry only, for any other tool"
+                    className="flex-1 h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text disabled:opacity-40">OBJ</button>
+                </div>
+                <button onClick={() => importInput.current?.click()} disabled={exporting || !source?.project}
+                  title="An .obj or .fbx becomes a .glb in assets/imported/ and is placed here"
+                  className="w-full h-6 rounded border border-line bg-panel2 text-[11px] text-muted hover:text-text disabled:opacity-40">Import OBJ / FBX…</button>
+                <input ref={importInput} type="file" accept=".obj,.fbx" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void importModel(f); }} />
+                {exportNote && <div className="text-[10px] text-muted break-all">{exportNote}</div>}
+              </div>
             </Section>
 
             <Section title={"Bake" + (edits.bakes?.length ? " (" + edits.bakes.length + ")" : "")} defaultOpen={false}>

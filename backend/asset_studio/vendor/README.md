@@ -9,6 +9,18 @@ Four files, copied unchanged from the three.js `examples/jsm` folder (release r1
 | `SkeletonUtils.js` | `three/examples/jsm/utils/SkeletonUtils.js` |
 | `GLTFExporter.js` | `three/examples/jsm/exporters/GLTFExporter.js` |
 
+Six more, copied unchanged from release r183.2 (the frontend's three), for the editor's OBJ
+export and its OBJ / FBX import:
+
+| File | Upstream path |
+| --- | --- |
+| `OBJExporter.js` | `three/examples/jsm/exporters/OBJExporter.js` |
+| `OBJLoader.js` | `three/examples/jsm/loaders/OBJLoader.js` |
+| `FBXLoader.js` | `three/examples/jsm/loaders/FBXLoader.js` |
+| `fflate.module.js` | `three/examples/jsm/libs/fflate.module.js` (MIT, by 101arrowz) |
+| `NURBSCurve.js` | `three/examples/jsm/curves/NURBSCurve.js` |
+| `NURBSUtils.js` | `three/examples/jsm/curves/NURBSUtils.js` |
+
 three.js is MIT licensed, copyright the three.js authors
 (<https://github.com/mrdoob/three.js/blob/dev/LICENSE>).
 

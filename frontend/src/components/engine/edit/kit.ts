@@ -10,6 +10,7 @@
 // forge-ops.js keeps bundling on its own.
 import { cleanSteps, type TopoStep } from "./meshedit";
 import { cleanCurve, type CurveSpec } from "./curve";
+import { EASES, sampleKeys, type Ease } from "./graph";
 import { cleanShapes, type ShapeKey } from "./shapekeys";
 import { cleanWeightPaints, type WeightPaint } from "./weightpaint";
 import type { VertEdit } from "./ops";
@@ -146,7 +147,8 @@ function normConstraints(raw: any): BoneConstraint[] | undefined {
 }
 
 export type TrackProp = "pos" | "rot" | "scale";
-export interface Key { t: number; v: number; ease?: "linear" | "constant" | "smooth" }
+/** A key: frame, value, how the value leaves it (graph.ts), and its handles as slopes. */
+export interface Key { t: number; v: number; ease?: Ease; ti?: number; to?: number }
 export interface Track { target: string; prop: TrackProp; axis: 0 | 1 | 2; keys: Key[] }
 export interface Clip { name: string; fps: number; start: number; end: number; loop: boolean; tracks: Track[] }
 
@@ -413,7 +415,10 @@ function normClip(c: any): Clip | null {
       if (Array.isArray(t.keys)) {
         for (const k of t.keys) {
           if (!k || typeof k.t !== "number" || typeof k.v !== "number") continue;
-          keys.push({ t: k.t, v: k.v, ease: k.ease === "constant" || k.ease === "smooth" ? k.ease : "linear" });
+          const key: Key = { t: k.t, v: k.v, ease: EASES.includes(k.ease) ? k.ease : "linear" };
+          if (typeof k.ti === "number" && isFinite(k.ti)) key.ti = k.ti;
+          if (typeof k.to === "number" && isFinite(k.to)) key.to = k.to;
+          keys.push(key);
         }
       }
       keys.sort((a, b) => a.t - b.t);
@@ -432,23 +437,11 @@ function normClip(c: any): Clip | null {
 
 // ------------------------------------------------------------------ animation
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-const smooth = (u: number) => u * u * (3 - 2 * u);
 
 /** Value of one track at a frame. Outside the keys it HOLDS rather than extrapolating: an
  *  extrapolated rotation flies off the model, and a held one is what an animator expects. */
 export function sampleTrack(track: Track, t: number): number {
-  const k = track.keys;
-  if (!k.length) return 0;
-  if (t <= k[0].t) return k[0].v;
-  if (t >= k[k.length - 1].t) return k[k.length - 1].v;
-  let i = 0;
-  while (i < k.length - 1 && k[i + 1].t <= t) i++;
-  const a = k[i], b = k[i + 1];
-  if (a.ease === "constant") return a.v;
-  const span = b.t - a.t;
-  if (span <= 0) return b.v;
-  const u = (t - a.t) / span;
-  return a.v + (b.v - a.v) * (a.ease === "smooth" ? smooth(u) : u);
+  return sampleKeys(track.keys, t);
 }
 
 export function clipRange(c: Clip): [number, number] {
@@ -475,7 +468,8 @@ export function insertKey(c: Clip, target: string, prop: TrackProp, axis: 0 | 1 
   let tr = c.tracks.find((x) => x.target === target && x.prop === prop && x.axis === axis);
   if (!tr) { tr = { target, prop, axis, keys: [] }; c.tracks.push(tr); }
   const at = tr.keys.findIndex((k) => Math.abs(k.t - t) < 1e-6);
-  if (at >= 0) tr.keys[at].v = v; else tr.keys.push({ t, v, ease: "smooth" });
+  // A new key is Blender's: Bezier, its handles automatic until someone drags one.
+  if (at >= 0) tr.keys[at].v = v; else tr.keys.push({ t, v, ease: "bezier" });
   tr.keys.sort((a, b) => a.t - b.t);
   return tr;
 }

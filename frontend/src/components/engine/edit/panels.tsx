@@ -516,9 +516,11 @@ export function MeshPanel({ report, mods, target, onAdd, onRemove, onToggle, onA
 }
 
 // ------------------------------------------------------------------ timeline
-export function Timeline({ clip, frame, playing, onFrame, onPlay, onKey, onDeleteKey, target, onRange }:
+export function Timeline({ clip, frame, playing, onFrame, onPlay, onKey, onDeleteKey, target, onRange, extra }:
   { clip: Clip | null; frame: number; playing: boolean; onFrame(f: number): void; onPlay(v: boolean): void;
-    onKey(): void; onDeleteKey(): void; target: string; onRange(start: number, end: number): void }) {
+    onKey(): void; onDeleteKey(): void; target: string; onRange(start: number, end: number): void;
+    /** More buttons for the bar (the graph editor's switch). */
+    extra?: React.ReactNode }) {
   const bar = useRef<HTMLDivElement>(null);
   const start = clip?.start ?? 0;
   const end = clip?.end ?? 48;
@@ -561,6 +563,7 @@ export function Timeline({ clip, frame, playing, onFrame, onPlay, onKey, onDelet
           className={cls("chip", keys.includes(frame) ? "hover:text-danger" : "opacity-40")} title="Remove the key here">
           ◇ clear
         </button>
+        {extra}
         <span className="ml-auto text-[10px] text-muted">
           {clip ? `${clip.name} · ${allKeys.length} key${allKeys.length === 1 ? "" : "s"} · ${clip.fps} fps` : "no clip"}
         </span>

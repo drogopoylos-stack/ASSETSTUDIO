@@ -770,7 +770,10 @@ VENDOR = Path(__file__).resolve().parent / "vendor"
 # the forge writes a bench out with. Vendored rather than looked for, because half these games do
 # not install three at all — they drop a single `three.module.js` into a `vendor/` folder, and a
 # package that is not there has no examples in it.
-_LOADER_FILES = {"GLTFLoader.js", "BufferGeometryUtils.js", "SkeletonUtils.js", "GLTFExporter.js"}
+_LOADER_FILES = {"GLTFLoader.js", "BufferGeometryUtils.js", "SkeletonUtils.js", "GLTFExporter.js",
+                 # The editor's OBJ export, and its OBJ / FBX import (which becomes a .glb in the
+                 # project), with the three files FBXLoader imports.
+                 "OBJExporter.js", "OBJLoader.js", "FBXLoader.js", "fflate.module.js", "NURBSCurve.js", "NURBSUtils.js"}
 
 
 def _own_three(url: str) -> str:

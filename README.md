@@ -345,6 +345,28 @@ choose them, move them with the gizmo or G, R and S, add one with **E** and dele
 puts them away. Only the recipe is saved (`placed[].ref.curve`), so the game's runtime builds the same
 tube, in three.js and in PlayCanvas. An agent places one with `{"curve": [[x, y, z], …], "radius": 0.05}`.
 
+### Graph editor
+
+Press **graph** on the timeline to see the clip's channels for the selected part or bone as curves
+(X red, Y green, Z blue; position solid, rotation dashed). Keys are Blender's: a new key is Bezier with
+auto clamped handles, so the curve is smooth through every key and flat on a peak, and it never
+overshoots the next key. Click a key (Shift adds), drag it in time and value (whole frames; Alt for
+between), and drag a handle to shape the curve (Shift breaks the two sides apart). Pick an
+interpolation for the chosen keys: bezier, linear, constant, smooth, or Blender's back, bounce and
+elastic. **auto handles** gives the keys their automatic handles again. A drag shows in the viewport
+while it lasts, and it is one step of undo. Keys with no interpolation, from older files, stay linear.
+
+### Export and import
+
+**Export / import** in the side panel:
+
+- **GLB** writes the model with its materials, rig and every clip. The clips made in the editor are
+  baked frame by frame, so a Bezier, a bounce, an IK chain or a constraint exports as you see it.
+- **OBJ** writes the geometry only, for any other tool.
+- **Import OBJ / FBX…** converts the file to a `.glb` in the game's `assets/imported/` folder and places
+  it, so the game's runtime can place it too. An FBX in centimetres (most of them) is put in metres,
+  and its animations come along.
+
 ### 2D games
 
 Phaser, PixiJS and HTML or React pages open in a 2D edit tab: **Game → Edit live**, or **Edit** on a

@@ -3336,6 +3336,61 @@ export class EditWorld {
   // ------------------------------------------------------------------ animation
   /** Park the scene on a frame. Everything the clip does not key is left exactly as it was, so
    *  scrubbing a clip that only animates a tail does not reset the rest of the pose. */
+  /**
+   * The editor's clips as three AnimationClips, for a GLB: each frame played as the viewport plays
+   * it and what it did recorded, so a Bezier, a bounce, an IK chain or a constraint exports as
+   * seen. A clip that moves a bone records every bone, because a constraint moves bones the clip
+   * never names. Tracks are bound by uuid, which three's PropertyBinding finds like a name.
+   */
+  bakeClips(clips: Clip[], basePose: Record<string, V3>): any[] {
+    const T = this.T, out: any[] = [];
+    const keep = { clip: this.clip, frame: this.frame };
+    // Every node a bake moves goes back where it stood: playing a clip must not pose the scene.
+    const saved = new Map<any, [any, any, any]>();
+    for (const c of clips) {
+      if (!c?.tracks?.length) continue;
+      const nodes = new Map<any, Set<"position" | "quaternion" | "scale">>();
+      const want = (o: any, p: "position" | "quaternion" | "scale") => {
+        if (!saved.has(o)) saved.set(o, [o.position.clone(), o.quaternion.clone(), o.scale.clone()]);
+        if (!nodes.has(o)) nodes.set(o, new Set());
+        nodes.get(o)!.add(p);
+      };
+      let bones = false;
+      for (const tr of c.tracks) {
+        if (this.rig?.byName.has(tr.target) && tr.prop === "rot") { bones = true; continue; }
+        const o = this.objs.get(tr.target);
+        if (o) want(o, tr.prop === "pos" ? "position" : tr.prop === "rot" ? "quaternion" : "scale");
+      }
+      if (bones && this.rig) for (const b of this.rig.byName.values()) want(b, "quaternion");
+      if (!nodes.size) continue;
+      const fps = c.fps > 0 ? c.fps : 24, n = Math.max(1, Math.round(c.end - c.start));
+      const times: number[] = [];
+      const vals = new Map<any, Record<string, number[]>>();
+      this.clip = c;
+      for (let i = 0; i <= n; i++) {
+        this.setFrame(c.start + i, basePose);
+        times.push(i / fps);
+        for (const [o, props] of nodes) {
+          const v = vals.get(o) || {};
+          for (const p of props) (v[p] ||= []).push(...o[p].toArray());
+          vals.set(o, v);
+        }
+      }
+      const tracks: any[] = [];
+      for (const [o, v] of vals) {
+        if (v.position) tracks.push(new T.VectorKeyframeTrack(o.uuid + ".position", times, v.position));
+        if (v.quaternion) tracks.push(new T.QuaternionKeyframeTrack(o.uuid + ".quaternion", times, v.quaternion));
+        if (v.scale) tracks.push(new T.VectorKeyframeTrack(o.uuid + ".scale", times, v.scale));
+      }
+      out.push(new T.AnimationClip(c.name || "action", n / fps, tracks));
+    }
+    this.clip = keep.clip;
+    for (const [o, [p, q, s]] of saved) { o.position.copy(p); o.quaternion.copy(q); o.scale.copy(s); }
+    this.subject.updateMatrixWorld(true);
+    if (keep.clip) this.setFrame(keep.frame, basePose);
+    return out;
+  }
+
   setFrame(f: number, basePose: Record<string, V3>) {
     this.frame = f;
     if (!this.clip) return;
