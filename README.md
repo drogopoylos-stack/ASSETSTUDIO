@@ -322,6 +322,26 @@ at the clay render and builds to the real size. Measured on Poly Haven's wooden 
 0.70 against its own clay render, and a crude axe built in code scores 0.10, so the score shows how far a
 build still has to go. A texture set comes with a `material.json` that names its maps.
 
+### Human references at real size
+
+Poly Haven has props, furniture, plants, rocks and statues, but no humans and no creatures. Two free
+sources fill the gap for humans. Both run in Blender in background mode, with the Studio's own Blender
+profile (`data/blender_profile`), so your own Blender and its add-ons do not change:
+
+- **Blender Studio's Human Base Meshes** (CC0): 24 realistic, stylised and primitive bodies, heads,
+  hands, feet, eyes, jaws and skulls at real size (for example a male body of 1.69 m and a hand of
+  0.28 m). Each one is a GLB (at most 200 000 triangles), a front render, a side render and its size.
+- **MPFB2** (MakeHuman for Blender; what it makes is CC0): a human made to order in about 5 seconds,
+  at the height you ask for (found by bisection, within a few millimetres), with gender, age, muscle,
+  weight and proportions, and optionally a rig: `game_engine` (Unreal-style bones) or `mixamo` (Mixamo's
+  bone names, so Mixamo animations drive it).
+
+`POST /api/refs/prepare` downloads and prepares both the first time (about 100 MB, a few minutes).
+`GET /api/refs/search?q=male realistic body` finds references; `POST /api/refs/human
+{"height_m": 1.82, "gender": 1, "age_years": 30, "muscle": 0.8, "rig": "mixamo", "project": "<game>"}`
+makes one and copies it into the game's `assets/references/`. Agents are told about these only with
+`/gamemodel 3d`.
+
 ### Modifiers and materials
 
 The MESH section stacks Blender's modifiers. It now also has **Array** (copies at a fixed or a relative

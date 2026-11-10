@@ -41,6 +41,7 @@ from .routers import live as live_router
 from .routers import live_stream as live_stream_router
 from .routers import engine as engine_router
 from .routers import polyhaven as polyhaven_router
+from .routers import refs as refs_router
 from .routers import terminal as terminal_router
 from .routers import tools as tools_router
 from .routers import web as web_router
@@ -69,7 +70,7 @@ for r in (system.router, providers.router, jobs.router, catalog.router,
           review_router.router, worktrees_router.router, git_router.router,
           web_router.router, live_router.router, live_stream_router.router, engine_router.router,
           tools_router.router, mcp_router.router, codex_router.router, polyhaven_router.router,
-          ws.router):
+          refs_router.router, ws.router):
     app.include_router(r)
 
 
