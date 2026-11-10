@@ -18,6 +18,7 @@ import { MODULE_FILES, type EngineKind } from "../components/engine/studio";
 import Editor, { type EditorSource } from "../components/engine/edit/Editor";
 import { FilePicker, type Picked } from "../components/engine/edit/FilePicker";
 import { Stage2D } from "../components/engine/Stage2D";
+import { Draw2D } from "../components/engine/Draw2D";
 import { cachePrefs, mergePrefs, readCachedPrefs, watchPrefs, type EnginePrefs } from "../components/engine/prefs";
 import { Library } from "../components/engine/Library";
 import { editEngineFor } from "../components/engine/edit/assetOpen";
@@ -178,6 +179,8 @@ export default function Engine() {
   const [liveNote, setLiveNote] = useState("");
   // A 2D game open in the Edit tab. Apart from `liveProject`, which mirrors a 3D scene.
   const [stageProject, setStageProject] = useState("");
+  // The sprite editor opened on its own (`?draw=`), over the whole page.
+  const [drawProject, setDrawProject] = useState("");
   // The 2D editor shows one game, so another game in the rail closes it.
   useEffect(() => { setStageProject((p) => (p && normPath(p) !== normPath(selProject) ? "" : p)); }, [selProject]);
   const [railOpen, setRailOpen] = useSticky("engine.rail", true);
@@ -204,6 +207,9 @@ export default function Engine() {
     // is what the person chose for it last time.
     const gp = q.get("game");
     if (gp) { setSelProject(gp); setMode("game"); return; }
+    // `/engine?draw=<project>` opens the sprite editor for that game's art, with no game running.
+    const dp = q.get("draw");
+    if (dp) { setSelProject(dp); setDrawProject(dp); return; }
     const p = q.get("edit");
     if (!p) return;
     const proj = q.get("project");
@@ -856,6 +862,11 @@ export default function Engine() {
 
   return (
     <div className="h-full w-full flex flex-col bg-bg text-text">
+      {drawProject && (
+        <div className="fixed inset-0 z-50 bg-bg">
+          <Draw2D project={drawProject} onClose={() => setDrawProject("")} />
+        </div>
+      )}
       {/* NOTHING LEAVES THE BAR. A narrow window used to push the status pills off the right edge
           and wrap the title into two lines over the panel below it. The tabs and the game switch
           never shrink; everything else is allowed to. */}

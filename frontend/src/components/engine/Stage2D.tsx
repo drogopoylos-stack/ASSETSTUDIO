@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Gamepad2, ImagePlus, Loader2, MousePointer2, Pause, Play, RefreshCw, RotateCcw, Search, Undo2, X } from "lucide-react";
+import { Brush, Eye, EyeOff, Gamepad2, ImagePlus, Loader2, MousePointer2, Pause, Play, RefreshCw, RotateCcw, Search, Undo2, X } from "lucide-react";
 import { api, liveStreamStatus, liveStreamWsUrl, type LiveStreamStatus, type StageRow, type StageView } from "../../api/client";
 import type { LibraryAsset } from "../../types";
 import { cls, pollWhileVisible } from "../ui";
 import { StreamImg } from "./GameFrame";
+import { Draw2D } from "./Draw2D";
 
 // The Edit tab for a 2D game: Phaser, PixiJS, or a page of HTML.
 //
@@ -71,6 +72,7 @@ export function Stage2D({ project, name, onClose }: { project: string; name: str
   const [drag, setDrag] = useState<Drag | null>(null);
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
+  const [drawing, setDrawing] = useState(false);
   const [st, setSt] = useState<LiveStreamStatus | null>(null);
   const [attempt, setAttempt] = useState(1);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -247,6 +249,7 @@ export function Stage2D({ project, name, onClose }: { project: string; name: str
 
   return (
     <div className="absolute inset-0 flex flex-col">
+      {drawing && <Draw2D project={project} onClose={() => setDrawing(false)} onPlaced={(n) => { setNote(n); void load(); }} />}
       <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-line bg-panel text-[11px] min-w-0">
         <span className="font-medium truncate max-w-[12rem]" title={project}>{name}</span>
         <span className="chip shrink-0">{ENGINE_LABEL[engine] || "2D"}</span>
@@ -265,6 +268,9 @@ export function Stage2D({ project, name, onClose }: { project: string; name: str
         )}
         <ToolButton onClick={() => setAdding((a) => !a)} on={adding} title="Put an image of this project into the game.">
           <ImagePlus size={12} /> Add image
+        </ToolButton>
+        <ToolButton onClick={() => setDrawing(true)} on={drawing} title="Draw a sprite: pixel art or painted, with layers and animation frames, saved into the game.">
+          <Brush size={12} /> Draw
         </ToolButton>
         <ToolButton onClick={() => void send({ undo: true }, "Undone.")} title="Take the last change back, in the game and in the file (Ctrl+Z).">
           <Undo2 size={12} /> Undo

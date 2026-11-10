@@ -380,6 +380,23 @@ on disk. Agents get the same objects from the same routes (`/api/live/objects`, 
 `(app, edits)` for PixiJS and `(document, edits)` for a page. New games can start from a Phaser or a
 PixiJS template.
 
+### Drawing sprites
+
+**Draw** in the 2D edit tab (or `/engine?draw=<game folder>`) opens a sprite editor. A canvas of 128 px or
+less starts as pixel art; a larger one starts with the soft brush.
+
+- Tools: pencil (P, whole pixels), brush (B, Paint's brush with hardness), eraser (E), fill (G), line (L),
+  rectangle (R), ellipse (O), picker (I) and move (V). Shift keeps a square, a circle or 45° lines;
+  `[` and `]` change the size; M mirrors across the middle.
+- Layers with visibility, opacity, order and merge down; animation frames with playback, fps and onion
+  skin (the frame before in red, the frame after in green). A stroke never covers more than its opacity.
+- **Save** writes `<name>.png` into the game's `assets/drawn/` (or `public/assets/drawn/` in a Vite game)
+  and the editable `<name>.draw.json` beside it. With more than one frame it also writes
+  `<name>.sheet.png` and `<name>.sheet.json`, a TexturePacker "JSON Hash" atlas that Phaser's
+  `load.atlas` and PixiJS's `Assets.load` read, with the animation and the frame time in it.
+- **Save & place** also puts the sprite into the running game. **Open** opens any picture of the game;
+  a drawing made here comes back with its layers and frames.
+
 On an HTML page, `pos` is an offset from where the layout puts the element, and the change is a CSS
 rule found by the element's address, so it survives a re-render. The address is its place in the page,
 so give an element an `id` or a `data-testid` if its place can change.
