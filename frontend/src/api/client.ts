@@ -387,6 +387,14 @@ export const api = {
     `/api/engine/module?project=${encodeURIComponent(project)}&engine_kind=${encodeURIComponent(engineKind)}`,
   // NOT `liveStatus` — that name is already taken by the Claude-session live state below, and a
   // duplicate key in this object silently shadows one of them.
+  /** The prompt-cache guard (backend cache_guard.py): per live Claude session, the size of the
+   *  cached conversation, when its cache expires, and what the guard does next. */
+  cacheGuardStatus: () =>
+    req<{ enabled: boolean; min_tokens: number; after_s: number; image_shrink: boolean;
+          compact_window: number;
+          sessions: { project: string; ctx_tokens: number; cache_ttl_s: number; idle_s: number | null;
+                      expires_in_s: number | null; guard_at: number; cli_version: string;
+                      next: string }[] }>("/api/mission/cache-guard"),
   liveGameStatus: () =>
     req<{ ok: boolean; enabled: boolean; available: boolean; why: string;
           tabs: { project: string; url: string; engine: string; device: string;
@@ -453,6 +461,9 @@ export const api = {
       models?: { name: string; path: string; v?: number }[];
       at?: { view?: string; az?: number; el?: number; zoom?: number; framed?: string };
       stats?: { triangles?: number; meshes?: number; materials?: number };
+      /** "file" when this is not the forge's bench but a model file an agent wrote with its own
+       *  tools, newer than anything the forge holds; `file` is where it is. */
+      source?: string; file?: string;
       error?: string;
     }>("/api/live/bench?project=" + encodeURIComponent(project)),
   /** One frame of the live page, written to disk. `path` is what `fileUrl` then serves. */
@@ -771,6 +782,25 @@ export const api = {
   codexInstall: (update = true) =>
     req<{ ok: boolean; running?: boolean; error?: string }>(
       "/api/codex/install", { method: "POST", body: JSON.stringify({ update }), timeoutMs: 30_000 }),
+  /** DeepSeek Creator mode: the official DeepSeek Harness app, run by the Studio for one folder.
+   *  `ready` means the pinned app and its own pnpm are installed. */
+  deepseekCreatorStatus: () =>
+    req<{ ok: boolean; version: string; installed: string; ready: boolean; pnpm: boolean;
+          node: string; node_ok: boolean;
+          install: { running: boolean; ok: boolean | null; error: string };
+          install_log: string;
+          servers: { folder: string; url: string; pid: number; started: number; via: string }[] }>(
+      "/api/deepseek/creator/status"),
+  deepseekCreatorInstall: () =>
+    req<{ ok: boolean; running?: boolean; error?: string }>(
+      "/api/deepseek/creator/install", { method: "POST", body: "{}" }),
+  /** Starts the app for the folder (or reuses its server). The URL carries the app's own token. */
+  deepseekCreatorOpen: (folder: string) =>
+    req<{ ok: boolean; url?: string; reused?: boolean; error?: string; needs_install?: boolean; needs_key?: boolean }>(
+      "/api/deepseek/creator/open", { method: "POST", body: JSON.stringify({ folder }), timeoutMs: 90_000 }),
+  deepseekCreatorStop: (folder = "") =>
+    req<{ ok: boolean; stopped: string[] }>(
+      "/api/deepseek/creator/stop", { method: "POST", body: JSON.stringify({ folder }), timeoutMs: 60_000 }),
   /** Drop one Codex conversation from the Studio's list. With `rollout` it also moves Codex's own
    *  rollout file into an archive folder — the way out of a conversation that is too large to
    *  reopen. `project` is the feed id the session list was fetched with. */

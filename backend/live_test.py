@@ -924,8 +924,9 @@ print("\nThe bench: what the page is holding right now")
 # A generation is a finished run. The bench is what the agent has in front of it, and it changes
 # on every call including the ones that draw no picture — which is most of them.
 check("the bench can be read", callable(getattr(live, "bench", None)))
+# The forge's half. A model file an agent wrote (agent_glb) needs no browser and no forge.
 check("...and it is guarded like the rest of the forge",
-      "_guard(project, forge=True)" in _src.split("def bench(", 1)[1].split("\ndef ", 1)[0])
+      "_guard(project, forge=True)" in _src.split("def _forge_bench(", 1)[1].split("\ndef ", 1)[0])
 check("a run that does not clear APPENDS, so building a part at a time works",
       "and then" in _src and "if clear or not old:" in _src)
 check("...which is what a mirror needs to rebuild the WHOLE scene", "def session_code" in _src)

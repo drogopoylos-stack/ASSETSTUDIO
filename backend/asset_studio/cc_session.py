@@ -33,6 +33,7 @@ from . import claude_auth
 from . import model_access
 from . import hook_events
 from . import web_tools
+from . import cache_guard
 
 SESS_DIR = DATA_DIR / "sessions"
 SESS_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,7 +109,11 @@ class _Live:
                  # process, so a turn can take its delta instead of the raw figure (see the result
                  # handler). `call_seq` names the process, so a ledger row can be attributed to the
                  # run that produced it — the one thing both ledgers were missing.
-                 "call_cost", "call_seq")
+                 "call_cost", "call_seq",
+                 # THE CACHE GUARD (cache_guard.py): when the main thread last used the prompt
+                 # cache, how big the cached conversation is, how long the cache lives, when the
+                 # guard last compacted, and the CLI build this process runs.
+                 "last_api", "ctx_tokens", "cache_ttl", "guard_at", "cli_version")
 
     def __init__(self, project_id: str, proc: subprocess.Popen, logf, sig: tuple,
                  session_id: Optional[str]):
@@ -146,6 +151,11 @@ class _Live:
         self.btw_pending = False     # a /btw note awaits the mid-turn hook (or turn-end fallback)
         self.call_cost = 0.0         # the CLI's running total_cost_usd for THIS process
         self.call_seq = _next_call_id()
+        self.last_api = 0.0          # epoch of the last main-thread request (the cache was used)
+        self.ctx_tokens = 0          # input + cache read + cache write of that request
+        self.cache_ttl = 0.0         # 3600 once a 1-hour cache write is seen; 0 = not known yet
+        self.guard_at = 0.0          # when the cache guard last sent /compact
+        self.cli_version = ""        # `claude_code_version` from the init event
 
 # Pinned ids first, then the aliases. `claude-fable-5-1` arrived with CLI 2.1.257 and
 # `claude-opus-5-5` with 2.1.280; both roll out per account, so either can be listed here and still
@@ -153,8 +163,10 @@ class _Live:
 # silently costing a turn. Opus 5.5 needs nothing else from this file: `_apply_1m` gives any id
 # holding "opus" the [1m] suffix (its catalog entry sets supports_1m_suffix), fast mode is a config
 # flag rather than a per-model argument, and --effort takes the same five levels.
+# `claude-fable-5-2` (released 2026-11-09) is in the catalog of CLI 2.1.322: 1M native, default
+# effort high, and its catalog fallback is Fable 5.1. A one-word turn ran on it on 2026-11-12.
 MODELS = ["default", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "opus",
-          "claude-fable-5-1", "claude-fable-5", "claude-sonnet-5-5", "sonnet", "haiku"]
+          "claude-fable-5-2", "claude-fable-5-1", "claude-fable-5", "claude-sonnet-5-5", "sonnet", "haiku"]
 
 # A pinned definition is needed: the Agent tool's `model` argument only accepts
 # family aliases, which may resolve to an older Sonnet on some providers.
@@ -1596,6 +1608,24 @@ def _engine_pointer_note(cwd: str = "") -> str:
             f"'cwd={proj}'. Never start your own browser for it.{tools}")
 
 
+def _subagent_cache_note() -> str:
+    """One rule for subagents about long waits (on while the cache guard is on).
+
+    A subagent's prompt cache lives FIVE MINUTES after its last request (the main session's lives
+    an hour). A single command that runs longer lets it expire, and the next request writes the
+    subagent's whole context again at 25 times the price of reading it. Measured 2026-11-05..12:
+    18 Opus subagents, 14 of them past 200k tokens; the largest rewrites followed one `Bash` call
+    that waited 5-6.5 minutes (`until grep ...`, `timeout 500 node replay.mjs`): $19.40 of the
+    $28 lost to expiry. A check that returns inside four minutes is a request, and a request reads
+    the cache and keeps it alive, so the same wait done in checks costs a read each time instead.
+    """
+    return ("PROMPT CACHE: your cache lives 5 minutes after your last request. A command that runs "
+            "longer than about 4 minutes lets it expire, and your next request writes your whole "
+            "context again at about 25 times the price of reading it. For a job longer than that, "
+            "start it in the background, then check it with a command that returns within 4 "
+            "minutes, and repeat until it is done.")
+
+
 def _browser_rule_note() -> str:
     """Two facts every agent needs about browsers, and nothing else.
 
@@ -1776,10 +1806,17 @@ def _context_window_note(model: str) -> str:
             "`/clear`. When the user turns to an UNRELATED task, say in one line that a fresh "
             "conversation there costs less, and let them decide."
         )
+    # The one exception, for every plan and not only Pro: every request re-reads the whole
+    # conversation, the thinking of every earlier turn included (the CLI keeps all of it), so an
+    # UNRELATED task carried on in a 700k-token conversation pays to read 700k tokens of another
+    # job on every step. Measured on KAPOW, 2026-11-12: a request read 735k tokens on average.
+    # The user decides; the agent only says it once, and never mid-task.
     return head + (
         "Do NOT recommend `/clear`, `/compact`, a fresh session, or a handoff document because the "
         "conversation feels long; recommend it only when you are genuinely near the limit or the "
-        "user asks. Long is normal here. Keep working."
+        "user asks. Long is normal here. Keep working. One exception: when the user turns to an "
+        "UNRELATED task, say in one line that a new conversation costs less there (every request "
+        "re-reads this whole conversation), and let them decide."
     )
 
 
@@ -2108,6 +2145,8 @@ def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
     # and its one-line alternative, which is what a fan-out actually needs — see the docstring
     # on _browser_rule_note for what leaving it out cost.
     sub_notes = [_browser_rule_note()]
+    if not mission.alt_prefix(project_id) and cache_guard.enabled():
+        sub_notes.append(_subagent_cache_note())
     if settings.get("cc_graphify"):
         sub_notes.append(_graphify_subagent_note(cwd))
     # A research fan-out is exactly where a blocked page costs most: N agents each writing up
@@ -2185,6 +2224,33 @@ def _activity_from_content(content) -> str:
     return ""
 
 
+def _note_cache_use(live: "_Live", usage: dict) -> None:
+    """One main-thread request: the cache was used now, and holds this many tokens (lock held).
+
+    `message_start` carries the full input side of the usage: plain input, cache read, cache
+    write, and the split of the write by lifetime. The lifetime is learned from the write, so a
+    session whose cache lives 5 minutes is never compacted on a 50-minute clock."""
+    try:
+        ctx = (int(usage.get("input_tokens") or 0) + int(usage.get("cache_read_input_tokens") or 0)
+               + int(usage.get("cache_creation_input_tokens") or 0))
+        cc = usage.get("cache_creation") or {}
+        if int(cc.get("ephemeral_1h_input_tokens") or 0) > 0:
+            live.cache_ttl = cache_guard.TTL_1H
+        elif int(cc.get("ephemeral_5m_input_tokens") or 0) > 0 and not live.cache_ttl:
+            live.cache_ttl = 300.0
+    except (TypeError, ValueError, AttributeError):
+        return
+    if ctx <= 0:
+        return
+    live.ctx_tokens = ctx
+    live.last_api = time.time()
+    try:
+        cache_guard.note_request(live.project_id, live.session_id or "", live.cli_version,
+                                 ctx, live.cache_ttl, live.last_api)
+    except Exception:
+        pass
+
+
 def _live_progress(live: "_Live", typ: str, ev: dict) -> None:
     """Update the live token count, the streaming answer text, and the current activity from
     one stream event (lock held).
@@ -2219,6 +2285,10 @@ def _live_progress(live: "_Live", typ: str, ev: dict) -> None:
                 live.cur_kind = ""
                 live.cur_tokens = int(((e.get("message") or {}).get("usage") or {}).get("output_tokens", 0) or 0)
                 live.cur_block_base = live.cur_tokens
+                # A subagent's request uses ITS OWN cache, not the conversation's, so only the
+                # main thread moves the cache guard's clock.
+                if not ev.get("parent_tool_use_id"):
+                    _note_cache_use(live, (e.get("message") or {}).get("usage") or {})
             elif et == "content_block_start":
                 cb = e.get("content_block") or {}
                 live.cur_kind = cb.get("type") or ""
@@ -2429,6 +2499,10 @@ def _reg_checkpoint(live: "_Live") -> None:
     d["offset"] = int(live.read_from)
     if live.session_id:
         d["session_id"] = live.session_id
+    # The process's running total at this offset. A backend that adopts the process starts reading
+    # here, so it must start pricing here too: without it the first result it reads was banked as
+    # one turn costing everything the process had spent.
+    d["call_cost"] = float(live.call_cost or 0.0)
     try:
         p.write_text(json.dumps(d), encoding="utf-8")
     except Exception:
@@ -2567,8 +2641,16 @@ def _live_reader(live: "_Live") -> None:
                     # pin it: this is the conversation the Studio is really running, so a
                     # restart resumes THIS one even if something else touched the folder
                     mission.remember_active_session(live.project_id, sid)
+                # The build this conversation's cache was written by: a resume on another build
+                # writes the whole conversation again (cache_guard.warm_binary).
+                ver = str(ev.get("claude_code_version") or "")
+                if ver:
+                    live.cli_version = ver
+                    try:
+                        cache_guard.note_version(live.project_id, live.session_id or "", ver)
+                    except Exception:
+                        pass
             elif typ == "result":
-                _reg_checkpoint(live)          # a new backend may safely resume from here
                 with live.lock:
                     live.turn_active = False   # turn finished
                     live.last_result = time.time()   # busy clears unless a newer write is pending
@@ -2615,13 +2697,34 @@ def _live_reader(live: "_Live") -> None:
                     live.cur_kind = ""
                     live.compacting = False
                     live.activity = ""
+                    if turn["compacting"]:
+                        live.ctx_tokens = 0    # small again; the next request reports the new size
+                # A new backend may resume from here — and it must inherit the high-water mark with
+                # the offset, or its first result re-banks this whole process (see below). After
+                # the cost update on purpose: the mark saved is the one this result set.
+                _reg_checkpoint(live)
+                if turn["compacting"]:
+                    try:
+                        cache_guard.note_compacted(live.project_id)
+                    except Exception:
+                        pass
                 # A RESULT THAT DID NO WORK IS A NOTIFICATION, NOT A TURN. The CLI emits one per
                 # background agent (`num_turns: 0`, `origin.kind: "task-notification"`, no tokens),
                 # and banking those wrote 14 rows on this machine that carried the PREVIOUS turn's
                 # cost a second time. Nothing about a notification belongs in a ledger of what the
                 # work cost.
-                no_work = (int(turn["tokens"] or 0) <= 0 and float(turn["cost"] or 0) <= 0
-                           and int(ev.get("num_turns") or 0) <= 0)
+                #
+                # THE COST IS NOT PART OF THE TEST ANY MORE, and that was the second leak. A result
+                # with no tokens and no message can still carry a total: the first result of a
+                # process the Studio did not watch from its start - one ADOPTED after a backend
+                # restart (its high-water mark began at 0), or a resumed one whose total starts
+                # from a restored figure. Its "delta" was then the whole previous total. 45 rows,
+                # $373.58, on this machine by 2026-11-12, among them one KAPOW row of $58.74 that
+                # was exactly the sum of the process's six turns before it. The high-water mark
+                # above has already moved to that figure, so the next real turn is priced right.
+                # A /compact streams no message of its own and IS billed, so it never counts.
+                no_work = (int(turn["tokens"] or 0) <= 0 and int(turn["msgs"] or 0) <= 0
+                           and not turn["compacting"])
                 # how fast this model/effort really is — recorded per turn so the numbers can be
                 # compared later. A /compact is excluded: it is one long internal op, not a reply.
                 if not turn["compacting"] and not no_work:
@@ -3063,6 +3166,15 @@ def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Liv
         env.update(_alt_env(alt, str(sig[2]) if len(sig) > 2 else "default"))
     else:
         env.update(_claude_context_env())
+        # Where auto-compaction starts (CLI 2.1.322: CLAUDE_CODE_AUTO_COMPACT_WINDOW, clamped by
+        # the CLI to the model's window). Not in the signature on purpose: it changes no prompt
+        # text, so it rides the next natural start instead of forcing one.
+        try:
+            win = int(settings.get("cc_compact_window") or 0)
+        except (TypeError, ValueError):
+            win = 0
+        if win > 0 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in os.environ:
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(max(50_000, win))
     # stdout goes to the LOG, not a pipe. A pipe dies with this process and takes the session
     # with it; a file does not, so the session survives a restart or a crash and the next backend
     # picks the tail up where this one stopped.
@@ -3381,6 +3493,62 @@ def _agents_block(project_id: str, what: str) -> str:
             % (len(owed), "s" if len(owed) > 1 else "", names, more, what))
 
 
+def _cache_guard_tick(live: "_Live", now: float) -> str:
+    """Compact a large, idle session while its prompt cache is still warm (cache_guard.py).
+
+    Sent exactly as the user's own /compact is, so the chat shows "Compacting..." and the turn is
+    banked as a compaction. Returns the decision word, for the tests and the log."""
+    alt = bool(mission.alt_prefix(live.project_id))
+    why = cache_guard.decide(
+        enabled=cache_guard.enabled(), alt=alt,
+        alive=live.alive and live.proc.poll() is None,
+        busy=(_stream_busy(live) or live.compacting or live.btw_pending or live.outstanding > 0),
+        ctx=int(live.ctx_tokens or 0), ttl=float(live.cache_ttl or 0),
+        last_api=float(live.last_api or 0), guard_at=float(live.guard_at or 0), now=now,
+        min_tok=cache_guard.min_tokens(), after=cache_guard.after_s(),
+        background=lambda: bool(_open_background(live.project_id)))
+    if why != "compact":
+        return why
+    live.guard_at = now
+    try:
+        cache_guard.note_guard(live.project_id, now)
+    except Exception:
+        pass
+    sent = _write_msg(live, "/compact", compact=True)
+    print("[cache-guard] %s: idle %.0f min, %d tokens in the cache, %.0f min before it expires: %s"
+          % (live.project_id, (now - live.last_api) / 60, live.ctx_tokens,
+             (live.last_api + live.cache_ttl - now) / 60,
+             "compacting while it is warm" if sent else "the session took no input"), flush=True)
+    return why if sent else "not_sent"
+
+
+def _cache_guard_holds(live: "_Live", now: float) -> bool:
+    return cache_guard.hold_reap(
+        enabled=cache_guard.enabled(), alt=bool(mission.alt_prefix(live.project_id)),
+        ctx=int(live.ctx_tokens or 0), ttl=float(live.cache_ttl or 0),
+        last_api=float(live.last_api or 0), guard_at=float(live.guard_at or 0), now=now,
+        min_tok=cache_guard.min_tokens())
+
+
+def cache_guard_status() -> dict:
+    """The guard's view of every live session: GET /api/mission/cache-guard."""
+    now = time.time()
+    rows = []
+    for pid, live in list(_live.items()):
+        alive = live.alive and live.proc.poll() is None
+        if not alive:
+            continue
+        nxt = cache_guard.decide(
+            enabled=cache_guard.enabled(), alt=bool(mission.alt_prefix(pid)), alive=alive,
+            busy=_stream_busy(live), ctx=int(live.ctx_tokens or 0), ttl=float(live.cache_ttl or 0),
+            last_api=float(live.last_api or 0), guard_at=float(live.guard_at or 0), now=now,
+            min_tok=cache_guard.min_tokens(), after=cache_guard.after_s(), background=False)
+        rows.append({"project": pid, "ctx": live.ctx_tokens, "ttl": live.cache_ttl,
+                     "last_api": live.last_api, "guard_at": live.guard_at,
+                     "version": live.cli_version, "next": nxt})
+    return cache_guard.status(rows, now)
+
+
 def _start_reaper() -> None:
     global _reaper_started
     if _reaper_started:
@@ -3408,6 +3576,11 @@ def _start_reaper() -> None:
             now = time.time()
             for pid, live in list(_live.items()):
                 dead = (not live.alive) or live.proc.poll() is not None
+                if not dead:
+                    try:
+                        _cache_guard_tick(live, now)
+                    except Exception:
+                        pass
                 idle = (not _stream_busy(live)) and (now - live.last_write) > _IDLE_TIMEOUT
                 if dead or idle:
                     # A Workflow/subagent fan-out keeps running after the chat turn ends and never
@@ -3415,6 +3588,9 @@ def _start_reaper() -> None:
                     # (this is what killed an 84-agent deep-research run). Keep it alive while its
                     # journals are still being written.
                     if idle and not dead and _open_background(live.project_id):
+                        continue
+                    # ...and while the cache guard still has a compaction to send into it.
+                    if idle and not dead and _cache_guard_holds(live, now):
                         continue
                     with _live_lock:
                         if _live.get(pid) is live:
@@ -3644,6 +3820,23 @@ def _adopt_one(rec: dict) -> bool:
     # never got to read.
     live.read_from = int(rec.get("offset") or 0)
     live.adopted = True
+    # Priced from where it is read: see _reg_checkpoint.
+    try:
+        live.call_cost = float(rec.get("call_cost") or 0.0)
+    except (TypeError, ValueError):
+        live.call_cost = 0.0
+    # ...and guarded from where it was: the cache it holds did not expire because the backend
+    # restarted, so the guard keeps counting from the last request it saw.
+    try:
+        g = cache_guard.record(project_id)
+        if g.get("session_id") and g.get("session_id") == live.session_id:
+            live.last_api = float(g.get("last_api") or 0.0)
+            live.ctx_tokens = int(g.get("ctx") or 0)
+            live.cache_ttl = float(g.get("ttl") or 0.0)
+            live.guard_at = float(g.get("guard_at") or 0.0)
+            live.cli_version = str(g.get("version") or "")
+    except Exception:
+        pass
     # THE POINT OF THE KEEPER. Before it, an adopted session could be watched and stopped but not
     # written to, so the next message respawned the process -- and a background agent lives INSIDE
     # the process. The inbox belongs to the SESSION, not to whichever backend started it, so an
@@ -3962,6 +4155,22 @@ def _note_sig() -> tuple:
     return tuple(bool(settings.get(k, True)) for k in keys) + ("studio-sonnet-5-5-v1",)
 
 
+def _warm_exe(project_id: str, resume: Optional[str], exe: str, fork: bool) -> str:
+    """The binary to RESUME a conversation on: its own build while its cache is warm.
+
+    See cache_guard.warm_binary. A fork starts a new conversation and an alternate engine runs
+    against another vendor's cache, so both take the installed build as before."""
+    if not resume or fork or mission.alt_prefix(project_id):
+        return exe
+    try:
+        run, why = cache_guard.warm_binary(project_id, resume, exe)
+    except Exception:
+        return exe
+    if why:
+        print("[cache-guard] %s: %s" % (project_id, why), flush=True)
+    return run or exe
+
+
 def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                     permission_mode: str, fork: bool, effort: str, exe: str,
                     new_session: bool, session: str, newest_session: Optional[str], steer: bool = False) -> dict:
@@ -4063,7 +4272,10 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                 resume = newest_session
             # BUILT AND CHECKED BEFORE THE OLD PROCESS IS STOPPED. A launch that cannot succeed
             # must not cost the session it was going to replace; see _launch_problem.
-            args = _claude_stream_args(exe, resume, model, permission_mode, fork, effort, project_id, cwd)
+            # The signature keeps the INSTALLED binary even when the launch uses an older build:
+            # it names what the user chose, and a mismatch there would respawn the session again.
+            args = _claude_stream_args(_warm_exe(project_id, resume, exe, fork), resume, model,
+                                       permission_mode, fork, effort, project_id, cwd)
             problem = _launch_problem(args)
             if problem:
                 return {"ok": False, "error": problem}
@@ -4144,7 +4356,8 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                 return {"ok": False, "error": blocked}
         old_sid = live.session_id
         resume2 = session or old_sid or newest_session
-        r_args = _claude_stream_args(exe, resume2, model, permission_mode, fork, effort, project_id, cwd)
+        r_args = _claude_stream_args(_warm_exe(project_id, resume2, exe, fork), resume2, model,
+                                     permission_mode, fork, effort, project_id, cwd)
         problem = _launch_problem(r_args)
         if problem and alive_now:
             return {"ok": False, "error": problem}     # a live process is kept, not traded for nothing

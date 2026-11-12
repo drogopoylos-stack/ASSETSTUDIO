@@ -876,6 +876,121 @@ function ProvidersOverviewSection() {
 // ---------------------------------------------------------------------------
 // 6) Cost tracking & budget
 // ---------------------------------------------------------------------------
+// THE PROMPT-CACHE GUARD (backend cache_guard.py and read_shrink.py). A Claude session's cache lives
+// one hour after its last request. When it is lost, the next turn writes the WHOLE conversation again
+// at the write price — on an 800k-token session about $6.50 for one request that did nothing new.
+// The words the backend's decision returns, as a person would say them.
+const GUARD_NEXT: Record<string, string> = {
+  compact: "compacting now", early: "watching", small: "small, nothing to do", done: "compacted",
+  too_late: "cache already cold", busy: "working", short_ttl: "5-minute cache, left alone",
+  no_request_seen: "no request seen yet", off: "guard off", other_engine: "other engine",
+  background: "agents still running", gone: "stopped",
+};
+const COMPACT_WINDOWS: { v: number; l: string }[] = [
+  { v: 0, l: "CLI default (about 967k on a 1M window)" },
+  { v: 600000, l: "600k tokens" }, { v: 400000, l: "400k tokens" }, { v: 300000, l: "300k tokens" },
+];
+
+function CacheGuardSection() {
+  const [guard, setGuard] = useState(true);
+  const [shrink, setShrink] = useState(true);
+  const [win, setWin] = useState(0);
+  const [st, setSt] = useState<Awaited<ReturnType<typeof api.cacheGuardStatus>> | null>(null);
+  const [saved, setSaved] = useState("");
+  useEffect(() => {
+    api.settings().then((s) => {
+      setGuard(s?.cc_cache_guard !== false);
+      setShrink(s?.cc_image_shrink !== false);
+      setWin(Number(s?.cc_compact_window || 0));
+    }).catch(() => {});
+    const read = () => api.cacheGuardStatus().then(setSt).catch(() => {});
+    read();
+    const t = window.setInterval(read, 15000);
+    return () => window.clearInterval(t);
+  }, []);
+  function save(patch: any, note: string) {
+    api.updateSettings(patch).then(() => {
+      setSaved(note);
+      window.setTimeout(() => setSaved(""), 2600);
+    }).catch(() => {});
+  }
+  const mins = (s: number | null) => (s == null ? "—" : Math.max(0, Math.round(s / 60)) + " min");
+  const kTok = (n: number) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+  return (
+    <Section title="Prompt cache"
+      desc="A session's cache lives one hour after its last request. When it is lost, the next turn writes the whole conversation again at the write price.">
+      <label className="flex items-start gap-2 cursor-pointer select-none">
+        <input type="checkbox" className="mt-0.5" checked={guard}
+          onChange={(e) => { setGuard(e.target.checked); save({ cc_cache_guard: e.target.checked },
+            e.target.checked ? "Cache guard on." : "Cache guard off — an idle session's cache is left to expire."); }} />
+        <span>
+          <span className="text-sm">Cache guard</span>
+          <span className="block text-xs text-muted mt-0.5 max-w-xl">
+            A session that holds more than 150k tokens and has been idle for 50 minutes is compacted
+            while its cache is still warm. A compaction reads the cache; it does not write it. The
+            next message then writes about 30k–50k tokens instead of the whole conversation — on an
+            800k-token session, <b className="text-text/80">under $1 instead of about $6.50</b>. A warm
+            session also resumes on the CLI build it started on, because a new build writes the whole
+            cache again. The cost: after an hour's pause, the session continues from a summary. On
+            by default.
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 cursor-pointer select-none mt-4">
+        <input type="checkbox" className="mt-0.5" checked={shrink}
+          onChange={(e) => { setShrink(e.target.checked); save({ cc_image_shrink: e.target.checked },
+            e.target.checked ? "Screenshots are re-encoded before a session reads them."
+                             : "Screenshots are read as they are."); }} />
+        <span>
+          <span className="text-sm">Smaller screenshots</span>
+          <span className="block text-xs text-muted mt-0.5 max-w-xl">
+            An image a session reads is re-encoded as WebP at quality 90 with the same pixels, so the
+            model sees the same picture at the same token cost. When the images in a conversation pass
+            about 25 MB, Claude Code removes the oldest ones, and that edit makes the whole
+            conversation be written again. Half the bytes means half as many of those. Sessions in
+            bypass-permissions mode only; never where a Read deny rule exists. On by default.
+          </span>
+        </span>
+      </label>
+      <div className="mt-4 ml-6">
+        <span className="text-sm">Compact at</span>
+        <span className="block text-xs text-muted mt-0.5 max-w-xl">
+          Each request reads the whole conversation from the cache: 800k tokens cost about $0.16 a
+          request on Opus 5.5, 200k about $0.04. A smaller window keeps every request and every
+          lost cache cheaper, and the agent remembers less detail after each compaction. Applies to
+          sessions started after the change.
+        </span>
+        <select className="input !py-1 text-xs !w-auto mt-2" value={win}
+          onChange={(e) => { const v = Number(e.target.value); setWin(v);
+            save({ cc_compact_window: v }, v ? "New sessions compact at " + kTok(v) + " tokens." : "New sessions compact where Claude Code decides."); }}>
+          {COMPACT_WINDOWS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>
+      </div>
+      {!!st && st.sessions.length > 0 && (
+        <table className="mt-4 text-xs w-full max-w-2xl">
+          <thead className="text-muted text-left">
+            <tr><th className="font-normal pb-1">Session</th><th className="font-normal">Cached</th>
+              <th className="font-normal">Idle</th><th className="font-normal">Expires in</th>
+              <th className="font-normal">Guard</th></tr>
+          </thead>
+          <tbody>
+            {st.sessions.map((s) => (
+              <tr key={s.project} className="border-t border-line/40">
+                <td className="py-1 pr-3 truncate max-w-[16rem]" title={s.project}>{s.project}</td>
+                <td className="pr-3">{s.ctx_tokens ? kTok(s.ctx_tokens) : "—"}</td>
+                <td className="pr-3">{mins(s.idle_s)}</td>
+                <td className="pr-3">{s.cache_ttl_s ? mins(s.expires_in_s) : "—"}</td>
+                <td>{GUARD_NEXT[s.next] || s.next}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {saved && <p className="text-[11px] text-ok mt-2">{saved}</p>}
+    </Section>
+  );
+}
+
 function CostSection() {
   const [summary, setSummary] = useState<any>(null);
   const [budget, setBudget] = useState<number>(5000);
@@ -2005,7 +2120,7 @@ const PANES: { id: string; label: string; icon: React.ReactNode; render: () => R
   },
   {
     id: "cost", label: "Cost", icon: <DollarSign size={14} />,
-    render: () => <CostSection />,
+    render: () => <><CostSection /><CacheGuardSection /></>,
   },
   {
     id: "planning", label: "Planning & review", icon: <ListChecks size={14} />,
@@ -2025,6 +2140,12 @@ const PANES: { id: string; label: string; icon: React.ReactNode; render: () => R
 
 export default function Settings() {
   const [pane, setPane] = useState(() => {
+    // `/settings?pane=cost` opens one pane directly: a link in a reply or a feature check can
+    // point at the switch it talks about. Otherwise the last pane this browser had open.
+    try {
+      const asked = new URLSearchParams(location.search).get("pane") || "";
+      if (asked && PANES.some((p) => p.id === asked)) return asked;
+    } catch { /* ignore */ }
     try { return localStorage.getItem("settings-pane") || "general"; } catch { return "general"; }
   });
   const [q, setQ] = useState("");

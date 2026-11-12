@@ -47,6 +47,9 @@ interface BenchState {
   ts: number;
   /** The GLB files /glb put on the bench; the code only names them in a comment. */
   models: { name: string; path: string; v?: number }[];
+  /** A model file an agent wrote with its own tools, shown instead of an older bench; "" for the
+   *  forge's own bench. */
+  file: string;
 }
 
 /** PlayCanvas code, by what only PlayCanvas code calls. The fallback when a bench carries no
@@ -525,6 +528,7 @@ export default function Engine() {
           engine: b.engine || "",
           ts: b.ts || 0,
           models: Array.isArray(b.models) ? b.models.filter((m) => m && m.path) : [],
+          file: b.source === "file" ? b.file || "" : "",
         });
       })
       .catch(() => { /* the tab may have been reaped; the next poll will say so */ });
@@ -848,6 +852,9 @@ export default function Engine() {
     }
   };
 
+  // The model file an agent wrote with its own tools, when that is what the Edit tab shows: the
+  // bench wins over a finished run, and a file or a mirrored game wins over the bench.
+  const benchFile = !liveProject && !editFile && bench?.code ? bench.file : "";
   const notReplayable = !!selected && (selected.kind !== "forge" || !selected.replayable);
   const notice = genLoading ? { text: "reading the generation…" }
     : genErr ? { text: genErr, error: true }
@@ -977,7 +984,9 @@ export default function Engine() {
           <span className="chip">{games} game{games === 1 ? "" : "s"}</span>
           <span className="chip">{total} generation{total === 1 ? "" : "s"}</span>
           <button onClick={onLiveChip}
-            title={bench?.code && (mode !== "edit" || editFile || liveProject)
+            title={bench?.file
+              ? `An agent wrote ${bench.file}: click to watch it in the 3D viewport. It loads again each time the agent writes it.`
+              : bench?.code && (mode !== "edit" || editFile || liveProject)
               ? "An agent's bench is live: click to watch it in the 3D viewport, where you can orbit it"
               : "Watch the agent work: every run it makes opens here the moment it happens, in the 3D viewport, where you can orbit it. Click to stop or start watching."}
             className={cls("chip transition-colors", follow ? "text-ok border-ok/40 bg-ok/10" : "hover:text-text")}>
@@ -1041,7 +1050,10 @@ export default function Engine() {
           ) : mode === "edit" ? (
             <Editor source={editSource} prefs={prefs}
               aim={matchCam && editSource?.kind === "generation" ? agentAim : undefined}
-              notice={editSource?.kind === "generation"
+              notice={benchFile
+                ? `Live: ${benchFile}, written by the agent at ${new Date((bench?.ts || 0) * 1000).toLocaleTimeString()}. `
+                  + "It loads again each time the agent writes it. Changes made here are not saved to it."
+                : editSource?.kind === "generation"
                 ? "Editing a recorded run: it has no file, so parameter changes are live only. Open the source to save them."
                 : ""} />
           ) : notReplayable && selected ? (

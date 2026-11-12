@@ -22,52 +22,78 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from . import live_notes
+    from . import agent_glb, live_notes, read_shrink
 else:
+    import agent_glb
     import live_notes
+    import read_shrink
 
 
-def main() -> int:
-    p = sys.argv[1] if len(sys.argv) > 1 else ""
+def _note_context(p: str, payload: dict) -> str:
+    """The pending steering or /btw text as additionalContext, or "" (and the note stays put)."""
     if not p or not live_notes.peek(Path(p)):
-        return 0
+        return ""
     # SUBAGENTS run session hooks too (Task/Workflow agents fire PostToolUse constantly during
     # long orchestrated turns). A subagent consuming the note would inject it into ITS context —
     # the MAIN assistant would never see it, which is exactly the reported "my /btw got lost".
     # Detect the subagent transcript and leave the note for the main loop's next boundary.
+    tp = str(payload.get("transcript_path") or "")
+    if os.path.basename(tp).lower().startswith("agent-") or "subagent" in tp.lower().replace("\\", "/"):
+        return ""
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        note = live_notes.claim(Path(p))
+    except OSError:
+        return ""
+    if not note:
+        return ""
+    if note.startswith(("↪ Steering update", "↪ Side-note")):
+        # Each entry has its own instructions: steer may reprioritize, /btw stays FYI.
+        return ("↪ LIVE update from the user:\n" + note
+                + "\n— Take it into account from this step onward. Acknowledge the update briefly.")
+    return ("↪ LIVE side-note from the user (sent with /btw while you work — they want you to see it "
+            "NOW, mid-task, not after you finish):\n" + note +
+            "\n— Take it into account from this step onward. Acknowledge it in ONE short line in your "
+            "final answer. Do NOT derail the current task unless the note itself asks you to. "
+            "(If you are a SUBAGENT on a delegated task: don't act on it beyond noting it — include "
+            "this side-note VERBATIM at the top of your final report so the main assistant sees it.)")
+
+
+def main() -> int:
+    p = sys.argv[1] if len(sys.argv) > 1 else ""
+    try:
+        # The CLI writes UTF-8; a pipe read as text is the locale's code page, which mangles a
+        # path like D:\Modèles.
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace") or "{}")
     except Exception:
         payload = {}
+    # THE MODEL FILES THIS CALL NAMES, noted before it runs, for the Engine window. An agent that
+    # writes its GLB with a script of its own never reaches the forge's bench, and the person
+    # watching saw an empty grid for the whole job. Every agent and subagent passes through this
+    # hook, so this is the one place that sees all of them. The note file is DATA_DIR/btw/<id>.note.
+    if p:
+        agent_glb.record(payload, Path(p).parent.parent)
     # echo back the event we were actually called for — the same script serves Pre and Post,
     # and a mismatched hookEventName is not a shape the CLI is guaranteed to accept
     event = str(payload.get("hook_event_name") or payload.get("hookEventName") or "PostToolUse")
     if event not in ("PreToolUse", "PostToolUse"):
         event = "PostToolUse"
-    tp = str(payload.get("transcript_path") or "")
-    if os.path.basename(tp).lower().startswith("agent-") or "subagent" in tp.lower().replace("\\", "/"):
-        return 0
-    try:
-        note = live_notes.claim(Path(p))
-    except OSError:
-        return 0
-    if not note:
-        return 0
-    if note.startswith(("↪ Steering update", "↪ Side-note")):
-        # Each entry has its own instructions: steer may reprioritize, /btw stays FYI.
-        ctx = ("↪ LIVE update from the user:\n" + note
-               + "\n— Take it into account from this step onward. Acknowledge the update briefly.")
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
-                                                 "additionalContext": ctx}}))
-        return 0
-    ctx = ("↪ LIVE side-note from the user (sent with /btw while you work — they want you to see it "
-           "NOW, mid-task, not after you finish):\n" + note +
-           "\n— Take it into account from this step onward. Acknowledge it in ONE short line in your "
-           "final answer. Do NOT derail the current task unless the note itself asks you to. "
-           "(If you are a SUBAGENT on a delegated task: don't act on it beyond noting it — include "
-           "this side-note VERBATIM at the top of your final report so the main assistant sees it.)")
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
-                                             "additionalContext": ctx}}))
+    out: dict = {}
+    # A SCREENSHOT IS SIZED BEFORE IT ENTERS THE CONVERSATION, never after: see read_shrink.py.
+    # Subagents too: their own requests carry their images the same way.
+    if p and event == "PreToolUse":
+        try:
+            updated = read_shrink.redirect(payload, Path(p).parent.parent)
+        except Exception:
+            updated = None
+        if updated:
+            out["permissionDecision"] = "allow"     # bypassPermissions only: nothing was asked anyway
+            out["permissionDecisionReason"] = "Studio: the same picture re-encoded as WebP, fewer bytes"
+            out["updatedInput"] = updated
+    ctx = _note_context(p, payload)
+    if ctx:
+        out["additionalContext"] = ctx
+    if out:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event, **out}}))
     return 0
 
 

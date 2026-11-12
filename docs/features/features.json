@@ -1,0 +1,5948 @@
+{
+ "areas": {
+  "agent": {
+   "endpoints": [
+    {
+     "function": "run",
+     "method": "POST",
+     "path": "/api/agent/run",
+     "summary": ""
+    },
+    {
+     "function": "get_run",
+     "method": "GET",
+     "path": "/api/agent/runs/{run_id}",
+     "summary": ""
+    },
+    {
+     "function": "list_runs",
+     "method": "GET",
+     "path": "/api/agent/runs",
+     "summary": ""
+    },
+    {
+     "function": "compare",
+     "method": "POST",
+     "path": "/api/agent/compare",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/agent.py",
+   "pages": [
+    "compare"
+   ],
+   "prefixes": [
+    "/api/agent"
+   ],
+   "programs": [],
+   "purpose": "Autonomous agent + Compare endpoints (headless-drivable).",
+   "settings": [
+    "default_providers"
+   ],
+   "tests": []
+  },
+  "app": {
+   "endpoints": [
+    {
+     "function": "health",
+     "method": "GET",
+     "path": "/api/health",
+     "summary": ""
+    },
+    {
+     "function": "spa",
+     "method": "GET",
+     "path": "/{full_path:path}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/main.py",
+   "pages": [
+    "settings"
+   ],
+   "prefixes": [],
+   "programs": [],
+   "purpose": "The app's own routes: health, and the built UI served for every other path.",
+   "settings": [],
+   "tests": [
+    "restart_test.py",
+    "stability_test.py"
+   ]
+  },
+  "auth": {
+   "endpoints": [
+    {
+     "function": "claude_status",
+     "method": "GET",
+     "path": "/api/auth/claude",
+     "summary": "Current Claude login state — `needs_login` drives the re-login popup."
+    },
+    {
+     "function": "claude_login",
+     "method": "POST",
+     "path": "/api/auth/claude/login",
+     "summary": "Open Claude Code in a terminal so the user can (re)authenticate in the browser."
+    },
+    {
+     "function": "claude_recheck",
+     "method": "POST",
+     "path": "/api/auth/claude/recheck",
+     "summary": "Re-verify auth (after the user logs in) and return the refreshed status."
+    },
+    {
+     "function": "claude_limits",
+     "method": "GET",
+     "path": "/api/auth/claude/limits",
+     "summary": "Live usage-limit buckets (5h session / weekly / per-model e.g."
+    }
+   ],
+   "file": "backend/asset_studio/routers/auth.py",
+   "pages": [
+    "mission",
+    "shell",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/auth"
+   ],
+   "programs": [],
+   "purpose": "Claude Code login state + in-app re-login (browser) when auth fails with a 401.",
+   "settings": [],
+   "tests": [
+    "install_test.py"
+   ]
+  },
+  "autolearn": {
+   "endpoints": [
+    {
+     "function": "autolearn_status",
+     "method": "GET",
+     "path": "/api/autolearn/status",
+     "summary": ""
+    },
+    {
+     "function": "autolearn_run",
+     "method": "POST",
+     "path": "/api/autolearn/run",
+     "summary": "Scan + distill right now (background)."
+    }
+   ],
+   "file": "backend/asset_studio/routers/autolearn.py",
+   "pages": [
+    "mission",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/autolearn"
+   ],
+   "programs": [],
+   "purpose": "Auto-learn (zero-token skill mining) — status for the composer toggle + a manual kick.",
+   "settings": [
+    "cc_autolearn"
+   ],
+   "tests": [
+    "install_test.py"
+   ]
+  },
+  "catalog": {
+   "endpoints": [
+    {
+     "function": "list_assets",
+     "method": "GET",
+     "path": "/api/assets",
+     "summary": ""
+    },
+    {
+     "function": "categories",
+     "method": "GET",
+     "path": "/api/catalog/categories",
+     "summary": "The library shelves with how many assets each holds: the fixed ones first (also when empty, so the Catalog always offers them), then any shelf an agent invented, then un…"
+    },
+    {
+     "function": "summary",
+     "method": "GET",
+     "path": "/api/catalog/summary",
+     "summary": ""
+    },
+    {
+     "function": "get_asset",
+     "method": "GET",
+     "path": "/api/assets/{asset_id}",
+     "summary": ""
+    },
+    {
+     "function": "patch_asset",
+     "method": "PATCH",
+     "path": "/api/assets/{asset_id}",
+     "summary": ""
+    },
+    {
+     "function": "delete_asset",
+     "method": "DELETE",
+     "path": "/api/assets/{asset_id}",
+     "summary": ""
+    },
+    {
+     "function": "asset_file",
+     "method": "GET",
+     "path": "/api/assets/{asset_id}/file",
+     "summary": ""
+    },
+    {
+     "function": "asset_preview",
+     "method": "GET",
+     "path": "/api/assets/{asset_id}/preview",
+     "summary": ""
+    },
+    {
+     "function": "serve_file",
+     "method": "GET",
+     "path": "/api/file",
+     "summary": "Serve any file under the data dir (previews, turntables, job outputs)."
+    },
+    {
+     "function": "reveal_library",
+     "method": "POST",
+     "path": "/api/library/reveal",
+     "summary": "Open the library in Explorer: an asset's file selected, a shelf, or the whole library."
+    },
+    {
+     "function": "import_model",
+     "method": "POST",
+     "path": "/api/library/import",
+     "summary": "Add a 3D model made outside a Studio job (Blender, a download, an older run) to the library and the Catalog."
+    }
+   ],
+   "file": "backend/asset_studio/routers/catalog.py",
+   "pages": [
+    "catalog",
+    "compare",
+    "dashboard",
+    "image",
+    "pipeline",
+    "rig",
+    "settings",
+    "studio2d",
+    "studio3d",
+    "texture"
+   ],
+   "prefixes": [
+    "/api"
+   ],
+   "programs": [],
+   "purpose": "Asset catalog: list/filter, detail, edit metadata, serve files, summary.",
+   "settings": [],
+   "tests": [
+    "library_test.py"
+   ]
+  },
+  "chat": {
+   "endpoints": [
+    {
+     "function": "key_status",
+     "method": "GET",
+     "path": "/api/chat/key",
+     "summary": ""
+    },
+    {
+     "function": "set_key",
+     "method": "POST",
+     "path": "/api/chat/key",
+     "summary": ""
+    },
+    {
+     "function": "models",
+     "method": "GET",
+     "path": "/api/chat/models",
+     "summary": ""
+    },
+    {
+     "function": "conversations",
+     "method": "GET",
+     "path": "/api/chat/conversations",
+     "summary": ""
+    },
+    {
+     "function": "new_conversation",
+     "method": "POST",
+     "path": "/api/chat/conversations",
+     "summary": ""
+    },
+    {
+     "function": "get_conversation",
+     "method": "GET",
+     "path": "/api/chat/conversations/{cid}",
+     "summary": ""
+    },
+    {
+     "function": "delete_conversation",
+     "method": "DELETE",
+     "path": "/api/chat/conversations/{cid}",
+     "summary": ""
+    },
+    {
+     "function": "rename_conversation",
+     "method": "PATCH",
+     "path": "/api/chat/conversations/{cid}",
+     "summary": ""
+    },
+    {
+     "function": "send",
+     "method": "POST",
+     "path": "/api/chat/conversations/{cid}/send",
+     "summary": "Stream the model's reply as newline-delimited JSON: {delta}/{error}/{done}."
+    },
+    {
+     "function": "upload",
+     "method": "POST",
+     "path": "/api/chat/upload",
+     "summary": "Attach an image (→ vision) or a code/text file (→ context) to the chat."
+    },
+    {
+     "function": "get_file",
+     "method": "GET",
+     "path": "/api/chat/file",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/chat.py",
+   "pages": [
+    "chat"
+   ],
+   "prefixes": [
+    "/api/chat"
+   ],
+   "programs": [],
+   "purpose": "Ask AI — general multi-model chat (OpenRouter) with saved conversations.",
+   "settings": [
+    "chat_max_tokens"
+   ],
+   "tests": []
+  },
+  "chat_models": {
+   "endpoints": [
+    {
+     "function": "list_providers",
+     "method": "GET",
+     "path": "/api/chat-providers",
+     "summary": ""
+    },
+    {
+     "function": "create_provider",
+     "method": "POST",
+     "path": "/api/chat-providers",
+     "summary": ""
+    },
+    {
+     "function": "update_provider",
+     "method": "PUT",
+     "path": "/api/chat-providers/{pid}",
+     "summary": ""
+    },
+    {
+     "function": "delete_provider",
+     "method": "DELETE",
+     "path": "/api/chat-providers/{pid}",
+     "summary": ""
+    },
+    {
+     "function": "set_provider_key",
+     "method": "PUT",
+     "path": "/api/chat-providers/{pid}/key",
+     "summary": ""
+    },
+    {
+     "function": "fetch_models",
+     "method": "GET",
+     "path": "/api/chat-providers/{pid}/models",
+     "summary": "Ask the provider which models it serves, for the picker."
+    },
+    {
+     "function": "test_provider",
+     "method": "POST",
+     "path": "/api/chat-providers/{pid}/test",
+     "summary": "One cheap round-trip so the user knows the key and URL work before starting a chat."
+    },
+    {
+     "function": "bridge_messages",
+     "method": "POST",
+     "path": "/api/bridge/{pid}/v1/messages",
+     "summary": ""
+    },
+    {
+     "function": "bridge_count_tokens",
+     "method": "POST",
+     "path": "/api/bridge/{pid}/v1/messages/count_tokens",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/chat_models.py",
+   "pages": [
+    "mission",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api",
+    "/api/bridge"
+   ],
+   "programs": [],
+   "purpose": "Chat providers + the OpenAI translation bridge.",
+   "settings": [
+    "host",
+    "port"
+   ],
+   "tests": []
+  },
+  "codex": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/codex/status",
+     "summary": "Installed?"
+    },
+    {
+     "function": "recheck",
+     "method": "POST",
+     "path": "/api/codex/recheck",
+     "summary": "Read the sign-in afresh - after `codex login` in a terminal, or a sign-in finished in the browser."
+    },
+    {
+     "function": "conversations_forget",
+     "method": "POST",
+     "path": "/api/codex/conversations/forget",
+     "summary": "Drop a conversation from a folder's list, and optionally archive Codex's rollout file."
+    },
+    {
+     "function": "login",
+     "method": "POST",
+     "path": "/api/codex/login",
+     "summary": ""
+    },
+    {
+     "function": "login_cancel",
+     "method": "POST",
+     "path": "/api/codex/login/cancel",
+     "summary": ""
+    },
+    {
+     "function": "logout",
+     "method": "POST",
+     "path": "/api/codex/logout",
+     "summary": ""
+    },
+    {
+     "function": "models",
+     "method": "GET",
+     "path": "/api/codex/models",
+     "summary": "The models this Codex offers the signed-in account, each with its own reasoning efforts."
+    },
+    {
+     "function": "install",
+     "method": "POST",
+     "path": "/api/codex/install",
+     "summary": "npm install -g @openai/codex@latest, in the background."
+    },
+    {
+     "function": "sandbox",
+     "method": "POST",
+     "path": "/api/codex/sandbox",
+     "summary": "Set up Codex's own non-admin Windows sandbox (used by the \"Ask\" and \"Read only\" modes)."
+    }
+   ],
+   "file": "backend/asset_studio/routers/codex.py",
+   "pages": [
+    "mission",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/codex"
+   ],
+   "programs": [
+    "codex",
+    "npm",
+    "npm.cmd"
+   ],
+   "purpose": "Codex in the chat box: is it installed, is it signed in, which models it offers.",
+   "settings": [
+    "cc_graphify",
+    "codex_path",
+    "codex_recycle_mb",
+    "codex_resume_max_mb",
+    "host",
+    "port",
+    "studio_tools_prompt"
+   ],
+   "tests": [
+    "agents_parallel_test.py",
+    "boost_test.py",
+    "codex_app_test.py",
+    "codex_panels_test.py",
+    "codex_rail_test.py",
+    "engines_test.py",
+    "extra_mcp_test.py",
+    "plan_usage_test.py",
+    "stability_test.py",
+    "steer_test.py"
+   ]
+  },
+  "engine": {
+   "endpoints": [
+    {
+     "function": "state",
+     "method": "GET",
+     "path": "/api/engine/state",
+     "summary": "One poll for the status pill: in use or not, by which games, and what was made last."
+    },
+    {
+     "function": "projects",
+     "method": "GET",
+     "path": "/api/engine/projects",
+     "summary": "The pinned workspaces that are games, with engine, dev server and what is installed."
+    },
+    {
+     "function": "project",
+     "method": "GET",
+     "path": "/api/engine/project",
+     "summary": "One project in full, including its dev-server URL — the slow lookup, on demand only."
+    },
+    {
+     "function": "games",
+     "method": "GET",
+     "path": "/api/engine/games",
+     "summary": "EVERY game inside one workspace, each with its own dev server."
+    },
+    {
+     "function": "history",
+     "method": "GET",
+     "path": "/api/engine/history",
+     "summary": "Everything made so far, newest first, with counts per project, type and subject."
+    },
+    {
+     "function": "tag",
+     "method": "POST",
+     "path": "/api/engine/tag",
+     "summary": "The one write in this API: a person's word on what a generation depicts."
+    },
+    {
+     "function": "assets",
+     "method": "GET",
+     "path": "/api/engine/assets",
+     "summary": "What the project already HAS: builder functions and spec tables in its code, its model files and its images — on the same shelves as the history, so a game's dinos are f…"
+    },
+    {
+     "function": "generation",
+     "method": "GET",
+     "path": "/api/engine/generation",
+     "summary": "One generation in full, including the code — which is what makes it replayable."
+    },
+    {
+     "function": "sheet",
+     "method": "GET",
+     "path": "/api/engine/sheet",
+     "summary": "A rendered sheet, confined to the Studio's data directory."
+    },
+    {
+     "function": "thumbs",
+     "method": "POST",
+     "path": "/api/engine/thumbs",
+     "summary": "Render a picture of each named asset, by calling the project's own builders."
+    },
+    {
+     "function": "loader",
+     "method": "GET",
+     "path": "/api/engine/loader",
+     "summary": "A glTF loader that shares the project's own three."
+    },
+    {
+     "function": "model",
+     "method": "GET",
+     "path": "/api/engine/model",
+     "summary": "A model file with nothing left in it that needs a decoder."
+    },
+    {
+     "function": "source",
+     "method": "GET",
+     "path": "/api/engine/source",
+     "summary": "One of the project's own JavaScript files, as a module the page can import."
+    },
+    {
+     "function": "module",
+     "method": "GET",
+     "path": "/api/engine/module",
+     "summary": "The project's own engine build, so the window renders with what the game renders with."
+    },
+    {
+     "function": "asset_sheet",
+     "method": "GET",
+     "path": "/api/engine/asset-sheet",
+     "summary": "The project's assets as ONE labelled, numbered grid PNG, instead of one image each."
+    }
+   ],
+   "file": "backend/asset_studio/routers/engine.py",
+   "pages": [
+    "engine",
+    "settings",
+    "shell"
+   ],
+   "prefixes": [
+    "/api/engine"
+   ],
+   "programs": [
+    "gltf-transform"
+   ],
+   "purpose": "The engine window's API.",
+   "settings": [
+    "cc_engine_view",
+    "cc_forge",
+    "cc_live",
+    "cc_review_quality",
+    "engine",
+    "host",
+    "port"
+   ],
+   "tests": [
+    "detail_test.py",
+    "engine_test.py",
+    "forge_review_test.py",
+    "glb_test.py",
+    "goblin_bench_test.py",
+    "live_stage_test.py",
+    "live_stream_test.py",
+    "live_tabs_reap_test.py",
+    "live_test.py",
+    "live_view_test.py",
+    "new_game_test.py",
+    "open_path_test.py",
+    "perf_test.py",
+    "review_tabs_test.py",
+    "scene_api_test.py",
+    "skills_test.py",
+    "terrain_test.py",
+    "test:edit",
+    "test:open",
+    "test:pollshare",
+    "visibility_test.py"
+   ]
+  },
+  "gamemodel": {
+   "endpoints": [
+    {
+     "function": "publish",
+     "method": "POST",
+     "path": "/api/gamemodel/publish",
+     "summary": "Export what the forge bench holds into <game>/assets/models/, render a thumbnail, file it in the Catalog."
+    }
+   ],
+   "file": "backend/asset_studio/routers/gamemodel.py",
+   "pages": [],
+   "prefixes": [
+    "/api/gamemodel"
+   ],
+   "programs": [],
+   "purpose": "/gamemodel's last step: the bench's model into the game and the Catalog.",
+   "settings": [],
+   "tests": []
+  },
+  "git": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/git/status",
+     "summary": "Branch, what changed, how far ahead or behind, the remote, and who git thinks you are."
+    },
+    {
+     "function": "github",
+     "method": "GET",
+     "path": "/api/git/github",
+     "summary": "Whether the GitHub CLI is installed and signed in, and as whom."
+    },
+    {
+     "function": "commit",
+     "method": "POST",
+     "path": "/api/git/commit",
+     "summary": ""
+    },
+    {
+     "function": "push",
+     "method": "POST",
+     "path": "/api/git/push",
+     "summary": "Send this branch up."
+    },
+    {
+     "function": "pull",
+     "method": "POST",
+     "path": "/api/git/pull",
+     "summary": "Fast-forward only, and only with a clean tree."
+    },
+    {
+     "function": "github_create",
+     "method": "POST",
+     "path": "/api/git/github/create",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/git.py",
+   "pages": [
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/git"
+   ],
+   "programs": [
+    "gh"
+   ],
+   "purpose": "Source control over HTTP.",
+   "settings": [],
+   "tests": []
+  },
+  "jobs": {
+   "endpoints": [
+    {
+     "function": "submit_job",
+     "method": "POST",
+     "path": "/api/jobs",
+     "summary": ""
+    },
+    {
+     "function": "list_jobs",
+     "method": "GET",
+     "path": "/api/jobs",
+     "summary": ""
+    },
+    {
+     "function": "active_jobs",
+     "method": "GET",
+     "path": "/api/jobs/active",
+     "summary": ""
+    },
+    {
+     "function": "get_job",
+     "method": "GET",
+     "path": "/api/jobs/{job_id}",
+     "summary": ""
+    },
+    {
+     "function": "cancel_job",
+     "method": "POST",
+     "path": "/api/jobs/{job_id}/cancel",
+     "summary": ""
+    },
+    {
+     "function": "run_pipeline",
+     "method": "POST",
+     "path": "/api/pipeline",
+     "summary": "Run steps sequentially, feeding each step's output assets into the next."
+    }
+   ],
+   "file": "backend/asset_studio/routers/jobs.py",
+   "pages": [
+    "catalog",
+    "image",
+    "jobs",
+    "pipeline",
+    "rig",
+    "shell",
+    "studio2d",
+    "studio3d",
+    "texture"
+   ],
+   "prefixes": [
+    "/api"
+   ],
+   "programs": [],
+   "purpose": "Job submission, status, cancel, and one-click multi-stage pipeline.",
+   "settings": [
+    "auto_start_services",
+    "min_free_gb",
+    "min_free_ram_gb",
+    "monthly_spend_cap_usd",
+    "serialize_local_jobs"
+   ],
+   "tests": [
+    "delegates_test.py",
+    "library_test.py",
+    "remote_test.py"
+   ]
+  },
+  "live": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/live/status",
+     "summary": ""
+    },
+    {
+     "function": "open_",
+     "method": "POST",
+     "path": "/api/live/open",
+     "summary": "Put the game in a tab and keep it there."
+    },
+    {
+     "function": "evaluate",
+     "method": "POST",
+     "path": "/api/live/eval",
+     "summary": "Run it in the live game and bring the value back — including what the value is made of."
+    },
+    {
+     "function": "scene",
+     "method": "GET",
+     "path": "/api/live/scene",
+     "summary": ""
+    },
+    {
+     "function": "find",
+     "method": "GET",
+     "path": "/api/live/find",
+     "summary": ""
+    },
+    {
+     "function": "console",
+     "method": "GET",
+     "path": "/api/live/console",
+     "summary": ""
+    },
+    {
+     "function": "perf",
+     "method": "GET",
+     "path": "/api/live/perf",
+     "summary": ""
+    },
+    {
+     "function": "send_input",
+     "method": "POST",
+     "path": "/api/live/input",
+     "summary": ""
+    },
+    {
+     "function": "shot",
+     "method": "POST",
+     "path": "/api/live/shot",
+     "summary": "One frame, now — of the game's own view, or of one thing through a Studio camera."
+    },
+    {
+     "function": "watch",
+     "method": "POST",
+     "path": "/api/live/watch",
+     "summary": "A short strip of the live game over real time: press a key, watch what it does."
+    },
+    {
+     "function": "pick",
+     "method": "POST",
+     "path": "/api/live/pick",
+     "summary": "What is under that point of the running page: the element, its CSS, and a picture of it."
+    },
+    {
+     "function": "forge",
+     "method": "POST",
+     "path": "/api/live/forge",
+     "summary": "Run code that makes an asset, in a lit studio, and get a picture of it back."
+    },
+    {
+     "function": "look",
+     "method": "POST",
+     "path": "/api/live/look",
+     "summary": "Photograph what is already built, from anywhere, without building it again."
+    },
+    {
+     "function": "pictures",
+     "method": "POST",
+     "path": "/api/live/pictures",
+     "summary": "Draw and keep a picture for every recorded run that has code but no sheet."
+    },
+    {
+     "function": "goto",
+     "method": "POST",
+     "path": "/api/live/goto",
+     "summary": "Put the Studio's camera somewhere in the running game, and hand back the picture."
+    },
+    {
+     "function": "where",
+     "method": "GET",
+     "path": "/api/live/where",
+     "summary": "Where the camera is, and the named things in view — without moving."
+    },
+    {
+     "function": "locate",
+     "method": "POST",
+     "path": "/api/live/locate",
+     "summary": "From a screenshot to a camera pose: candidates rendered and scored against it."
+    },
+    {
+     "function": "animate",
+     "method": "POST",
+     "path": "/api/live/animate",
+     "summary": "Run the cycle, photograph it on ONE fixed camera, and report the feet as numbers."
+    },
+    {
+     "function": "batch",
+     "method": "POST",
+     "path": "/api/live/batch",
+     "summary": "Several calls in one request, in order, on the same warm tab."
+    },
+    {
+     "function": "debug",
+     "method": "POST",
+     "path": "/api/live/debug",
+     "summary": "Stop where the code went wrong and read the variables that were in scope."
+    },
+    {
+     "function": "api_reflect",
+     "method": "GET",
+     "path": "/api/live/api",
+     "summary": "What the modelling library actually exports, read out of the source."
+    },
+    {
+     "function": "bench",
+     "method": "GET",
+     "path": "/api/live/bench",
+     "summary": "What the forge page is holding right now: the code, a signature for it, and the camera."
+    },
+    {
+     "function": "aim",
+     "method": "POST",
+     "path": "/api/live/aim",
+     "summary": "Find the camera angle whose silhouette matches the reference best."
+    },
+    {
+     "function": "forge_clear",
+     "method": "POST",
+     "path": "/api/live/forge/clear",
+     "summary": ""
+    },
+    {
+     "function": "glb",
+     "method": "POST",
+     "path": "/api/live/glb",
+     "summary": "Put a GLB on the bench: an asset from Blender or a store, judged with the same camera."
+    },
+    {
+     "function": "export_glb",
+     "method": "POST",
+     "path": "/api/live/export",
+     "summary": "Write what the bench holds to a .glb file."
+    },
+    {
+     "function": "compare",
+     "method": "POST",
+     "path": "/api/live/compare",
+     "summary": "Two assets, one camera, one reference, both scored — the A/B nobody should compose by hand."
+    },
+    {
+     "function": "close",
+     "method": "POST",
+     "path": "/api/live/close",
+     "summary": ""
+    },
+    {
+     "function": "terrain",
+     "method": "POST",
+     "path": "/api/live/terrain",
+     "summary": "Sculpt the ground from the command line, and read it back as numbers."
+    },
+    {
+     "function": "scene_objects",
+     "method": "GET",
+     "path": "/api/live/objects",
+     "summary": "The scene as rows: the key a saved edit uses, world bounds, in view or not, where on screen."
+    },
+    {
+     "function": "stage_view",
+     "method": "GET",
+     "path": "/api/live/stage",
+     "summary": "A 2D game's objects with their boxes on the page: what the 2D Edit tab draws."
+    },
+    {
+     "function": "stage_pause",
+     "method": "POST",
+     "path": "/api/live/stage/pause",
+     "summary": "Hold a Phaser or PixiJS game still, so a moving object can be selected."
+    },
+    {
+     "function": "scene_edit",
+     "method": "POST",
+     "path": "/api/live/edit",
+     "summary": "Move, turn, scale, hide or drop an object in the running game; `save` keeps it, `undo` takes the last call back, `clear` takes saved entries out of the file."
+    },
+    {
+     "function": "scene_edits",
+     "method": "GET",
+     "path": "/api/live/edits",
+     "summary": "The saved edits file, summarised: what is moved, hidden and placed; rotations in degrees."
+    },
+    {
+     "function": "scene_edits_file",
+     "method": "GET",
+     "path": "/api/live/edits/file",
+     "summary": "`<project>/studio.edits.json` itself, for the page to apply."
+    },
+    {
+     "function": "scene_place",
+     "method": "POST",
+     "path": "/api/live/place",
+     "summary": "Put one of the game's own things into the running game — a builder called, a model (in PlayCanvas a copy of the one the game drew, with its paint and size), a clone, a p…"
+    }
+   ],
+   "file": "backend/asset_studio/routers/live.py",
+   "pages": [
+    "engine",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/live"
+   ],
+   "programs": [],
+   "purpose": "The live game, over HTTP.",
+   "settings": [
+    "cc_animate",
+    "cc_debugger",
+    "cc_engine_view",
+    "cc_forge",
+    "cc_live",
+    "cc_navigate",
+    "cc_review_quality",
+    "cc_scene_edit",
+    "engine",
+    "host",
+    "live_pick",
+    "port"
+   ],
+   "tests": [
+    "animate_test.py",
+    "apireflect_test.py",
+    "detail_test.py",
+    "engine_test.py",
+    "forge_review_test.py",
+    "goblin_bench_test.py",
+    "live_stage_test.py",
+    "live_stream_test.py",
+    "live_tabs_reap_test.py",
+    "live_test.py",
+    "live_view_test.py",
+    "livepick_test.py",
+    "mcp_engine_test.py",
+    "navigate_test.py",
+    "open_path_test.py",
+    "review_tabs_test.py",
+    "scene_api_test.py",
+    "skills_test.py",
+    "terrain_test.py",
+    "visibility_test.py"
+   ]
+  },
+  "live_stream": {
+   "endpoints": [
+    {
+     "function": "stream",
+     "method": "GET",
+     "path": "/api/live/stream",
+     "summary": "MJPEG of the project's existing live tab."
+    },
+    {
+     "function": "stream_ws",
+     "method": "WS",
+     "path": "/api/live/stream/ws",
+     "summary": "The same frames for the Game tab: one binary message per frame, the JPEG itself."
+    },
+    {
+     "function": "stream_status",
+     "method": "GET",
+     "path": "/api/live/stream/status",
+     "summary": "{live, url, engine?, streaming, viewers, fps_measured, last_frame_ms_ago, agent_active, …}"
+    }
+   ],
+   "file": "backend/asset_studio/routers/live_stream.py",
+   "pages": [],
+   "prefixes": [
+    "/api/live"
+   ],
+   "programs": [],
+   "purpose": "The agent's live tab, as a stream a person can watch.",
+   "settings": [],
+   "tests": [
+    "live_stream_test.py",
+    "live_tabs_reap_test.py"
+   ]
+  },
+  "mcp": {
+   "endpoints": [
+    {
+     "function": "catalog",
+     "method": "GET",
+     "path": "/api/mcp/catalog",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/mcp.py",
+   "pages": [],
+   "prefixes": [
+    "/api/mcp"
+   ],
+   "programs": [],
+   "purpose": "GET /api/mcp/catalog — the Studio engine as MCP tools, for the stdio server in mcp_engine.py.",
+   "settings": [
+    "cc_graphify",
+    "cc_mcp"
+   ],
+   "tests": [
+    "mcp_engine_test.py"
+   ]
+  },
+  "mission": {
+   "endpoints": [
+    {
+     "function": "overview",
+     "method": "GET",
+     "path": "/api/mission/overview",
+     "summary": "Projects + active agents + running localhost servers + headline counts."
+    },
+    {
+     "function": "project_feed",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/feed",
+     "summary": "Terminal-style live tail of a project's transcript (default newest, or a specific `session`), plus live status and any non-claude agent stdout."
+    },
+    {
+     "function": "project_sessions",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/sessions",
+     "summary": "All conversations for a project (newest first) — for clear/new + reopen."
+    },
+    {
+     "function": "dashboard",
+     "method": "GET",
+     "path": "/api/mission/dashboard",
+     "summary": "The two subscriptions (plan, renewal, live windows) plus what the turns ledger says about the work: models, projects and a per-day bar."
+    },
+    {
+     "function": "usage_accounts",
+     "method": "GET",
+     "path": "/api/mission/usage/accounts",
+     "summary": "Every account the Plan usage bar can show, whether it is connected, and how to connect it."
+    },
+    {
+     "function": "usage_summary",
+     "method": "GET",
+     "path": "/api/mission/usage",
+     "summary": "What is left on one account: plan windows (Claude, Codex) or the API balance (DeepSeek, Kimi, OpenRouter)."
+    },
+    {
+     "function": "project_context",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/context",
+     "summary": "Context-window fill (% used / % until auto-compact) for a session."
+    },
+    {
+     "function": "project_todos",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/todos",
+     "summary": "The standing phase list (TodoWrite) behind the \"3/9\" counter, in full."
+    },
+    {
+     "function": "project_subagents",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/subagents",
+     "summary": "Every subagent this project has run: its bill, its footprint and whether it is still going."
+    },
+    {
+     "function": "agents_running",
+     "method": "GET",
+     "path": "/api/mission/agents/running",
+     "summary": "Every subagent working right now, across every folder and every engine."
+    },
+    {
+     "function": "project_engine_feeds",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/engine-feeds",
+     "summary": "Which engines have a conversation in this folder — Claude, Codex, DeepSeek, an alternate."
+    },
+    {
+     "function": "project_subagent_collisions",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/subagents/collisions",
+     "summary": "Files that more than one RUNNING subagent has edited — parallel work about to go wrong."
+    },
+    {
+     "function": "project_subagent",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/subagents/{agent_id}",
+     "summary": "One subagent in full: its own timeline, drawn by the same builder as the main feed."
+    },
+    {
+     "function": "project_phase_history",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/phase-history",
+     "summary": "Earlier phase sets, newest first."
+    },
+    {
+     "function": "open_project",
+     "method": "POST",
+     "path": "/api/mission/open",
+     "summary": ""
+    },
+    {
+     "function": "claude_status",
+     "method": "GET",
+     "path": "/api/mission/claude",
+     "summary": ""
+    },
+    {
+     "function": "agent_spend",
+     "method": "GET",
+     "path": "/api/mission/spend",
+     "summary": "What the agent work has cost, banked from each turn's own `total_cost_usd`."
+    },
+    {
+     "function": "agent_spend_breakdown",
+     "method": "GET",
+     "path": "/api/mission/spend/breakdown",
+     "summary": "What the money BOUGHT: cost per tool, per kind of round trip, and where the context sat."
+    },
+    {
+     "function": "claude_version",
+     "method": "GET",
+     "path": "/api/mission/claude/version",
+     "summary": "The version of the binary the Studio resolved, and what is published."
+    },
+    {
+     "function": "claude_install",
+     "method": "POST",
+     "path": "/api/mission/claude/install",
+     "summary": "Run the CLI's own installer."
+    },
+    {
+     "function": "project_speed",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/speed",
+     "summary": "Output tokens per second: live for the current turn, plus every finished turn grouped by model and effort — so 'is Fable faster than Opus at max?' is a number, not a gue…"
+    },
+    {
+     "function": "agents_list",
+     "method": "GET",
+     "path": "/api/mission/agents",
+     "summary": "Installed/available AI coding agents (Claude, Codex, Gemini, Cursor…)."
+    },
+    {
+     "function": "last_agent",
+     "method": "GET",
+     "path": "/api/mission/last-agent",
+     "summary": "The engine last used in this folder, so switching workspace can restore it."
+    },
+    {
+     "function": "slash_commands",
+     "method": "GET",
+     "path": "/api/mission/slash-commands",
+     "summary": ""
+    },
+    {
+     "function": "send_message",
+     "method": "POST",
+     "path": "/api/mission/projects/{project_id}/send",
+     "summary": ""
+    },
+    {
+     "function": "get_mode",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/mode",
+     "summary": "The approval mode picked for this folder and agent, on any device (\"\" = never picked)."
+    },
+    {
+     "function": "put_mode",
+     "method": "PUT",
+     "path": "/api/mission/projects/{project_id}/mode",
+     "summary": ""
+    },
+    {
+     "function": "attention",
+     "method": "GET",
+     "path": "/api/mission/attention",
+     "summary": "Who needs you, across every project — the one line at the top of the workspace."
+    },
+    {
+     "function": "live_status",
+     "method": "GET",
+     "path": "/api/mission/live-status",
+     "summary": "Busy state for every live streaming session — drives per-project working indicators."
+    },
+    {
+     "function": "cache_guard_status",
+     "method": "GET",
+     "path": "/api/mission/cache-guard",
+     "summary": "The prompt-cache guard: per live Claude session, how big the cached conversation is, when the cache expires, and what the guard will do next (see cache_guard.py)."
+    },
+    {
+     "function": "project_live",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/live",
+     "summary": "Instant live progress for the working indicator: real-time output tokens + the current activity (Thinking / Editing X / Running …) + elapsed seconds this turn."
+    },
+    {
+     "function": "agent_log",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/agent-log",
+     "summary": "Tail of the headless agent's stdout (for non-claude agents whose output doesn't land in the Claude transcript)."
+    },
+    {
+     "function": "checkpoints_list",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/checkpoints",
+     "summary": ""
+    },
+    {
+     "function": "checkpoint_create",
+     "method": "POST",
+     "path": "/api/mission/projects/{project_id}/checkpoints",
+     "summary": ""
+    },
+    {
+     "function": "checkpoint_diff",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/checkpoints/{cid}/diff",
+     "summary": ""
+    },
+    {
+     "function": "checkpoint_restore",
+     "method": "POST",
+     "path": "/api/mission/projects/{project_id}/checkpoints/{cid}/restore",
+     "summary": "A checkpoint frames the FOLDER, not one agent."
+    },
+    {
+     "function": "sending",
+     "method": "GET",
+     "path": "/api/mission/projects/{project_id}/sending",
+     "summary": ""
+    },
+    {
+     "function": "cancel_send",
+     "method": "POST",
+     "path": "/api/mission/projects/{project_id}/cancel-send",
+     "summary": "Stop the turn."
+    },
+    {
+     "function": "scheduled_list",
+     "method": "GET",
+     "path": "/api/mission/scheduled",
+     "summary": ""
+    },
+    {
+     "function": "scheduled_pause",
+     "method": "PUT",
+     "path": "/api/mission/scheduled/paused",
+     "summary": "Pause or resume EVERY scheduled and recurring message at once."
+    },
+    {
+     "function": "scheduled_create",
+     "method": "POST",
+     "path": "/api/mission/scheduled",
+     "summary": ""
+    },
+    {
+     "function": "scheduled_cancel",
+     "method": "DELETE",
+     "path": "/api/mission/scheduled/{job_id}",
+     "summary": ""
+    },
+    {
+     "function": "rewind",
+     "method": "POST",
+     "path": "/api/mission/projects/{project_id}/rewind",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/mission.py",
+   "pages": [
+    "dashboard",
+    "mission",
+    "settings",
+    "shell",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/mission"
+   ],
+   "programs": [
+    "code",
+    "code.cmd"
+   ],
+   "purpose": "Mission Control endpoints — a command center for all Claude Code projects.",
+   "settings": [
+    "auto_compact_at",
+    "cc_1m",
+    "cc_phase_archive",
+    "claude_renews_on",
+    "compact_base_tokens",
+    "context_window",
+    "monthly_spend_cap_usd",
+    "needs_you",
+    "scheduled_paused",
+    "session_defaults",
+    "usage_budgets",
+    "workspace_roots"
+   ],
+   "tests": [
+    "agent_tokens_test.py",
+    "agents_parallel_test.py",
+    "attention_test.py",
+    "claude_compact_test.py",
+    "codex_account_test.py",
+    "codex_app_test.py",
+    "codex_panels_test.py",
+    "codex_rail_test.py",
+    "deepseek_test.py",
+    "delegates_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "graph_hook_test.py",
+    "hook_events_test.py",
+    "install_test.py",
+    "live_status_test.py",
+    "models_test.py",
+    "perf_test.py",
+    "phase_archive_test.py",
+    "plan_usage_test.py",
+    "remote_test.py",
+    "restart_test.py",
+    "session_modes_test.py",
+    "session_survival_test.py",
+    "sonnet_test.py",
+    "steer_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "test:contextmeter",
+    "test:feedscroll",
+    "test:pollshare",
+    "turnbar_test.py"
+   ]
+  },
+  "plans": {
+   "endpoints": [
+    {
+     "function": "list_plans",
+     "method": "GET",
+     "path": "/api/plans",
+     "summary": ""
+    },
+    {
+     "function": "read_plan",
+     "method": "GET",
+     "path": "/api/plans/file",
+     "summary": ""
+    },
+    {
+     "function": "delete_plan",
+     "method": "POST",
+     "path": "/api/plans/delete",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/plans.py",
+   "pages": [
+    "plans"
+   ],
+   "prefixes": [
+    "/api/plans"
+   ],
+   "programs": [
+    "code",
+    "code.cmd"
+   ],
+   "purpose": "Plans written in plan mode.",
+   "settings": [
+    "auto_compact_at",
+    "cc_1m",
+    "cc_phase_archive",
+    "compact_base_tokens",
+    "context_window",
+    "workspace_roots"
+   ],
+   "tests": [
+    "agent_tokens_test.py",
+    "attention_test.py",
+    "claude_compact_test.py",
+    "codex_app_test.py",
+    "codex_panels_test.py",
+    "codex_rail_test.py",
+    "deepseek_test.py",
+    "delegates_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "graph_hook_test.py",
+    "hook_events_test.py",
+    "models_test.py",
+    "perf_test.py",
+    "phase_archive_test.py",
+    "plan_usage_test.py",
+    "sonnet_test.py",
+    "steer_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "turnbar_test.py"
+   ]
+  },
+  "polyhaven": {
+   "endpoints": [
+    {
+     "function": "search",
+     "method": "GET",
+     "path": "/api/polyhaven/search",
+     "summary": "CC0 models, textures or HDRIs whose name, tags or categories hold every word of `q`."
+    },
+    {
+     "function": "download",
+     "method": "POST",
+     "path": "/api/polyhaven/download",
+     "summary": "Fetch one asset into the project with its reference renders and LICENSE.txt."
+    },
+    {
+     "function": "downloaded",
+     "method": "GET",
+     "path": "/api/polyhaven/downloaded",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/polyhaven.py",
+   "pages": [
+    "engine"
+   ],
+   "prefixes": [
+    "/api/polyhaven"
+   ],
+   "programs": [],
+   "purpose": "Poly Haven: search, download into a project, and what a project already has.",
+   "settings": [],
+   "tests": [
+    "model_cmd_test.py",
+    "polyhaven_test.py"
+   ]
+  },
+  "polypizza": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/polypizza/status",
+     "summary": "Whether a key is stored."
+    },
+    {
+     "function": "search",
+     "method": "GET",
+     "path": "/api/polypizza/search",
+     "summary": "Models matching q."
+    },
+    {
+     "function": "download",
+     "method": "POST",
+     "path": "/api/polypizza/download",
+     "summary": "The model into the game's assets/polypizza/<id>/, with LICENSE.txt, renders and its measured size."
+    }
+   ],
+   "file": "backend/asset_studio/routers/polypizza.py",
+   "pages": [
+    "engine"
+   ],
+   "prefixes": [
+    "/api/polypizza"
+   ],
+   "programs": [],
+   "purpose": "Poly Pizza: search low-poly game models (many animated creatures), download one into a game.",
+   "settings": [],
+   "tests": [
+    "polypizza_test.py"
+   ]
+  },
+  "providers": {
+   "endpoints": [
+    {
+     "function": "list_providers",
+     "method": "GET",
+     "path": "/api/providers",
+     "summary": ""
+    },
+    {
+     "function": "load_errors",
+     "method": "GET",
+     "path": "/api/providers/errors",
+     "summary": ""
+    },
+    {
+     "function": "reload_providers",
+     "method": "POST",
+     "path": "/api/providers/reload",
+     "summary": ""
+    },
+    {
+     "function": "comfy_catalog",
+     "method": "GET",
+     "path": "/api/providers/comfy-catalog",
+     "summary": "Curated free local 2D/3D generators with LIVE install status: native studio providers (e.g."
+    },
+    {
+     "function": "get_provider",
+     "method": "GET",
+     "path": "/api/providers/{provider_id}",
+     "summary": ""
+    },
+    {
+     "function": "list_custom",
+     "method": "GET",
+     "path": "/api/providers/custom/list",
+     "summary": ""
+    },
+    {
+     "function": "upsert_custom",
+     "method": "POST",
+     "path": "/api/providers/custom",
+     "summary": ""
+    },
+    {
+     "function": "delete_custom",
+     "method": "DELETE",
+     "path": "/api/providers/custom/{provider_id}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/providers.py",
+   "pages": [
+    "settings"
+   ],
+   "prefixes": [
+    "/api/providers"
+   ],
+   "programs": [],
+   "purpose": "Provider discovery + runtime custom-provider management (\"add a new AI\").",
+   "settings": [
+    "custom_providers",
+    "tools"
+   ],
+   "tests": [
+    "queue_guard_test.py",
+    "test:pollshare",
+    "video_test.py"
+   ]
+  },
+  "refs": {
+   "endpoints": [
+    {
+     "function": "search",
+     "method": "GET",
+     "path": "/api/refs/search",
+     "summary": "CC0 human bodies, heads, hands, feet, eyes, jaws and skulls at real size, with renders."
+    },
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/refs/status",
+     "summary": ""
+    },
+    {
+     "function": "prepare",
+     "method": "POST",
+     "path": "/api/refs/prepare",
+     "summary": "Download and export the base meshes, install MPFB2 in the Studio's Blender profile."
+    },
+    {
+     "function": "human",
+     "method": "POST",
+     "path": "/api/refs/human",
+     "summary": "A human made to order with MPFB2, at the asked height, optionally rigged."
+    },
+    {
+     "function": "get",
+     "method": "POST",
+     "path": "/api/refs/get",
+     "summary": "One reference by id, copied into the game when a project is given."
+    }
+   ],
+   "file": "backend/asset_studio/routers/refs.py",
+   "pages": [
+    "engine"
+   ],
+   "prefixes": [
+    "/api/refs"
+   ],
+   "programs": [],
+   "purpose": "Human references at real size: search, make one to order, copy one into a game.",
+   "settings": [],
+   "tests": [
+    "refs_test.py"
+   ]
+  },
+  "review": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/review/status",
+     "summary": ""
+    },
+    {
+     "function": "render",
+     "method": "POST",
+     "path": "/api/review/render",
+     "summary": ""
+    },
+    {
+     "function": "actions",
+     "method": "GET",
+     "path": "/api/review/actions",
+     "summary": "What can be fired in this game?"
+    },
+    {
+     "function": "targets",
+     "method": "GET",
+     "path": "/api/review/targets",
+     "summary": ""
+    },
+    {
+     "function": "browser_list",
+     "method": "GET",
+     "path": "/api/review/browsers",
+     "summary": "What is running, whose it is, and what it is doing — the detail behind the status pill."
+    },
+    {
+     "function": "browser_kill",
+     "method": "POST",
+     "path": "/api/review/browsers/kill",
+     "summary": ""
+    },
+    {
+     "function": "stop",
+     "method": "POST",
+     "path": "/api/review/stop",
+     "summary": "Close our own review browser."
+    }
+   ],
+   "file": "backend/asset_studio/routers/review.py",
+   "pages": [
+    "settings",
+    "shell"
+   ],
+   "prefixes": [
+    "/api/review"
+   ],
+   "programs": [],
+   "purpose": "Visual review — deterministic contact sheets an agent can actually judge from.",
+   "settings": [
+    "cc_review_gpu",
+    "cc_review_quality",
+    "engine"
+   ],
+   "tests": [
+    "goblin_bench_test.py",
+    "guard_test.py",
+    "live_stream_test.py",
+    "live_tabs_reap_test.py",
+    "live_test.py",
+    "open_path_test.py",
+    "review_tabs_test.py",
+    "subagents_scan_test.py"
+   ]
+  },
+  "services": {
+   "endpoints": [
+    {
+     "function": "list_services",
+     "method": "GET",
+     "path": "/api/services",
+     "summary": ""
+    },
+    {
+     "function": "service_for_provider",
+     "method": "GET",
+     "path": "/api/services/for-provider/{provider_id}",
+     "summary": ""
+    },
+    {
+     "function": "start_service",
+     "method": "POST",
+     "path": "/api/services/{sid}/start",
+     "summary": ""
+    },
+    {
+     "function": "stop_service",
+     "method": "POST",
+     "path": "/api/services/{sid}/stop",
+     "summary": ""
+    },
+    {
+     "function": "start_all",
+     "method": "POST",
+     "path": "/api/services/start-all",
+     "summary": ""
+    },
+    {
+     "function": "service_logs",
+     "method": "GET",
+     "path": "/api/services/{sid}/logs",
+     "summary": ""
+    },
+    {
+     "function": "update_service",
+     "method": "PUT",
+     "path": "/api/services/{sid}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/services.py",
+   "pages": [
+    "image",
+    "rig",
+    "servers",
+    "studio2d",
+    "studio3d",
+    "texture",
+    "video"
+   ],
+   "prefixes": [
+    "/api/services"
+   ],
+   "programs": [],
+   "purpose": "Local model-server management — start/stop/health/logs for the localhost servers that power the free/local providers (ComfyUI, TRELLIS, Hunyuan3D, …).",
+   "settings": [
+    "services",
+    "tools"
+   ],
+   "tests": []
+  },
+  "settings": {
+   "endpoints": [
+    {
+     "function": "agent_notes",
+     "method": "GET",
+     "path": "/api/settings/agent-notes",
+     "summary": "Every note a session is told, each with its own switch and the tokens it costs per turn."
+    },
+    {
+     "function": "engine_notes",
+     "method": "GET",
+     "path": "/api/settings/engine-notes",
+     "summary": "The full engine notes, for a subagent that needs the engine (plain text, gated like the notes)."
+    },
+    {
+     "function": "get_settings",
+     "method": "GET",
+     "path": "/api/settings",
+     "summary": ""
+    },
+    {
+     "function": "boost_status",
+     "method": "GET",
+     "path": "/api/boost",
+     "summary": "Everything the BOOST button shows: whether it is on, what it has saved, and what it moved."
+    },
+    {
+     "function": "set_boost",
+     "method": "PUT",
+     "path": "/api/boost",
+     "summary": "The ON/OFF button."
+    },
+    {
+     "function": "boost_preview",
+     "method": "POST",
+     "path": "/api/boost/preview",
+     "summary": "What BOOST would do to THIS message, before it is sent — so the saving is visible and the rewrite is never something that happened to the user's words without them seein…"
+    },
+    {
+     "function": "boost_forget",
+     "method": "POST",
+     "path": "/api/boost/forget",
+     "summary": "Reset the running total, for a number that starts counting again."
+    },
+    {
+     "function": "remote_status",
+     "method": "GET",
+     "path": "/api/remote",
+     "summary": "Everything the REMOTE button shows."
+    },
+    {
+     "function": "set_remote",
+     "method": "PUT",
+     "path": "/api/remote",
+     "summary": "The ON/OFF button."
+    },
+    {
+     "function": "remote_config",
+     "method": "PUT",
+     "path": "/api/remote/config",
+     "summary": "Store the Discord bot token and channel id, after checking that both work."
+    },
+    {
+     "function": "remote_test",
+     "method": "POST",
+     "path": "/api/remote/test",
+     "summary": "Send one message to the phone now, so it is proved before the user walks away."
+    },
+    {
+     "function": "remote_forget",
+     "method": "POST",
+     "path": "/api/remote/forget",
+     "summary": "Reset the counters and the reply-routing table."
+    },
+    {
+     "function": "update_settings",
+     "method": "PUT",
+     "path": "/api/settings",
+     "summary": ""
+    },
+    {
+     "function": "list_plugins",
+     "method": "GET",
+     "path": "/api/plugins",
+     "summary": "Every optional part of the Studio and whether it is on."
+    },
+    {
+     "function": "update_plugins",
+     "method": "PUT",
+     "path": "/api/plugins",
+     "summary": ""
+    },
+    {
+     "function": "list_output_styles",
+     "method": "GET",
+     "path": "/api/output-styles",
+     "summary": "Installed output styles (~/.claude/output-styles/*.md) + the active one, for the chat toggle."
+    },
+    {
+     "function": "graphify_query",
+     "method": "GET",
+     "path": "/api/graphify/query",
+     "summary": "Ask the code graph a question and get an answer small enough to work with."
+    },
+    {
+     "function": "graphify_status",
+     "method": "GET",
+     "path": "/api/graphify/status",
+     "summary": "Is graphify usable, and is a background install running / did it fail — for the toggle UI."
+    },
+    {
+     "function": "graphify_prebuild",
+     "method": "POST",
+     "path": "/api/graphify/prebuild",
+     "summary": "Pre-build a workspace's code graph the moment it's OPENED (before the first message), so the graph is ready to use."
+    },
+    {
+     "function": "list_keys",
+     "method": "GET",
+     "path": "/api/keys",
+     "summary": ""
+    },
+    {
+     "function": "set_key",
+     "method": "PUT",
+     "path": "/api/keys/{name}",
+     "summary": ""
+    },
+    {
+     "function": "delete_key",
+     "method": "DELETE",
+     "path": "/api/keys/{name}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/settings.py",
+   "pages": [
+    "catalog",
+    "chat",
+    "compare",
+    "dashboard",
+    "engine",
+    "image",
+    "jobs",
+    "mission",
+    "pipeline",
+    "plans",
+    "rig",
+    "servers",
+    "settings",
+    "shell",
+    "studio2d",
+    "studio3d",
+    "texture",
+    "workflows",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api"
+   ],
+   "programs": [
+    "graphify"
+   ],
+   "purpose": "App settings + API-key management (keys live in the OS keychain, never on disk in plaintext, and are never returned to the client — only their presence).",
+   "settings": [
+    "boost",
+    "boost_bash_chars",
+    "boost_codex_tool_tokens",
+    "boost_compress",
+    "boost_directive",
+    "boost_level",
+    "boost_prefetch",
+    "boost_tool_output",
+    "cc_autolearn",
+    "cc_graphify",
+    "cc_output_style",
+    "cc_web_tools",
+    "plugins",
+    "remote",
+    "remote_bot",
+    "remote_channel",
+    "remote_channel_name",
+    "remote_images",
+    "remote_token",
+    "sweep_browser_windows"
+   ],
+   "tests": [
+    "agents_parallel_test.py",
+    "boost_test.py",
+    "codex_account_test.py",
+    "deepseek_test.py",
+    "engine_fixes_test.py",
+    "graph_scope_test.py",
+    "install_test.py",
+    "live_test.py",
+    "mcp_engine_test.py",
+    "queue_guard_test.py",
+    "remote_test.py",
+    "subagent_notes_test.py",
+    "web_tools_test.py"
+   ]
+  },
+  "setup": {
+   "endpoints": [
+    {
+     "function": "tasks",
+     "method": "GET",
+     "path": "/api/setup/tasks",
+     "summary": ""
+    },
+    {
+     "function": "install",
+     "method": "POST",
+     "path": "/api/setup/install/{task_id}",
+     "summary": ""
+    },
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/setup/status/{task_id}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/setup.py",
+   "pages": [
+    "settings"
+   ],
+   "prefixes": [
+    "/api/setup"
+   ],
+   "programs": [
+    "git",
+    "gltf-transform",
+    "nvidia-smi"
+   ],
+   "purpose": "In-app installer endpoints — install the optional tools from the UI.",
+   "settings": [
+    "services"
+   ],
+   "tests": []
+  },
+  "skills": {
+   "endpoints": [
+    {
+     "function": "list_skills",
+     "method": "GET",
+     "path": "/api/skills",
+     "summary": "`agent` decides whose library: Claude's home, the DSH roots, or nothing for Codex."
+    },
+    {
+     "function": "sync_status",
+     "method": "GET",
+     "path": "/api/skills/sync",
+     "summary": ""
+    },
+    {
+     "function": "sync_now",
+     "method": "POST",
+     "path": "/api/skills/sync",
+     "summary": ""
+    },
+    {
+     "function": "pack_export",
+     "method": "POST",
+     "path": "/api/skills/pack/export",
+     "summary": ""
+    },
+    {
+     "function": "pack_download",
+     "method": "GET",
+     "path": "/api/skills/pack/file/{name}",
+     "summary": ""
+    },
+    {
+     "function": "pack_import",
+     "method": "POST",
+     "path": "/api/skills/pack/import",
+     "summary": ""
+    },
+    {
+     "function": "toggle",
+     "method": "POST",
+     "path": "/api/skills/{skill_id}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/skills.py",
+   "pages": [
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/skills"
+   ],
+   "programs": [],
+   "purpose": "Skills — list + enable/disable from the UI, for the engine the pane is set to.",
+   "settings": [],
+   "tests": [
+    "codex_panels_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "skill_sync_test.py",
+    "skills_test.py"
+   ]
+  },
+  "system": {
+   "endpoints": [
+    {
+     "function": "stats",
+     "method": "GET",
+     "path": "/api/system/stats",
+     "summary": ""
+    },
+    {
+     "function": "version",
+     "method": "GET",
+     "path": "/api/system/version",
+     "summary": "A build id that changes whenever the served UI is rebuilt, so the frontend can detect 'an update landed' and offer to reload without a manual restart."
+    },
+    {
+     "function": "restart",
+     "method": "POST",
+     "path": "/api/system/restart",
+     "summary": "Re-exec the backend so new code takes effect."
+    },
+    {
+     "function": "info",
+     "method": "GET",
+     "path": "/api/system/info",
+     "summary": ""
+    },
+    {
+     "function": "gpu_status",
+     "method": "GET",
+     "path": "/api/system/gpu",
+     "summary": "Live VRAM usage + how long until idle models are auto-released."
+    },
+    {
+     "function": "free_gpu",
+     "method": "POST",
+     "path": "/api/system/free-gpu",
+     "summary": "Drop cached GPU models now and empty the CUDA allocator (manual reclaim)."
+    }
+   ],
+   "file": "backend/asset_studio/routers/system.py",
+   "pages": [
+    "dashboard",
+    "settings",
+    "shell"
+   ],
+   "prefixes": [
+    "/api/system"
+   ],
+   "programs": [
+    "nvidia-smi"
+   ],
+   "purpose": "System telemetry + app info + restart/version (for in-app updates).",
+   "settings": [
+    "gpu_idle_release_seconds",
+    "host",
+    "port"
+   ],
+   "tests": [
+    "agent_tokens_test.py",
+    "live_status_test.py",
+    "queue_guard_test.py",
+    "restart_test.py",
+    "session_survival_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "test:freemem",
+    "test:pollshare",
+    "video_test.py"
+   ]
+  },
+  "terminal": {
+   "endpoints": [
+    {
+     "function": "list_agents",
+     "method": "GET",
+     "path": "/api/terminal/agents",
+     "summary": "The launcher list: which CLIs are installed, and how to install the rest."
+    },
+    {
+     "function": "list_sessions",
+     "method": "GET",
+     "path": "/api/terminal/sessions",
+     "summary": ""
+    },
+    {
+     "function": "launch",
+     "method": "POST",
+     "path": "/api/terminal/launch",
+     "summary": "Start an agent CLI, or run its installer, in a fresh terminal."
+    },
+    {
+     "function": "claude",
+     "method": "POST",
+     "path": "/api/terminal/claude",
+     "summary": "Hand this project's CONVERSATION to a real Claude Code terminal."
+    },
+    {
+     "function": "close",
+     "method": "DELETE",
+     "path": "/api/terminal/{tid}",
+     "summary": ""
+    },
+    {
+     "function": "ws_terminal",
+     "method": "WS",
+     "path": "/api/terminal/ws/{tid}",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/terminal.py",
+   "pages": [
+    "mission",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/terminal"
+   ],
+   "programs": [],
+   "purpose": "Terminal panes — launch another coding agent in its own interface.",
+   "settings": [
+    "session_defaults"
+   ],
+   "tests": [
+    "codex_account_test.py",
+    "session_modes_test.py"
+   ]
+  },
+  "tools": {
+   "endpoints": [
+    {
+     "function": "job",
+     "method": "GET",
+     "path": "/api/tools/job/{job_id}",
+     "summary": "How a job is going."
+    },
+    {
+     "function": "jobs",
+     "method": "GET",
+     "path": "/api/tools/jobs",
+     "summary": ""
+    },
+    {
+     "function": "suites",
+     "method": "GET",
+     "path": "/api/tools/suites",
+     "summary": "Every suite that can be run, and the one that is excluded because it takes minutes."
+    },
+    {
+     "function": "tests",
+     "method": "POST",
+     "path": "/api/tools/tests",
+     "summary": "Run one suite, one side, or everything."
+    },
+    {
+     "function": "sha",
+     "method": "GET",
+     "path": "/api/tools/sha",
+     "summary": "A file's fingerprint without its contents — \"is this still what I read?\" for no tokens."
+    },
+    {
+     "function": "validate",
+     "method": "GET",
+     "path": "/api/tools/validate",
+     "summary": "Does it still hold together?"
+    },
+    {
+     "function": "edit",
+     "method": "POST",
+     "path": "/api/tools/edit",
+     "summary": "Replace one exact, unique span, and say at once whether the file still parses."
+    },
+    {
+     "function": "sidecar",
+     "method": "GET",
+     "path": "/api/tools/sidecar",
+     "summary": "What a saved document holds, counted."
+    },
+    {
+     "function": "sidecar_apply",
+     "method": "POST",
+     "path": "/api/tools/sidecar/apply",
+     "summary": "Build the asset in node and put the document on it: what bound, and what the code moved out from under."
+    }
+   ],
+   "file": "backend/asset_studio/routers/tools.py",
+   "pages": [],
+   "prefixes": [
+    "/api/tools"
+   ],
+   "programs": [],
+   "purpose": "Agent tools — jobs, the test suites, code that can be checked, and the sidecar with nothing open.",
+   "settings": [],
+   "tests": [
+    "agent_tools_test.py"
+   ]
+  },
+  "uploads": {
+   "endpoints": [
+    {
+     "function": "upload_image",
+     "method": "POST",
+     "path": "/api/uploads/image",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/uploads.py",
+   "pages": [
+    "compare",
+    "image",
+    "pipeline",
+    "rig",
+    "studio2d",
+    "studio3d",
+    "texture"
+   ],
+   "prefixes": [
+    "/api/uploads"
+   ],
+   "programs": [],
+   "purpose": "Upload arbitrary reference files (e.g. images) to use as job inputs.",
+   "settings": [],
+   "tests": []
+  },
+  "voice": {
+   "endpoints": [
+    {
+     "function": "voice_status",
+     "method": "GET",
+     "path": "/api/voice/status",
+     "summary": "Install/model state for the mic button (installed / installing / loading / ready / device)."
+    },
+    {
+     "function": "voice_enable",
+     "method": "POST",
+     "path": "/api/voice/enable",
+     "summary": "Turn voice on: install faster-whisper (self-contained) + start loading the model."
+    },
+    {
+     "function": "voice_transcribe",
+     "method": "POST",
+     "path": "/api/voice/transcribe",
+     "summary": "Transcribe a recorded clip."
+    }
+   ],
+   "file": "backend/asset_studio/routers/voice.py",
+   "pages": [
+    "mission",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/voice"
+   ],
+   "programs": [
+    "nvidia-smi"
+   ],
+   "purpose": "On-device voice input for the chat composer (local Whisper — free, private, Greek→English).",
+   "settings": [
+    "voice_engine",
+    "voice_groq_model",
+    "voice_idle_unload_seconds",
+    "voice_model",
+    "voice_task"
+   ],
+   "tests": []
+  },
+  "web": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/web/status",
+     "summary": ""
+    },
+    {
+     "function": "install",
+     "method": "POST",
+     "path": "/api/web/install",
+     "summary": ""
+    },
+    {
+     "function": "fetch",
+     "method": "POST",
+     "path": "/api/web/fetch",
+     "summary": "One page as readable text, climbing past whatever is in the way."
+    },
+    {
+     "function": "search",
+     "method": "GET",
+     "path": "/api/web/search",
+     "summary": "Web search with no API key and no account."
+    }
+   ],
+   "file": "backend/asset_studio/routers/web.py",
+   "pages": [
+    "mission",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/web"
+   ],
+   "programs": [],
+   "purpose": "The web an agent can actually reach.",
+   "settings": [
+    "cc_web_tools"
+   ],
+   "tests": [
+    "install_test.py",
+    "mcp_engine_test.py",
+    "web_tools_test.py"
+   ]
+  },
+  "workflows": {
+   "endpoints": [
+    {
+     "function": "list_workflows",
+     "method": "GET",
+     "path": "/api/workflows",
+     "summary": "Every workflow run on disk — live ones first, then most-recent."
+    },
+    {
+     "function": "workflow_detail",
+     "method": "GET",
+     "path": "/api/workflows/{project_id}/{run_id}",
+     "summary": "Full run: phases, every agent's live state/tokens/activity, logs, and result."
+    },
+    {
+     "function": "workflow_agent",
+     "method": "GET",
+     "path": "/api/workflows/{project_id}/{run_id}/agent/{agent_id}",
+     "summary": "A compact timeline of what one agent actually did (thinking / tools / text)."
+    }
+   ],
+   "file": "backend/asset_studio/routers/workflows.py",
+   "pages": [
+    "workflows"
+   ],
+   "prefixes": [
+    "/api/workflows"
+   ],
+   "programs": [],
+   "purpose": "Workflows — live dashboard of the Workflow tool's multi-agent runs (phases + agents).",
+   "settings": [],
+   "tests": [
+    "agent_tokens_test.py",
+    "subagents_workflow_test.py"
+   ]
+  },
+  "workspace": {
+   "endpoints": [
+    {
+     "function": "discover",
+     "method": "POST",
+     "path": "/api/workspace/discover",
+     "summary": "Folders on this machine that look like projects and are not open yet; add them when asked."
+    },
+    {
+     "function": "roots",
+     "method": "GET",
+     "path": "/api/workspace/roots",
+     "summary": ""
+    },
+    {
+     "function": "tree",
+     "method": "GET",
+     "path": "/api/workspace/tree",
+     "summary": ""
+    },
+    {
+     "function": "file",
+     "method": "GET",
+     "path": "/api/workspace/file",
+     "summary": ""
+    },
+    {
+     "function": "stat",
+     "method": "GET",
+     "path": "/api/workspace/stat",
+     "summary": ""
+    },
+    {
+     "function": "changes",
+     "method": "GET",
+     "path": "/api/workspace/changes",
+     "summary": "Live filesystem change-feed for the explorer: ensures we're watching `root` and returns the global version + paths changed since the client's last version."
+    },
+    {
+     "function": "search",
+     "method": "GET",
+     "path": "/api/workspace/search",
+     "summary": ""
+    },
+    {
+     "function": "raw",
+     "method": "GET",
+     "path": "/api/workspace/raw",
+     "summary": ""
+    },
+    {
+     "function": "model",
+     "method": "GET",
+     "path": "/api/workspace/model",
+     "summary": "A viewable GLB for meshes the 3D view can't read natively (.obj/.stl/.ply) — converted on demand and cached, so an OBJ opens in the same viewer as a GLB instead of dead-…"
+    },
+    {
+     "function": "write",
+     "method": "PUT",
+     "path": "/api/workspace/file",
+     "summary": ""
+    },
+    {
+     "function": "mkdir",
+     "method": "POST",
+     "path": "/api/workspace/mkdir",
+     "summary": ""
+    },
+    {
+     "function": "newfile",
+     "method": "POST",
+     "path": "/api/workspace/newfile",
+     "summary": ""
+    },
+    {
+     "function": "delete",
+     "method": "POST",
+     "path": "/api/workspace/delete",
+     "summary": ""
+    },
+    {
+     "function": "rename",
+     "method": "POST",
+     "path": "/api/workspace/rename",
+     "summary": ""
+    },
+    {
+     "function": "rename_root",
+     "method": "POST",
+     "path": "/api/workspace/rename-root",
+     "summary": "Rename a PROJECT folder + migrate its Claude Code transcripts so the conversation context survives the rename (a bare rename would orphan ~/.claude/projects/<slug>)."
+    },
+    {
+     "function": "move",
+     "method": "POST",
+     "path": "/api/workspace/move",
+     "summary": ""
+    },
+    {
+     "function": "copy",
+     "method": "POST",
+     "path": "/api/workspace/copy",
+     "summary": ""
+    },
+    {
+     "function": "resolve_path",
+     "method": "GET",
+     "path": "/api/workspace/resolve",
+     "summary": "Where a chat link actually points, without opening anything — for \"copy full path\"."
+    },
+    {
+     "function": "reveal",
+     "method": "POST",
+     "path": "/api/workspace/reveal",
+     "summary": ""
+    },
+    {
+     "function": "open_browser",
+     "method": "POST",
+     "path": "/api/workspace/open-browser",
+     "summary": "Serve the file/folder over http and open it in Chrome (or the default browser)."
+    },
+    {
+     "function": "open_url",
+     "method": "POST",
+     "path": "/api/workspace/open-url",
+     "summary": "Open a local URL (a running dev server) in the browser."
+    },
+    {
+     "function": "entries",
+     "method": "GET",
+     "path": "/api/workspace/entries",
+     "summary": "Every page in this project that could be the app, best first — for the localhost menu."
+    },
+    {
+     "function": "dev_server_start",
+     "method": "POST",
+     "path": "/api/workspace/dev-server",
+     "summary": "Start the project's own dev server (npm run dev) and return the URL it printed."
+    },
+    {
+     "function": "dev_server_stop",
+     "method": "POST",
+     "path": "/api/workspace/dev-server/stop",
+     "summary": ""
+    },
+    {
+     "function": "preview_url",
+     "method": "GET",
+     "path": "/api/workspace/preview-url",
+     "summary": "Localhost URL for the in-app HTML preview iframe (serves the file's folder over http)."
+    },
+    {
+     "function": "run",
+     "method": "POST",
+     "path": "/api/workspace/run",
+     "summary": "Launch a file the right way for its type (html→serve+open, scripts→console, exe/bat→run)."
+    },
+    {
+     "function": "open_file",
+     "method": "POST",
+     "path": "/api/workspace/open",
+     "summary": "Open a chat-referenced file in the OS default app (image viewer, etc.) — works out-of-project."
+    },
+    {
+     "function": "import_external",
+     "method": "POST",
+     "path": "/api/workspace/import",
+     "summary": ""
+    },
+    {
+     "function": "upload_file",
+     "method": "POST",
+     "path": "/api/workspace/upload-file",
+     "summary": ""
+    },
+    {
+     "function": "new_project",
+     "method": "POST",
+     "path": "/api/workspace/new-project",
+     "summary": ""
+    },
+    {
+     "function": "add_root",
+     "method": "POST",
+     "path": "/api/workspace/add-root",
+     "summary": "Open an existing folder in the workspace."
+    },
+    {
+     "function": "remove_root",
+     "method": "POST",
+     "path": "/api/workspace/remove-root",
+     "summary": ""
+    },
+    {
+     "function": "upload_image",
+     "method": "POST",
+     "path": "/api/workspace/upload-image",
+     "summary": ""
+    },
+    {
+     "function": "new_game",
+     "method": "POST",
+     "path": "/api/workspace/new-game",
+     "summary": "Make a game that the live link, the forge, the review and the scene tools can all use from its first minute: `window.__game`, saved edits applied at start, review target…"
+    },
+    {
+     "function": "new_game_status",
+     "method": "GET",
+     "path": "/api/workspace/new-game/status",
+     "summary": "Where a new game's engine install stands: {installing, done, ok, tail}."
+    },
+    {
+     "function": "new_game_defaults",
+     "method": "GET",
+     "path": "/api/workspace/new-game/defaults",
+     "summary": "What the New game dialog starts from: folder, engine, install, and whether npm is here."
+    }
+   ],
+   "file": "backend/asset_studio/routers/workspace.py",
+   "pages": [
+    "engine",
+    "mission",
+    "settings",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/workspace"
+   ],
+   "programs": [
+    "chromium",
+    "google-chrome",
+    "node",
+    "npm",
+    "npm.cmd",
+    "py",
+    "python"
+   ],
+   "purpose": "Workspace explorer/editor endpoints — VSCode-style file access for projects.",
+   "settings": [
+    "cc_graphify",
+    "chrome_path",
+    "host",
+    "new_game_engine",
+    "new_game_install",
+    "new_game_parent",
+    "port",
+    "workspace_autodiscover",
+    "workspace_roots"
+   ],
+   "tests": [
+    "codex_panels_test.py",
+    "delegates_test.py",
+    "engine_parity_test.py",
+    "glb_test.py",
+    "install_test.py",
+    "live_test.py",
+    "new_game_test.py",
+    "polyhaven_test.py",
+    "remote_test.py",
+    "session_survival_test.py",
+    "test:openmodel",
+    "workspace_access_test.py"
+   ]
+  },
+  "worktrees": {
+   "endpoints": [
+    {
+     "function": "repo_map",
+     "method": "GET",
+     "path": "/api/worktrees/map",
+     "summary": "Every open root, with the git facts the rail needs to nest them."
+    },
+    {
+     "function": "list_worktrees",
+     "method": "GET",
+     "path": "/api/worktrees/list",
+     "summary": ""
+    },
+    {
+     "function": "list_branches",
+     "method": "GET",
+     "path": "/api/worktrees/branches",
+     "summary": ""
+    },
+    {
+     "function": "suggest",
+     "method": "GET",
+     "path": "/api/worktrees/suggest",
+     "summary": "Where a worktree of this name would land, so the dialog can show it before you commit."
+    },
+    {
+     "function": "create",
+     "method": "POST",
+     "path": "/api/worktrees/create",
+     "summary": ""
+    },
+    {
+     "function": "remove",
+     "method": "POST",
+     "path": "/api/worktrees/remove",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/worktrees.py",
+   "pages": [
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/worktrees"
+   ],
+   "programs": [],
+   "purpose": "Worktrees over HTTP.",
+   "settings": [],
+   "tests": []
+  },
+  "ws": {
+   "endpoints": [
+    {
+     "function": "ws_endpoint",
+     "method": "WS",
+     "path": "/ws",
+     "summary": ""
+    }
+   ],
+   "file": "backend/asset_studio/routers/ws.py",
+   "pages": [],
+   "prefixes": [],
+   "programs": [],
+   "purpose": "WebSocket live feed: job progress, logs, asset-created, agent + system stats.",
+   "settings": [],
+   "tests": []
+  }
+ },
+ "features": [
+  {
+   "id": "start-stay-up-and-update",
+   "modules": [],
+   "parts": [
+    "app",
+    "system",
+    "ws",
+    "setup",
+    "page:shell",
+    "page:dashboard"
+   ],
+   "smoke": [
+    "/api/health",
+    "/api/setup/tasks",
+    "/api/system/info",
+    "/api/system/stats",
+    "/api/system/version"
+   ],
+   "tests": [
+    "agent_tokens_test.py",
+    "live_status_test.py",
+    "queue_guard_test.py",
+    "restart_test.py",
+    "session_survival_test.py",
+    "stability_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "test:agenttokens",
+    "test:freemem",
+    "test:needsyou",
+    "test:pollshare",
+    "test:uiprefs",
+    "video_test.py"
+   ],
+   "title": "Start, stay up and update"
+  },
+  {
+   "id": "chat-with-claude-code-agents",
+   "modules": [
+    "cc_session",
+    "session_keeper",
+    "live_notes",
+    "btw_hook",
+    "session_hook",
+    "hook_events",
+    "checkpoints",
+    "scheduled",
+    "output_styles",
+    "model_access",
+    "turns",
+    "spend"
+   ],
+   "parts": [
+    "mission",
+    "auth",
+    "autolearn",
+    "voice",
+    "plans",
+    "page:mission",
+    "page:plans"
+   ],
+   "smoke": [
+    "/api/auth/claude",
+    "/api/auth/claude/limits",
+    "/api/autolearn/status",
+    "/api/mission/agents",
+    "/api/mission/attention",
+    "/api/mission/live-status",
+    "/api/mission/overview",
+    "/api/mission/scheduled",
+    "/api/mission/slash-commands",
+    "/api/mission/spend",
+    "/api/plans",
+    "/api/voice/status"
+   ],
+   "tests": [
+    "adopt_sig_test.py",
+    "agent_tokens_test.py",
+    "agent_tools_test.py",
+    "agents_parallel_test.py",
+    "attention_test.py",
+    "boost_test.py",
+    "cc_control_test.py",
+    "claude_compact_test.py",
+    "cmdline_fit_test.py",
+    "codex_account_test.py",
+    "codex_app_test.py",
+    "codex_panels_test.py",
+    "codex_rail_test.py",
+    "deepseek_test.py",
+    "delegates_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "extra_mcp_test.py",
+    "graph_hook_test.py",
+    "hook_events_test.py",
+    "install_test.py",
+    "keeper_live_test.py",
+    "keeper_test.py",
+    "live_status_test.py",
+    "live_test.py",
+    "mcp_engine_test.py",
+    "model_access_test.py",
+    "model_cmd_test.py",
+    "models_test.py",
+    "navigate_test.py",
+    "perf_test.py",
+    "phase_archive_test.py",
+    "plan_usage_test.py",
+    "remote_test.py",
+    "restart_test.py",
+    "session_modes_test.py",
+    "session_survival_test.py",
+    "sonnet_test.py",
+    "steer_test.py",
+    "subagent_notes_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "terrain_test.py",
+    "test:agentpanes",
+    "test:agenttokens",
+    "test:contextmeter",
+    "test:diffnotes",
+    "test:engines",
+    "test:feeddetail",
+    "test:feedscroll",
+    "test:models",
+    "test:pollshare",
+    "test:sendprefs",
+    "test:steer",
+    "turnbar_test.py",
+    "web_tools_test.py"
+   ],
+   "title": "Chat with Claude Code agents"
+  },
+  {
+   "id": "the-prompt-cache-guard",
+   "modules": [
+    "cache_guard",
+    "read_shrink"
+   ],
+   "parts": [],
+   "smoke": [
+    "/api/mission/cache-guard"
+   ],
+   "tests": [],
+   "title": "The prompt cache guard"
+  },
+  {
+   "id": "other-agent-engines-and-terminals",
+   "modules": [
+    "codex_app",
+    "codex_runs",
+    "deepseek_session",
+    "cli_agents"
+   ],
+   "parts": [
+    "codex",
+    "chat_models",
+    "terminal",
+    "deepseek_creator"
+   ],
+   "smoke": [
+    "/api/chat-providers",
+    "/api/codex/status",
+    "/api/deepseek/creator/status",
+    "/api/terminal/agents"
+   ],
+   "tests": [
+    "agents_parallel_test.py",
+    "boost_test.py",
+    "cli_agents_test.py",
+    "codex_account_test.py",
+    "codex_app_test.py",
+    "codex_panels_test.py",
+    "codex_rail_test.py",
+    "codex_runs_test.py",
+    "deepseek_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "extra_mcp_test.py",
+    "plan_usage_test.py",
+    "session_modes_test.py",
+    "stability_test.py",
+    "steer_test.py"
+   ],
+   "title": "Other agent engines and terminals"
+  },
+  {
+   "id": "workspaces-panes-and-files",
+   "modules": [
+    "fswatch"
+   ],
+   "parts": [
+    "workspace",
+    "page:workspace"
+   ],
+   "smoke": [
+    "/api/workspace/changes",
+    "/api/workspace/roots"
+   ],
+   "tests": [
+    "codex_panels_test.py",
+    "delegates_test.py",
+    "engine_parity_test.py",
+    "glb_test.py",
+    "install_test.py",
+    "live_test.py",
+    "new_game_test.py",
+    "polyhaven_test.py",
+    "remote_test.py",
+    "session_survival_test.py",
+    "test:agentpanes",
+    "test:agenttokens",
+    "test:codexconversations",
+    "test:contextmeter",
+    "test:diffnotes",
+    "test:dropfolder",
+    "test:engines",
+    "test:feeddetail",
+    "test:feedscroll",
+    "test:models",
+    "test:needsyou",
+    "test:openmodel",
+    "test:sendprefs",
+    "test:settingsswitches",
+    "test:skillgroups",
+    "test:steer",
+    "workspace_access_test.py"
+   ],
+   "title": "Workspaces, panes and files"
+  },
+  {
+   "id": "worktrees-and-git",
+   "modules": [],
+   "parts": [
+    "worktrees",
+    "git"
+   ],
+   "smoke": [
+    "/api/worktrees/map"
+   ],
+   "tests": [],
+   "title": "Worktrees and git"
+  },
+  {
+   "id": "watching-agents-subagents-and-workflows",
+   "modules": [
+    "subagents"
+   ],
+   "parts": [
+    "workflows",
+    "page:workflows"
+   ],
+   "smoke": [
+    "/api/mission/agents/running",
+    "/api/workflows"
+   ],
+   "tests": [
+    "agent_tokens_test.py",
+    "live_status_test.py",
+    "restart_test.py",
+    "session_survival_test.py",
+    "subagents_scan_test.py",
+    "subagents_visible_test.py",
+    "subagents_workflow_test.py",
+    "test:agenttokens"
+   ],
+   "title": "Watching agents: subagents and workflows"
+  },
+  {
+   "id": "the-code-graph-graphify",
+   "modules": [
+    "graphify_index",
+    "graph_hook",
+    "graph_watch"
+   ],
+   "parts": [],
+   "smoke": [
+    "/api/graphify/status"
+   ],
+   "tests": [
+    "graph_hook_test.py",
+    "graph_scope_test.py",
+    "guard_test.py",
+    "install_test.py",
+    "web_tools_test.py"
+   ],
+   "title": "The code graph (graphify)"
+  },
+  {
+   "id": "the-web-an-agent-can-reach",
+   "modules": [
+    "web_tools"
+   ],
+   "parts": [
+    "web"
+   ],
+   "smoke": [
+    "/api/web/status"
+   ],
+   "tests": [
+    "install_test.py",
+    "mcp_engine_test.py",
+    "web_tools_test.py"
+   ],
+   "title": "The web an agent can reach"
+  },
+  {
+   "id": "the-running-game-dev-servers-live-link-and-visual-review",
+   "modules": [
+    "dev_server"
+   ],
+   "parts": [
+    "live",
+    "live_stream",
+    "review"
+   ],
+   "smoke": [
+    "/api/live/status",
+    "/api/review/browsers",
+    "/api/review/status"
+   ],
+   "tests": [
+    "animate_test.py",
+    "apireflect_test.py",
+    "detail_test.py",
+    "engine_test.py",
+    "forge_review_test.py",
+    "goblin_bench_test.py",
+    "guard_test.py",
+    "live_stage_test.py",
+    "live_stream_test.py",
+    "live_tabs_reap_test.py",
+    "live_test.py",
+    "live_view_test.py",
+    "livepick_test.py",
+    "mcp_engine_test.py",
+    "navigate_test.py",
+    "new_game_test.py",
+    "open_path_test.py",
+    "review_tabs_test.py",
+    "scene_api_test.py",
+    "skills_test.py",
+    "subagents_scan_test.py",
+    "terrain_test.py",
+    "visibility_test.py"
+   ],
+   "title": "The running game: dev servers, live link and visual review"
+  },
+  {
+   "id": "studio-engine",
+   "modules": [
+    "agent_glb",
+    "glb",
+    "live_forge",
+    "library",
+    "assets_index",
+    "engine_tags"
+   ],
+   "parts": [
+    "engine",
+    "gamemodel",
+    "polyhaven",
+    "polypizza",
+    "refs",
+    "page:engine",
+    "live"
+   ],
+   "smoke": [
+    "/api/engine/history",
+    "/api/engine/projects",
+    "/api/engine/state",
+    "/api/live/api",
+    "/api/live/bench",
+    "/api/polypizza/status",
+    "/api/refs/status"
+   ],
+   "tests": [
+    "animate_test.py",
+    "apireflect_test.py",
+    "detail_test.py",
+    "editor_place_test.py",
+    "engine_test.py",
+    "forge_review_test.py",
+    "glb_test.py",
+    "goblin_bench_test.py",
+    "library_test.py",
+    "live_stage_test.py",
+    "live_stream_test.py",
+    "live_tabs_reap_test.py",
+    "live_test.py",
+    "live_view_test.py",
+    "livepick_test.py",
+    "mcp_engine_test.py",
+    "model_cmd_test.py",
+    "navigate_test.py",
+    "new_game_test.py",
+    "open_path_test.py",
+    "perf_test.py",
+    "polyhaven_test.py",
+    "polypizza_test.py",
+    "refs_test.py",
+    "review_tabs_test.py",
+    "scene_api_test.py",
+    "skills_test.py",
+    "subagents_scan_test.py",
+    "terrain_test.py",
+    "test:agenttokens",
+    "test:constraints",
+    "test:curve",
+    "test:draw",
+    "test:edit",
+    "test:engineinuse",
+    "test:forgescript",
+    "test:graph",
+    "test:handles",
+    "test:handrig",
+    "test:hands",
+    "test:livemirror",
+    "test:material",
+    "test:meshedit",
+    "test:model",
+    "test:modstack",
+    "test:nav",
+    "test:open",
+    "test:openmodel",
+    "test:ops",
+    "test:opswire",
+    "test:paint",
+    "test:pollshare",
+    "test:presets",
+    "test:runtime",
+    "test:sculpt",
+    "test:settingsswitches",
+    "test:shading",
+    "test:shapekeys",
+    "test:stage",
+    "test:terrain",
+    "test:terraintool",
+    "test:verts",
+    "test:weightpaint",
+    "visibility_test.py"
+   ],
+   "title": "Studio Engine"
+  },
+  {
+   "id": "generate-2d-and-3d-assets",
+   "modules": [],
+   "parts": [
+    "jobs",
+    "providers",
+    "services",
+    "uploads",
+    "page:image",
+    "page:video",
+    "page:studio2d",
+    "page:studio3d",
+    "page:texture",
+    "page:rig",
+    "page:pipeline",
+    "page:jobs",
+    "page:servers"
+   ],
+   "smoke": [
+    "/api/jobs",
+    "/api/jobs/active",
+    "/api/providers",
+    "/api/providers/comfy-catalog",
+    "/api/providers/errors",
+    "/api/services"
+   ],
+   "tests": [
+    "delegates_test.py",
+    "library_test.py",
+    "queue_guard_test.py",
+    "remote_test.py",
+    "test:pollshare",
+    "video_test.py"
+   ],
+   "title": "Generate 2D and 3D assets"
+  },
+  {
+   "id": "catalog-and-compare",
+   "modules": [],
+   "parts": [
+    "catalog",
+    "agent",
+    "page:catalog",
+    "page:compare"
+   ],
+   "smoke": [
+    "/api/agent/runs",
+    "/api/assets",
+    "/api/catalog/categories",
+    "/api/catalog/summary"
+   ],
+   "tests": [
+    "library_test.py"
+   ],
+   "title": "Catalog and Compare"
+  },
+  {
+   "id": "ask-ai",
+   "modules": [],
+   "parts": [
+    "chat",
+    "page:chat"
+   ],
+   "smoke": [
+    "/api/chat/conversations",
+    "/api/chat/models"
+   ],
+   "tests": [],
+   "title": "Ask AI"
+  },
+  {
+   "id": "settings-keys-skills-and-what-agents-are-told",
+   "modules": [
+    "keychain",
+    "skill_sync"
+   ],
+   "parts": [
+    "settings",
+    "skills",
+    "mcp",
+    "tools",
+    "page:settings"
+   ],
+   "smoke": [
+    "/api/keys",
+    "/api/mcp/catalog",
+    "/api/output-styles",
+    "/api/plugins",
+    "/api/settings",
+    "/api/settings/agent-notes",
+    "/api/skills"
+   ],
+   "tests": [
+    "agent_tools_test.py",
+    "agents_parallel_test.py",
+    "boost_test.py",
+    "codex_account_test.py",
+    "codex_panels_test.py",
+    "deepseek_test.py",
+    "engine_fixes_test.py",
+    "engine_parity_test.py",
+    "engines_test.py",
+    "graph_scope_test.py",
+    "install_test.py",
+    "live_test.py",
+    "mcp_engine_test.py",
+    "queue_guard_test.py",
+    "remote_test.py",
+    "skill_sync_test.py",
+    "skills_test.py",
+    "subagent_notes_test.py",
+    "test:agenttokens",
+    "test:codexconversations",
+    "test:feeddetail",
+    "test:freemem",
+    "test:needsyou",
+    "test:settingsswitches",
+    "test:skillgroups",
+    "web_tools_test.py"
+   ],
+   "title": "Settings, keys, skills and what agents are told"
+  },
+  {
+   "id": "this-map-and-the-installation-check",
+   "modules": [],
+   "parts": [],
+   "smoke": [],
+   "tests": [],
+   "title": "This map and the installation check"
+  }
+ ],
+ "pages": {
+  "catalog": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "settings"
+   ],
+   "file": "frontend/src/pages/Catalog.tsx",
+   "label": "Catalog",
+   "tests": [],
+   "window": "tab"
+  },
+  "chat": {
+   "areas": [
+    "chat",
+    "settings"
+   ],
+   "file": "frontend/src/pages/AskAI.tsx",
+   "label": "Ask AI",
+   "tests": [],
+   "window": "tab"
+  },
+  "compare": {
+   "areas": [
+    "agent",
+    "catalog",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Compare.tsx",
+   "label": "Compare",
+   "tests": [],
+   "window": "tab"
+  },
+  "dashboard": {
+   "areas": [
+    "catalog",
+    "mission",
+    "settings",
+    "system"
+   ],
+   "file": "frontend/src/pages/Dashboard.tsx",
+   "label": "Dashboard",
+   "tests": [],
+   "window": "tab"
+  },
+  "engine": {
+   "areas": [
+    "engine",
+    "live",
+    "polyhaven",
+    "polypizza",
+    "refs",
+    "settings",
+    "workspace"
+   ],
+   "file": "frontend/src/pages/Engine.tsx",
+   "label": "Studio Engine",
+   "tests": [
+    "editor_place_test.py",
+    "scene_api_test.py",
+    "subagents_scan_test.py",
+    "test:agenttokens",
+    "test:constraints",
+    "test:curve",
+    "test:draw",
+    "test:edit",
+    "test:engineinuse",
+    "test:forgescript",
+    "test:graph",
+    "test:handles",
+    "test:handrig",
+    "test:hands",
+    "test:livemirror",
+    "test:material",
+    "test:meshedit",
+    "test:model",
+    "test:modstack",
+    "test:nav",
+    "test:open",
+    "test:openmodel",
+    "test:ops",
+    "test:opswire",
+    "test:paint",
+    "test:presets",
+    "test:runtime",
+    "test:sculpt",
+    "test:settingsswitches",
+    "test:shading",
+    "test:shapekeys",
+    "test:stage",
+    "test:terrain",
+    "test:terraintool",
+    "test:verts",
+    "test:weightpaint"
+   ],
+   "window": "its own window, /engine"
+  },
+  "image": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "services",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/ImageStudio.tsx",
+   "label": "Image",
+   "tests": [],
+   "window": "tab"
+  },
+  "jobs": {
+   "areas": [
+    "jobs",
+    "settings"
+   ],
+   "file": "frontend/src/pages/Jobs.tsx",
+   "label": "Jobs",
+   "tests": [],
+   "window": "tab"
+  },
+  "mission": {
+   "areas": [
+    "auth",
+    "autolearn",
+    "chat_models",
+    "codex",
+    "mission",
+    "settings",
+    "terminal",
+    "voice",
+    "web",
+    "workspace"
+   ],
+   "file": "frontend/src/pages/MissionControl.tsx",
+   "label": "Mission Control",
+   "tests": [
+    "test:agentpanes",
+    "test:agenttokens",
+    "test:contextmeter",
+    "test:diffnotes",
+    "test:engines",
+    "test:feeddetail",
+    "test:feedscroll",
+    "test:models",
+    "test:sendprefs",
+    "test:steer"
+   ],
+   "window": "tab"
+  },
+  "pipeline": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Pipeline.tsx",
+   "label": "Pipeline",
+   "tests": [],
+   "window": "tab"
+  },
+  "plans": {
+   "areas": [
+    "plans",
+    "settings"
+   ],
+   "file": "frontend/src/pages/Plans.tsx",
+   "label": "Plans",
+   "tests": [],
+   "window": "tab"
+  },
+  "rig": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "services",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Rig.tsx",
+   "label": "Rig & Animate",
+   "tests": [],
+   "window": "tab"
+  },
+  "servers": {
+   "areas": [
+    "services",
+    "settings"
+   ],
+   "file": "frontend/src/pages/Servers.tsx",
+   "label": "Servers",
+   "tests": [],
+   "window": "tab"
+  },
+  "settings": {
+   "areas": [
+    "app",
+    "catalog",
+    "chat_models",
+    "codex",
+    "engine",
+    "live",
+    "mission",
+    "providers",
+    "review",
+    "settings",
+    "setup",
+    "skills",
+    "system",
+    "terminal",
+    "voice",
+    "workspace"
+   ],
+   "file": "frontend/src/pages/Settings.tsx",
+   "label": "Settings",
+   "tests": [
+    "test:agenttokens",
+    "test:codexconversations",
+    "test:feeddetail",
+    "test:freemem",
+    "test:needsyou",
+    "test:settingsswitches",
+    "test:skillgroups"
+   ],
+   "window": "tab"
+  },
+  "shell": {
+   "areas": [
+    "auth",
+    "engine",
+    "jobs",
+    "mission",
+    "review",
+    "settings",
+    "system"
+   ],
+   "file": "frontend/src/App.tsx",
+   "label": "App shell",
+   "tests": [
+    "test:agenttokens",
+    "test:freemem",
+    "test:needsyou",
+    "test:uiprefs"
+   ],
+   "window": "around every page"
+  },
+  "studio2d": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "services",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Studio2D.tsx",
+   "label": "2D Studio",
+   "tests": [],
+   "window": "tab"
+  },
+  "studio3d": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "services",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Studio3D.tsx",
+   "label": "3D Studio",
+   "tests": [],
+   "window": "tab"
+  },
+  "texture": {
+   "areas": [
+    "catalog",
+    "jobs",
+    "services",
+    "settings",
+    "uploads"
+   ],
+   "file": "frontend/src/pages/Texture.tsx",
+   "label": "Texture",
+   "tests": [],
+   "window": "tab"
+  },
+  "video": {
+   "areas": [
+    "services"
+   ],
+   "file": "frontend/src/pages/VideoStudio.tsx",
+   "label": "Video",
+   "tests": [],
+   "window": "tab"
+  },
+  "workflows": {
+   "areas": [
+    "settings",
+    "workflows"
+   ],
+   "file": "frontend/src/pages/Workflows.tsx",
+   "label": "Workflows",
+   "tests": [
+    "test:agenttokens"
+   ],
+   "window": "tab"
+  },
+  "workspace": {
+   "areas": [
+    "auth",
+    "autolearn",
+    "chat_models",
+    "codex",
+    "git",
+    "live",
+    "mission",
+    "settings",
+    "skills",
+    "terminal",
+    "voice",
+    "web",
+    "workspace",
+    "worktrees"
+   ],
+   "file": "frontend/src/pages/Workspace.tsx",
+   "label": "Workspace",
+   "tests": [
+    "test:agentpanes",
+    "test:agenttokens",
+    "test:codexconversations",
+    "test:contextmeter",
+    "test:diffnotes",
+    "test:dropfolder",
+    "test:engines",
+    "test:feeddetail",
+    "test:feedscroll",
+    "test:models",
+    "test:needsyou",
+    "test:sendprefs",
+    "test:settingsswitches",
+    "test:skillgroups",
+    "test:steer"
+   ],
+   "window": "tab"
+  }
+ },
+ "schema": 1,
+ "settings": {
+  "auto_compact_at": {
+   "areas": [
+    "mission",
+    "plans"
+   ],
+   "defaults": [
+    "0.92"
+   ],
+   "label": ""
+  },
+  "auto_start_services": {
+   "areas": [
+    "jobs"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "boost": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": "BOOST: spend less per prompt"
+  },
+  "boost_bash_chars": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "_BASH_CHARS"
+   ],
+   "label": ""
+  },
+  "boost_codex_tool_tokens": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "_CODEX_TOOL_TOKENS"
+   ],
+   "label": ""
+  },
+  "boost_compress": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "boost_directive": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "boost_level": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "\"safe\""
+   ],
+   "label": ""
+  },
+  "boost_prefetch": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "boost_tool_output": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "cc_1m": {
+   "areas": [
+    "mission",
+    "plans"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "1M context"
+  },
+  "cc_animate": {
+   "areas": [
+    "live"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": "Animation review"
+  },
+  "cc_autolearn": {
+   "areas": [
+    "autolearn",
+    "settings"
+   ],
+   "defaults": [],
+   "label": "Auto-learn skills"
+  },
+  "cc_blender_kiln": {
+   "areas": [],
+   "defaults": [],
+   "label": "Blender kiln"
+  },
+  "cc_code_tools": {
+   "areas": [],
+   "defaults": [
+    "False"
+   ],
+   "label": "Code tools and tests"
+  },
+  "cc_compact_window": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_debugger": {
+   "areas": [
+    "live"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": "Debugger"
+  },
+  "cc_engine_subagents": {
+   "areas": [],
+   "defaults": [
+    "False"
+   ],
+   "label": ""
+  },
+  "cc_engine_view": {
+   "areas": [
+    "engine",
+    "live"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_fable_efficient": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "Fable token efficiency"
+  },
+  "cc_fast_mode": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_force_plan": {
+   "areas": [],
+   "defaults": [],
+   "label": "Force plan mode"
+  },
+  "cc_forge": {
+   "areas": [
+    "engine",
+    "live"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "The forge"
+  },
+  "cc_graphify": {
+   "areas": [
+    "codex",
+    "mcp",
+    "settings",
+    "workspace"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Code graph"
+  },
+  "cc_live": {
+   "areas": [
+    "engine",
+    "live"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Live game link"
+  },
+  "cc_mcp": {
+   "areas": [
+    "mcp"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Studio tools over MCP"
+  },
+  "cc_memory": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "Memory"
+  },
+  "cc_navigate": {
+   "areas": [
+    "live"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": "Navigate the running game"
+  },
+  "cc_new_game": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "New game template"
+  },
+  "cc_ops": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "Mesh tools"
+  },
+  "cc_output_style": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_phase_archive": {
+   "areas": [
+    "mission",
+    "plans"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "cc_phases": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "Build phases panel"
+  },
+  "cc_prompt_snapshot": {
+   "areas": [],
+   "defaults": [
+    "False"
+   ],
+   "label": ""
+  },
+  "cc_review": {
+   "areas": [],
+   "defaults": [
+    "False"
+   ],
+   "label": "Visual review"
+  },
+  "cc_review_gpu": {
+   "areas": [
+    "review"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "cc_review_quality": {
+   "areas": [
+    "engine",
+    "live",
+    "review"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_review_subagents": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "cc_scene_edit": {
+   "areas": [
+    "live"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Scene edit for agents"
+  },
+  "cc_streaming": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "cc_vertedit": {
+   "areas": [],
+   "defaults": [
+    "False"
+   ],
+   "label": "Edit mode: the vertices"
+  },
+  "cc_web_tools": {
+   "areas": [
+    "settings",
+    "web"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Blocked web pages and search"
+  },
+  "chat_max_tokens": {
+   "areas": [
+    "chat"
+   ],
+   "defaults": [
+    "2048"
+   ],
+   "label": ""
+  },
+  "chrome_path": {
+   "areas": [
+    "workspace"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "claude_renews_on": {
+   "areas": [
+    "mission"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "codex_fast": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "codex_path": {
+   "areas": [
+    "codex"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "codex_planner": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "codex_recycle_mb": {
+   "areas": [
+    "codex"
+   ],
+   "defaults": [
+    "2048"
+   ],
+   "label": ""
+  },
+  "codex_resume_max_mb": {
+   "areas": [
+    "codex"
+   ],
+   "defaults": [
+    "100"
+   ],
+   "label": ""
+  },
+  "compact_base_tokens": {
+   "areas": [
+    "mission",
+    "plans"
+   ],
+   "defaults": [
+    "25000"
+   ],
+   "label": ""
+  },
+  "context_window": {
+   "areas": [
+    "mission",
+    "plans"
+   ],
+   "defaults": [
+    "0"
+   ],
+   "label": ""
+  },
+  "custom_providers": {
+   "areas": [
+    "providers"
+   ],
+   "defaults": [
+    "[]"
+   ],
+   "label": ""
+  },
+  "deepseek_idle_minutes": {
+   "areas": [],
+   "defaults": [
+    "_IDLE_MINUTES_DEFAULT"
+   ],
+   "label": ""
+  },
+  "default_providers": {
+   "areas": [
+    "agent"
+   ],
+   "defaults": [
+    "{}"
+   ],
+   "label": ""
+  },
+  "engine": {
+   "areas": [
+    "engine",
+    "live",
+    "review"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "gpu_idle_release_seconds": {
+   "areas": [
+    "system"
+   ],
+   "defaults": [
+    "90"
+   ],
+   "label": ""
+  },
+  "host": {
+   "areas": [
+    "chat_models",
+    "codex",
+    "engine",
+    "live",
+    "system",
+    "workspace"
+   ],
+   "defaults": [
+    "\"127.0.0.1\""
+   ],
+   "label": ""
+  },
+  "live_pick": {
+   "areas": [
+    "live"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Send a page element"
+  },
+  "min_free_gb": {
+   "areas": [
+    "jobs"
+   ],
+   "defaults": [
+    "3"
+   ],
+   "label": ""
+  },
+  "min_free_ram_gb": {
+   "areas": [
+    "jobs"
+   ],
+   "defaults": [
+    "4"
+   ],
+   "label": ""
+  },
+  "monthly_spend_cap_usd": {
+   "areas": [
+    "jobs",
+    "mission"
+   ],
+   "defaults": [
+    "0"
+   ],
+   "label": ""
+  },
+  "needs_you": {
+   "areas": [
+    "mission"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Who needs you"
+  },
+  "new_game_engine": {
+   "areas": [
+    "workspace"
+   ],
+   "defaults": [
+    "\"three\""
+   ],
+   "label": ""
+  },
+  "new_game_install": {
+   "areas": [
+    "workspace"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "new_game_parent": {
+   "areas": [
+    "workspace"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "perf_fast": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": "Instant window"
+  },
+  "plugins": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "port": {
+   "areas": [
+    "chat_models",
+    "codex",
+    "engine",
+    "live",
+    "system",
+    "workspace"
+   ],
+   "defaults": [
+    "8777"
+   ],
+   "label": ""
+  },
+  "pricing_overrides": {
+   "areas": [],
+   "defaults": [],
+   "label": ""
+  },
+  "remote": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": ""
+  },
+  "remote_bot": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "remote_channel": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "remote_channel_name": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "remote_images": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "remote_token": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "\"\""
+   ],
+   "label": ""
+  },
+  "scheduled_paused": {
+   "areas": [
+    "mission"
+   ],
+   "defaults": [
+    "False"
+   ],
+   "label": ""
+  },
+  "serialize_local_jobs": {
+   "areas": [
+    "jobs"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "services": {
+   "areas": [
+    "services",
+    "setup"
+   ],
+   "defaults": [
+    "{}"
+   ],
+   "label": ""
+  },
+  "session_defaults": {
+   "areas": [
+    "mission",
+    "terminal"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "studio_tools_prompt": {
+   "areas": [
+    "codex"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Studio generators"
+  },
+  "sweep_browser_windows": {
+   "areas": [
+    "settings"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": "Sweep leaked browser windows"
+  },
+  "tools": {
+   "areas": [
+    "providers",
+    "services"
+   ],
+   "defaults": [
+    "{}"
+   ],
+   "label": ""
+  },
+  "usage_budgets": {
+   "areas": [
+    "mission"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "voice_engine": {
+   "areas": [
+    "voice"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "voice_groq_model": {
+   "areas": [
+    "voice"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "voice_idle_unload_seconds": {
+   "areas": [
+    "voice"
+   ],
+   "defaults": [
+    "180"
+   ],
+   "label": ""
+  },
+  "voice_model": {
+   "areas": [
+    "voice"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "voice_task": {
+   "areas": [
+    "voice"
+   ],
+   "defaults": [],
+   "label": ""
+  },
+  "workspace_autodiscover": {
+   "areas": [
+    "workspace"
+   ],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "workspace_roots": {
+   "areas": [
+    "mission",
+    "plans",
+    "workspace"
+   ],
+   "defaults": [],
+   "label": ""
+  }
+ },
+ "slow_tests": [
+  "keeper_live_test.py"
+ ],
+ "tests": {
+  "backend": {
+   "adopt_sig_test.py": {
+    "areas": [],
+    "modules": [
+     "cc_session"
+    ],
+    "pages": [],
+    "summary": "An adopted session's signature must equal the one a send builds, or every backend restart costs the next message a respawn and a 'Setting changed mid-conversation' warni…"
+   },
+   "agent_tokens_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "system",
+     "workflows"
+    ],
+    "modules": [
+     "agent_usage",
+     "mission",
+     "subagents",
+     "workflows"
+    ],
+    "pages": [],
+    "summary": "An agent's tokens, counted the way they were spent: every API call ONCE."
+   },
+   "agent_tools_test.py": {
+    "areas": [
+     "tools"
+    ],
+    "modules": [
+     "agent_tools",
+     "cc_session",
+     "config"
+    ],
+    "pages": [],
+    "summary": "Jobs, the test runner, and touching code safely."
+   },
+   "agents_parallel_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "settings"
+    ],
+    "modules": [
+     "boost",
+     "cc_session",
+     "checkpoints",
+     "codex_app",
+     "config",
+     "deepseek_session",
+     "routers.mission",
+     "scheduled"
+    ],
+    "pages": [],
+    "summary": "Two agents on one project, and the costs that come with them — checked without a vendor call."
+   },
+   "animate_test.py": {
+    "areas": [
+     "live"
+    ],
+    "modules": [
+     "live_animate"
+    ],
+    "pages": [],
+    "summary": "The gait report: which foot, when, and by how much."
+   },
+   "apireflect_test.py": {
+    "areas": [
+     "live"
+    ],
+    "modules": [
+     "apireflect"
+    ],
+    "pages": [],
+    "summary": "The API reflection: what forge-ops.js exports, read out of the source."
+   },
+   "attention_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "config",
+     "mission",
+     "routers.mission"
+    ],
+    "pages": [],
+    "summary": "Who needs you: the three states, the order, and the switch."
+   },
+   "boost_test.py": {
+    "areas": [
+     "codex",
+     "settings"
+    ],
+    "modules": [
+     "boost",
+     "cc_session",
+     "codex_app",
+     "config",
+     "routers.settings"
+    ],
+    "pages": [],
+    "summary": "BOOST: the local economies, and the promise that each number on the button is real."
+   },
+   "cc_control_test.py": {
+    "areas": [],
+    "modules": [
+     "cc_session"
+    ],
+    "pages": [],
+    "summary": "A TOOL CALL THAT WAITS FOR THE HOST MUST NOT WAIT FOREVER."
+   },
+   "claude_compact_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "hook_events",
+     "mission"
+    ],
+    "pages": [],
+    "summary": "Claude context meter regression tests, isolated from accounts and vendor calls."
+   },
+   "cli_agents_test.py": {
+    "areas": [],
+    "modules": [
+     "cli_agents"
+    ],
+    "pages": [],
+    "summary": "A model CLI the agent starts in the BACKGROUND is a running card until its notification."
+   },
+   "cmdline_fit_test.py": {
+    "areas": [],
+    "modules": [
+     "cc_session"
+    ],
+    "pages": [],
+    "summary": "Does every claude launch fit the Windows command line — and does a launch that cannot start leave the working session alone?"
+   },
+   "codex_account_test.py": {
+    "areas": [
+     "mission",
+     "settings",
+     "terminal"
+    ],
+    "modules": [
+     "agents",
+     "codex_account",
+     "terminal"
+    ],
+    "pages": [],
+    "summary": "Offline regression checks; no credentials, browser or inference calls."
+   },
+   "codex_app_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "codex_app",
+     "mission"
+    ],
+    "pages": [],
+    "summary": "Codex in the chat: sign-in, models, and a streamed conversation through the real app-server."
+   },
+   "codex_panels_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans",
+     "skills",
+     "workspace"
+    ],
+    "modules": [
+     "checkpoints",
+     "codex_app",
+     "mission",
+     "skills",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "The four rail buttons on a CODEX pane: Skills, Subagents, Prompt history, Checkpoints."
+   },
+   "codex_rail_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "codex_app",
+     "deepseek_session",
+     "mission"
+    ],
+    "pages": [],
+    "summary": "Does the subagents button on the left work for CODEX?"
+   },
+   "codex_runs_test.py": {
+    "areas": [],
+    "modules": [
+     "codex_runs"
+    ],
+    "pages": [],
+    "summary": ""
+   },
+   "deepseek_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "settings"
+    ],
+    "modules": [
+     "cc_session",
+     "config",
+     "deepseek_session",
+     "keychain",
+     "mission",
+     "pricing",
+     "routers.mission",
+     "turns",
+     "usage_accounts"
+    ],
+    "pages": [],
+    "summary": "Offline integration test using the installed official DSH runtime and a local API fixture."
+   },
+   "delegates_test.py": {
+    "areas": [
+     "jobs",
+     "mission",
+     "plans",
+     "workspace"
+    ],
+    "modules": [
+     "delegates",
+     "mission",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "Work handed to ANOTHER engine, shown as the subagent it is."
+   },
+   "detail_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "live",
+     "live_detail",
+     "live_forge",
+     "routers.live"
+    ],
+    "pages": [],
+    "summary": "The detail review, and the three faults found on the same day beside it."
+   },
+   "editor_place_test.py": {
+    "areas": [],
+    "modules": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "PLACING, DUPLICATING AND REMOVING — proved against real three.js, with no browser."
+   },
+   "engine_fixes_test.py": {
+    "areas": [
+     "settings"
+    ],
+    "modules": [
+     "boost",
+     "config",
+     "fsutil",
+     "pricing"
+    ],
+    "pages": [],
+    "summary": "Four fixes that each had a real failure behind them, checked without a vendor call."
+   },
+   "engine_parity_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "skills",
+     "workspace"
+    ],
+    "modules": [
+     "cc_session",
+     "checkpoints",
+     "deepseek_session",
+     "engines",
+     "mission",
+     "skills",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "One workbench, three engines: the buttons that were Claude's own."
+   },
+   "engine_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "assets_index",
+     "config",
+     "engine",
+     "engine_tags",
+     "live"
+    ],
+    "pages": [],
+    "summary": "Does the engine window get the truth, and can it be talked into reading the wrong file?"
+   },
+   "engines_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans",
+     "skills"
+    ],
+    "modules": [
+     "cc_session",
+     "codex_app",
+     "deepseek_session",
+     "engines",
+     "mission",
+     "routers.mission",
+     "skills"
+    ],
+    "pages": [],
+    "summary": "One interface for every engine (engines.py) — and every door in the app goes through it."
+   },
+   "extra_mcp_test.py": {
+    "areas": [
+     "codex"
+    ],
+    "modules": [
+     "cc_session",
+     "codex_app",
+     "extra_mcp"
+    ],
+    "pages": [],
+    "summary": "Verify workspace scoping and both Studio session integrations without starting an agent."
+   },
+   "forge_review_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "live"
+    ],
+    "pages": [],
+    "summary": "THE SHEET HAS TO SAY WHAT IT DID NOT CHECK."
+   },
+   "glb_test.py": {
+    "areas": [
+     "engine",
+     "workspace"
+    ],
+    "modules": [
+     "engine",
+     "glb",
+     "live_forge",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "The decoder, end to end: a Draco model becomes one anything can open."
+   },
+   "goblin_bench_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "review"
+    ],
+    "modules": [
+     "live",
+     "live_detail",
+     "live_forge",
+     "review"
+    ],
+    "pages": [],
+    "summary": "The bench, after the goblin A/B (data/ab/goblin/engine/CONTRACT.md, section C, and items 8-10)."
+   },
+   "graph_hook_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "graph_hook",
+     "mission"
+    ],
+    "pages": [],
+    "summary": "Which shell commands are code searches, and the note the code graph adds to one."
+   },
+   "graph_scope_test.py": {
+    "areas": [
+     "settings"
+    ],
+    "modules": [
+     "boost",
+     "config",
+     "graphify_index"
+    ],
+    "pages": [],
+    "summary": "What the code graph is allowed to be ABOUT."
+   },
+   "guard_test.py": {
+    "areas": [
+     "review"
+    ],
+    "modules": [
+     "graph_hook"
+    ],
+    "pages": [],
+    "summary": "Does the browser-massacre guard block the right things and nothing else?"
+   },
+   "hook_events_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "hook_events",
+     "mission",
+     "session_hook"
+    ],
+    "pages": [],
+    "summary": "Do the compaction and phase hooks record the right thing, and change the right reading?"
+   },
+   "install_test.py": {
+    "areas": [
+     "auth",
+     "autolearn",
+     "mission",
+     "settings",
+     "web",
+     "workspace"
+    ],
+    "modules": [
+     "autolearn",
+     "cc_session",
+     "claude_auth",
+     "config",
+     "graphify_index",
+     "main",
+     "usage",
+     "web_tools",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "A new PC, held to what it needs: every fault here was found by installing on an empty profile."
+   },
+   "keeper_live_test.py": {
+    "areas": [],
+    "modules": [
+     "cc_session"
+    ],
+    "pages": [],
+    "summary": "THE REAL THING: a real session, a real background agent, and the backend dying under it."
+   },
+   "keeper_test.py": {
+    "areas": [],
+    "modules": [
+     "cc_session"
+    ],
+    "pages": [],
+    "summary": "THE SESSION'S STDIN MUST OUTLIVE THE BACKEND."
+   },
+   "library_test.py": {
+    "areas": [
+     "catalog",
+     "jobs"
+    ],
+    "modules": [
+     "config",
+     "db",
+     "library",
+     "models",
+     "routers.catalog"
+    ],
+    "pages": [],
+    "summary": "The model library (library.py) and the Catalog shelves, against a throwaway ASSET_STUDIO_DATA."
+   },
+   "live_stage_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "live",
+     "live_scene",
+     "live_stage"
+    ],
+    "pages": [],
+    "summary": "The 2D scene tools, with the page replaced by a fake: what they send, and what they keep on disk."
+   },
+   "live_status_test.py": {
+    "areas": [
+     "mission",
+     "system"
+    ],
+    "modules": [
+     "cc_session",
+     "subagents"
+    ],
+    "pages": [],
+    "summary": "Does the rail call a workspace \"working\" when its subagents are the ones working?"
+   },
+   "live_stream_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "live_stream",
+     "review"
+    ],
+    "modules": [
+     "live",
+     "live_stream",
+     "review",
+     "routers.live_stream"
+    ],
+    "pages": [],
+    "summary": "The agent's tab as a stream a person watches: what it may do, and what it must never do."
+   },
+   "live_tabs_reap_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "live_stream",
+     "review"
+    ],
+    "modules": [
+     "engine",
+     "live",
+     "live_stream",
+     "review"
+    ],
+    "pages": [],
+    "summary": "Does a game tab close once no agent uses it, and does the engine stop calling it \"in use\"?"
+   },
+   "live_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "review",
+     "settings",
+     "workspace"
+    ],
+    "modules": [
+     "apireflect",
+     "browser_install",
+     "cc_session",
+     "live",
+     "live_forge",
+     "live_shim",
+     "main",
+     "preview_server",
+     "review",
+     "routers.engine",
+     "routers.live",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "Can an agent question the running game, and change it?"
+   },
+   "live_view_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "config",
+     "live",
+     "live_navigate",
+     "live_scene",
+     "live_view",
+     "routers.live"
+    ],
+    "pages": [],
+    "summary": "The agent's live view — the picture of every change, the camera on /shot, /watch, and `stale`."
+   },
+   "livepick_test.py": {
+    "areas": [
+     "live"
+    ],
+    "modules": [
+     "config",
+     "live_pick"
+    ],
+    "pages": [],
+    "summary": "Click a page element and send it: the script, the words, and the switch."
+   },
+   "mcp_engine_test.py": {
+    "areas": [
+     "live",
+     "mcp",
+     "settings",
+     "web"
+    ],
+    "modules": [
+     "cc_session",
+     "config",
+     "main",
+     "mcp_catalog",
+     "web_tools"
+    ],
+    "pages": [],
+    "summary": "The Studio engine over MCP: the catalog, the route, the stdio server and the session flag."
+   },
+   "model_access_test.py": {
+    "areas": [],
+    "modules": [
+     "model_access"
+    ],
+    "pages": [],
+    "summary": "Does the picker learn the right thing from a turn, and forget it at the right time?"
+   },
+   "model_cmd_test.py": {
+    "areas": [
+     "polyhaven"
+    ],
+    "modules": [
+     "cc_session",
+     "model_cmd"
+    ],
+    "pages": [],
+    "summary": "/gamemodel: the art tools are told only to a message that asks for them, 2D or 3D."
+   },
+   "models_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "mission",
+     "pricing"
+    ],
+    "pages": [],
+    "summary": "Opus 5.5 in the Studio: offered in the picker, priced from the real rate card, given the 1M window, and never mistaken for Opus 5."
+   },
+   "navigate_test.py": {
+    "areas": [
+     "live"
+    ],
+    "modules": [
+     "cc_session",
+     "config",
+     "live_navigate"
+    ],
+    "pages": [],
+    "summary": "Navigate: the pure parts, held without a browser."
+   },
+   "new_game_test.py": {
+    "areas": [
+     "engine",
+     "workspace"
+    ],
+    "modules": [
+     "assets_index",
+     "config",
+     "dev_server",
+     "game_scaffold",
+     "routers.workspace",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "Does \"New game\" make a game every Studio tool can use, and does it refuse what it should?"
+   },
+   "open_path_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "review"
+    ],
+    "modules": [
+     "live",
+     "review"
+    ],
+    "pages": [],
+    "summary": "The open path cannot hang, and it says what really went wrong."
+   },
+   "perf_test.py": {
+    "areas": [
+     "engine",
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "config",
+     "engine",
+     "mission",
+     "perf"
+    ],
+    "pages": [],
+    "summary": "The instant-window caches: each one is exact, and each one can be switched off."
+   },
+   "phase_archive_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "mission"
+    ],
+    "pages": [],
+    "summary": "Finished phase lists leave the CLI's task folder by themselves, and the Phases panel keeps them."
+   },
+   "plan_usage_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "codex_app",
+     "mission",
+     "spend",
+     "usage"
+    ],
+    "pages": [],
+    "summary": "Plan/context and spend regression tests."
+   },
+   "polyhaven_test.py": {
+    "areas": [
+     "polyhaven",
+     "workspace"
+    ],
+    "modules": [
+     "polyhaven",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "Poly Haven downloads, with the network replaced by a fake: what is fetched, where it lands, what is refused, and the license kept beside it."
+   },
+   "polypizza_test.py": {
+    "areas": [
+     "polypizza"
+    ],
+    "modules": [
+     "polypizza"
+    ],
+    "pages": [],
+    "summary": "Poly Pizza, offline: rows, hosts, ids and the missing-key answer."
+   },
+   "queue_guard_test.py": {
+    "areas": [
+     "providers",
+     "settings",
+     "system"
+    ],
+    "modules": [
+     "config",
+     "models",
+     "providers",
+     "routers.settings",
+     "system_stats"
+    ],
+    "pages": [],
+    "summary": "The two guards that keep a heavy local job from freezing the PC."
+   },
+   "refs_test.py": {
+    "areas": [
+     "refs"
+    ],
+    "modules": [
+     "refs"
+    ],
+    "pages": [],
+    "summary": "refs: the human reference library — search by whole words, requests checked, copies into a game."
+   },
+   "remote_test.py": {
+    "areas": [
+     "jobs",
+     "mission",
+     "settings",
+     "workspace"
+    ],
+    "modules": [
+     "cc_session",
+     "config",
+     "delegates",
+     "engines",
+     "remote",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "REMOTE — the phone gets the right turn, and the reply reaches the right agent."
+   },
+   "restart_test.py": {
+    "areas": [
+     "app",
+     "mission",
+     "system"
+    ],
+    "modules": [
+     "cc_session",
+     "main",
+     "routers.system",
+     "subagents"
+    ],
+    "pages": [],
+    "summary": "Does a restart actually replace the backend, and can the launcher find what to end?"
+   },
+   "review_tabs_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "review"
+    ],
+    "modules": [
+     "live",
+     "review"
+    ],
+    "pages": [],
+    "summary": "What the shared browser is allowed to close."
+   },
+   "scene_api_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "config",
+     "live",
+     "live_scene"
+    ],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The scene API — objects, edit, edits — held to the engines' own answers."
+   },
+   "session_modes_test.py": {
+    "areas": [
+     "mission",
+     "terminal"
+    ],
+    "modules": [
+     "session_modes"
+    ],
+    "pages": [],
+    "summary": "session_modes: the approval mode a folder's agent runs with, the same from every device."
+   },
+   "session_survival_test.py": {
+    "areas": [
+     "mission",
+     "system",
+     "workspace"
+    ],
+    "modules": [
+     "cc_session",
+     "subagents",
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "THE BACKEND STOPPING MUST NEVER STOP A SESSION."
+   },
+   "skill_sync_test.py": {
+    "areas": [
+     "skills"
+    ],
+    "modules": [
+     "skill_sync",
+     "skills"
+    ],
+    "pages": [],
+    "summary": "Skills travel to another computer, and no local work is lost on the way."
+   },
+   "skills_test.py": {
+    "areas": [
+     "engine",
+     "live",
+     "skills"
+    ],
+    "modules": [
+     "skills"
+    ],
+    "pages": [],
+    "summary": "Every skill this repository ships, held to the rules that make one work."
+   },
+   "sonnet_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "mission",
+     "pricing"
+    ],
+    "pages": [],
+    "summary": "Pinned Sonnet selection, pricing, and Opus -> Sonnet delegation launch wiring."
+   },
+   "stability_test.py": {
+    "areas": [
+     "app",
+     "codex"
+    ],
+    "modules": [
+     "coalesce",
+     "codex_app",
+     "config",
+     "main"
+    ],
+    "pages": [],
+    "summary": "Stability: the backend must not be killed for being busy, and must not grow without bound."
+   },
+   "steer_test.py": {
+    "areas": [
+     "codex",
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "cc_session",
+     "codex_app",
+     "live_notes",
+     "mission",
+     "routers.mission"
+    ],
+    "pages": [],
+    "summary": "Steering integration tests without vendor calls or the user's session data."
+   },
+   "subagent_notes_test.py": {
+    "areas": [
+     "settings"
+    ],
+    "modules": [
+     "cc_session",
+     "routers.settings"
+    ],
+    "pages": [],
+    "summary": "Subagents get one line about the engine, unless Settings asks for the full engine notes."
+   },
+   "subagents_scan_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "review",
+     "system"
+    ],
+    "modules": [
+     "cc_session",
+     "mission",
+     "review",
+     "subagents"
+    ],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Does the incremental transcript scan read only new bytes, and still read everything?"
+   },
+   "subagents_visible_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "system"
+    ],
+    "modules": [
+     "mission",
+     "subagents"
+    ],
+    "pages": [],
+    "summary": "Is a helper listed for as long as it works, however it was started?"
+   },
+   "subagents_workflow_test.py": {
+    "areas": [
+     "mission",
+     "plans",
+     "system",
+     "workflows"
+    ],
+    "modules": [
+     "mission",
+     "subagents",
+     "workflows"
+    ],
+    "pages": [],
+    "summary": "Are Workflow-tool agents counted, named and closed like every other agent?"
+   },
+   "terrain_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "cc_session",
+     "live",
+     "live_terrain",
+     "routers.live"
+    ],
+    "pages": [],
+    "summary": "Can an agent sculpt a world over HTTP, and get numbers back instead of a picture?"
+   },
+   "turnbar_test.py": {
+    "areas": [
+     "mission",
+     "plans"
+    ],
+    "modules": [
+     "mission",
+     "turns"
+    ],
+    "pages": [],
+    "summary": "The line under a finished answer: what it counted, what it joined, and what it refused to say."
+   },
+   "video_test.py": {
+    "areas": [
+     "providers",
+     "system"
+    ],
+    "modules": [
+     "gpu_memory",
+     "models",
+     "providers"
+    ],
+    "pages": [],
+    "summary": "Video workflow and queue contract tests, without paid inference."
+   },
+   "visibility_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "asset_sheet",
+     "assets_index",
+     "code_hints",
+     "config",
+     "live",
+     "live_forge",
+     "preview_server",
+     "routers.engine"
+    ],
+    "pages": [],
+    "summary": "Seeing the assets, finding the code, and a forge that heals - package D of the agent-scene-tools contract (data/contracts/agent-scene-tools.md)."
+   },
+   "web_tools_test.py": {
+    "areas": [
+     "settings",
+     "web"
+    ],
+    "modules": [
+     "cc_session",
+     "graph_hook",
+     "web_tools"
+    ],
+    "pages": [],
+    "summary": "Can an agent reach a page that blocks it, and does it get told how?"
+   },
+   "workspace_access_test.py": {
+    "areas": [
+     "workspace"
+    ],
+    "modules": [
+     "workspace"
+    ],
+    "pages": [],
+    "summary": "Installed application folders can be opened without exposing system trees."
+   }
+  },
+  "frontend": {
+   "test:agentpanes": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": ""
+   },
+   "test:agenttokens": {
+    "areas": [],
+    "pages": [
+     "engine",
+     "mission",
+     "settings",
+     "shell",
+     "workflows",
+     "workspace"
+    ],
+    "summary": "What an agent's token number means, everywhere it is shown: NEW tokens (input + cache writes + output, every API call once), with the cache reads apart."
+   },
+   "test:codexconversations": {
+    "areas": [],
+    "pages": [
+     "settings",
+     "workspace"
+    ],
+    "summary": "A BUSY CODEX IS NOT A SIGNED-OUT CODEX, AND A 251 MB CONVERSATION NEEDS A DOOR OUT."
+   },
+   "test:constraints": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Bone constraints (rig.ts applyConstraints), with real three: each one does what Blender's does."
+   },
+   "test:contextmeter": {
+    "areas": [
+     "mission"
+    ],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "Separate hidden Electron session: no user profile or live backend is touched."
+   },
+   "test:curve": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Curves (curve.ts): a placed recipe of control points swept into a tube, with real three for the mesh."
+   },
+   "test:diffnotes": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "Comments on a diff, as the agent reads them."
+   },
+   "test:draw": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Draw (draw.ts): the 2D sprite tools, in node — pixels in, pixels out."
+   },
+   "test:dropfolder": {
+    "areas": [],
+    "pages": [
+     "workspace"
+    ],
+    "summary": "Dropping a folder on the Workspaces list."
+   },
+   "test:edit": {
+    "areas": [
+     "engine"
+    ],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The editor writes into the user's own source file."
+   },
+   "test:engineinuse": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Is an agent USING the engine, or has it only left a game tab open?"
+   },
+   "test:engines": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "THE WORKBENCH BELONGS TO THE ENGINE YOU PICKED, NOT TO CLAUDE."
+   },
+   "test:feeddetail": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "settings",
+     "workspace"
+    ],
+    "summary": "Three modes for a command's output, and the one rule behind all three."
+   },
+   "test:feedscroll": {
+    "areas": [
+     "mission"
+    ],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "Where the conversation feed's view belongs when its content changes."
+   },
+   "test:forgescript": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Opening a recorded forge run as a file."
+   },
+   "test:freemem": {
+    "areas": [
+     "system"
+    ],
+    "pages": [
+     "settings",
+     "shell"
+    ],
+    "summary": "FREE NOW IS A BUTTON, SO IT HAS TO BE A BUTTON."
+   },
+   "test:graph": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The graph editor's arithmetic (graph.ts) and the keys a clip keeps (kit.ts)."
+   },
+   "test:handles": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Parameter handles: an arrow on the model, bound to one number parameter, that you drag."
+   },
+   "test:handrig": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The game hand (handrig.ts), held to numbers measured against hands.ts's own field."
+   },
+   "test:hands": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Hands as one signed-distance field, and the grip placement, tested on the numbers that would be wrong if the geometry were: an empty channel along the handle, fingers wr…"
+   },
+   "test:livemirror": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The live mirror of a running game, tested on the faults that sent it back."
+   },
+   "test:material": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Procedural materials and the one-atlas bake, tested on the numbers that would be wrong if the algorithm were."
+   },
+   "test:meshedit": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The edit-mode tools (meshedit.ts), held to geometry that can be checked exactly."
+   },
+   "test:model": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The modelling operations, tested on the numbers that would be wrong if the algorithm were."
+   },
+   "test:models": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "One name per model id, and the trap that made this file: the rules are substring rules in order, so `opus-5` also matches `claude-opus-5-5`."
+   },
+   "test:modstack": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The modifiers the Mesh panel gained (ops.applyMod): array, deform, decimate, boolean, with real three."
+   },
+   "test:nav": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The viewport's navigation and what re-renders when it moves."
+   },
+   "test:needsyou": {
+    "areas": [],
+    "pages": [
+     "settings",
+     "shell",
+     "workspace"
+    ],
+    "summary": "\"Who needs you\": it lives in the bottom bar, and it takes no space when there is no news."
+   },
+   "test:open": {
+    "areas": [
+     "engine"
+    ],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Opening a game's own assets — the convention, against a real game and against a fake one."
+   },
+   "test:openmodel": {
+    "areas": [
+     "workspace"
+    ],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Opening a .glb in the editor."
+   },
+   "test:ops": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The operations library, tested on real geometry rather than on a toy array."
+   },
+   "test:opswire": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The goblin A/B's new tools, as an agent meets them: through makeOps(THREE), on real geometry."
+   },
+   "test:paint": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Paint on the model: the part with no GPU in it."
+   },
+   "test:pollshare": {
+    "areas": [
+     "engine",
+     "mission",
+     "providers",
+     "system"
+    ],
+    "pages": [],
+    "summary": "Four components, one question, one request."
+   },
+   "test:presets": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The configurator's pure half: what a manifest's `options`, `advanced`, `presets` become, what a preset may write into the edit document, which preset the values match, h…"
+   },
+   "test:runtime": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The Studio runtime (studio-runtime.js), tested on the promises a shipped game relies on."
+   },
+   "test:sculpt": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Sculpt, decimate and sweep, tested on the numbers that would be wrong if the algorithms were."
+   },
+   "test:sendprefs": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "Which model, effort and mode does a message go out with?"
+   },
+   "test:settingsswitches": {
+    "areas": [],
+    "pages": [
+     "engine",
+     "settings",
+     "workspace"
+    ],
+    "summary": "Settings: one control per setting, and every one of them explained."
+   },
+   "test:shading": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "What the viewport shows when it opens, and whether Solid keeps an asset's colour."
+   },
+   "test:shapekeys": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Shape keys (shapekeys.ts, ops.applyShapes), with real three: a key becomes a named relative morph target at its value, finds every copy of a corner by place, and is bake…"
+   },
+   "test:skillgroups": {
+    "areas": [],
+    "pages": [
+     "settings",
+     "workspace"
+    ],
+    "summary": "The list of skills must stay findable, and a skill must never fall out of it."
+   },
+   "test:stage": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The 2D stage, held to its contract with engines made of plain objects: the keys, what a saved document does to a game, the state two copies of the runtime share, and the…"
+   },
+   "test:steer": {
+    "areas": [],
+    "pages": [
+     "mission",
+     "workspace"
+    ],
+    "summary": "Mount the real composer in Electron; only the backend is replaced."
+   },
+   "test:terrain": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The terrain engine, tested on ground that has been sculpted rather than on a flat plane."
+   },
+   "test:terraintool": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "The terrain tool: the part a hand touches, with no browser anywhere near it."
+   },
+   "test:uiprefs": {
+    "areas": [],
+    "pages": [
+     "shell"
+    ],
+    "summary": "A new PC starts with the window of the PC the installer was built on: theme, skin, fonts, the bottom bar, each agent's model."
+   },
+   "test:verts": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "A vertex you moved by hand, and the code running again underneath it."
+   },
+   "test:weightpaint": {
+    "areas": [],
+    "pages": [
+     "engine"
+    ],
+    "summary": "Weight painting (weightpaint.ts): corrections laid on automatic weights, every vertex summing to 1."
+   }
+  }
+ },
+ "undescribed": []
+}

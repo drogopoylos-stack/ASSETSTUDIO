@@ -103,6 +103,44 @@ def record(project_id: str, model: str, cost: float, tokens: int = 0, billed: bo
         _save()
 
 
+def unbank(rows: list[dict]) -> float:
+    """Take turns OUT again: rows that were banked but were not work (ledger_repair.drop_phantoms).
+
+    Through the module's own state and lock, never by editing the file: the running backend holds
+    this ledger in memory and writes all of it back on the next turn, so an edit on disk alone
+    would be undone a minute later. Returns the dollars removed."""
+    removed = 0.0
+    with _lock:
+        s = _load()
+        for r in rows:
+            try:
+                cost = float(r.get("cost") or 0)
+                ts = float(r.get("ts") or 0)
+            except (TypeError, ValueError):
+                continue
+            pid = str(r.get("project") or "")
+            if cost <= 0 or not pid:
+                continue
+            p = s["projects"].get(pid)
+            if p:
+                p["total"] = round(max(0.0, float(p.get("total") or 0) - cost), 6)
+                p["turns"] = max(0, int(p.get("turns") or 0) - 1)
+                m = str(r.get("model") or "unknown").split("[")[0]
+                if m in p.get("by_model", {}):
+                    p["by_model"][m] = round(max(0.0, float(p["by_model"][m]) - cost), 6)
+            day = datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else ""
+            if day in s["days"]:
+                s["days"][day] = round(max(0.0, float(s["days"][day]) - cost), 6)
+                # The two finer columns are parts of `days`; whichever held the row, neither may
+                # now say more than the whole.
+                for key in ("billed_days", "unclassified_days"):
+                    if day in s.get(key, {}):
+                        s[key][day] = round(min(float(s[key][day]), s["days"][day]), 6)
+            removed += cost
+        _save()
+    return round(removed, 6)
+
+
 def for_project(project_id: str) -> dict:
     with _lock:
         return dict(_load()["projects"].get(project_id) or {})

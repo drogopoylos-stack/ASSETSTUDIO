@@ -33,7 +33,9 @@ export function friendlyModel(id: string): string {
   if (m.includes("sonnet-4-6") || m.includes("sonnet-4.6")) return "Sonnet 4.6";
   if (m.includes("sonnet")) return "Sonnet";
   if (m.includes("haiku")) return "Haiku";
+  if (m.includes("fable-5-2") || m.includes("fable-5.2")) return "Fable 5.2";
   if (m.includes("fable-5-1") || m.includes("fable-5.1")) return "Fable 5.1";
+  if (m.includes("mythos-5-2")) return "Mythos 5.2";
   if (m.includes("mythos-5-1")) return "Mythos 5.1";
   if (m.includes("mythos")) return "Mythos 5";
   if (m.includes("fable")) return "Fable 5";

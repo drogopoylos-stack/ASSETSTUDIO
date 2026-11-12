@@ -292,6 +292,13 @@ def live_status():
     return cc_session.live_status()
 
 
+@router.get("/cache-guard")
+def cache_guard_status():
+    """The prompt-cache guard: per live Claude session, how big the cached conversation is, when
+    the cache expires, and what the guard will do next (see cache_guard.py)."""
+    return cc_session.cache_guard_status()
+
+
 @router.get("/projects/{project_id}/live")
 def project_live(project_id: str):
     """Instant live progress for the working indicator: real-time output tokens + the current

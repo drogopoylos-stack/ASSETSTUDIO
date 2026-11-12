@@ -29,6 +29,9 @@ TIERS: dict[str, dict[str, float]] = {
     # Fable 5.1 and Mythos 5.1 read from cache at a QUARTER of what Fable 5 charges. On a long
     # agent, which is nearly all cache read, that is the difference between the two models.
     "tier_10_50_cr025": {"input": 10.0, "output": 50.0, "cw5m": 12.5, "cw1h": 20.0, "read": 0.25},
+    # Fable 5.2 and Mythos 5.2 (2.1.322, `tier_8_40_cache_read_0_20`): cheaper than Fable 5.1 on
+    # every line. The cache writes are the docs' $10 and $16 (platform.claude.com, 2026-11-12).
+    "tier_8_40_cr020": {"input": 8.0, "output": 40.0, "cw5m": 10.0, "cw1h": 16.0, "read": 0.2},
     # Opus 5.5 (2.1.280, `tier_4_20_cache_read_0_20`): cheaper than Opus 5 on every line, and less
     # than half on cache reads — the line a long agent spends most of its money on.
     "tier_4_20_cr020": {"input": 4.0, "output": 20.0, "cw5m": 5.0, "cw1h": 8.0, "read": 0.2},
@@ -40,6 +43,8 @@ TIERS: dict[str, dict[str, float]] = {
 # older tier. Ids carry a date suffix in the transcript (`claude-haiku-4-5-20251001`), so this
 # is prefix matching on purpose.
 _MODEL_TIER: list[tuple[str, str]] = [
+    ("claude-fable-5-2", "tier_8_40_cr020"),
+    ("claude-mythos-5-2", "tier_8_40_cr020"),
     ("claude-fable-5-1", "tier_10_50_cr025"),
     ("claude-mythos-5-1", "tier_10_50_cr025"),
     ("claude-fable-5", "tier_10_50"),

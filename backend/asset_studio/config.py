@@ -204,6 +204,25 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Opus 1M is included on Max/Team/Enterprise at no extra cost (Sonnet 1M costs
     # usage credits, so only Opus is auto-upgraded). Set false for the standard 200k window.
     "cc_1m": True,
+    # THE CACHE GUARD (cache_guard.py). A long session's prompt cache lives one hour after its last
+    # request. When it expires, the next turn writes the WHOLE conversation again at the write
+    # price: measured on KAPOW 2026-11-05..12, sixteen such rewrites of 300k-900k tokens, about
+    # $84 of the week. On: a session that is idle, large and close to expiry is compacted while
+    # its cache is still warm (a compaction reads the cache, it does not write it), and a warm
+    # session is resumed on the CLI build it started on. `min_tokens` matches the CLI's own idle
+    # compaction floor; `after_s` fires at 50 of the 60 minutes.
+    "cc_cache_guard": True,
+    "cc_cache_guard_min_tokens": 150000,
+    "cc_cache_guard_after_s": 3000,
+    # Screenshots a session READS are re-encoded to WebP q90 at the same size before the CLI sees
+    # them (btw_hook -> read_shrink). The CLI strips the OLDEST images once a request carries about
+    # 25 MB of them, and that strip edits old history: the API drops every thinking block after it
+    # and the whole conversation is written again. Measured: 56% of the bytes, the same pixels.
+    "cc_image_shrink": True,
+    # CLAUDE_CODE_AUTO_COMPACT_WINDOW for new Claude sessions, in tokens. 0 = the CLI's own
+    # threshold (about 967k on a 1M window). A smaller window costs memory of the conversation
+    # and saves the cache reads of a huge context on every request.
+    "cc_compact_window": 0,
     # auto-capture reusable build knowledge as personal skills (studio-ui/game/backend/integrations/
     # general) while you work — OFF by default (it is the biggest note, ~1900 tokens a turn);
     # toggle on from the chat box (🎓) or Settings.

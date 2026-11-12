@@ -555,6 +555,14 @@ everything; every run after opens instantly and lives in the system tray.
 Then re-enter your API keys in Settings — they live in the OS credential manager, which does not
 travel with the folder.
 
+**Check the installation.** [FEATURES.md](FEATURES.md) lists every feature, what it must do and
+how to check it, with every route, page, setting and test suite of the code. It is built from the
+code by `scripts/features/build.py`, again by a git hook on each commit, and again by GitHub
+Actions on each push to `main`. Ask an agent in the Studio folder to *check this Studio against
+FEATURES.md*: it runs `python scripts/features/verify.py` (programs, every route, the UI and the
+smoke checks; `--tests all` adds every suite), then the steps in the app. What each feature must
+do is written in [docs/features/checks.md](docs/features/checks.md).
+
 **Prerequisites** are installed for you when winget is available; otherwise Python 3.10+ and
 Node.js LTS by hand. **No Chrome needed** — Edge is used when Chrome is absent, and a headless
 Chromium is fetched on a PC with neither. See

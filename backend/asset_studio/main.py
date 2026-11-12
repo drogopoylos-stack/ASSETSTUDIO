@@ -50,6 +50,7 @@ from .routers import web as web_router
 from .routers import worktrees as worktrees_router
 from .routers import mcp as mcp_router
 from .routers import codex as codex_router
+from .routers import deepseek_creator as deepseek_creator_router
 from .routers import ws
 from .system_stats import collect
 
@@ -72,7 +73,8 @@ for r in (system.router, providers.router, jobs.router, catalog.router,
           review_router.router, worktrees_router.router, git_router.router,
           web_router.router, live_router.router, live_stream_router.router, engine_router.router,
           tools_router.router, mcp_router.router, codex_router.router, polyhaven_router.router,
-          refs_router.router, polypizza_router.router, gamemodel_router.router, ws.router):
+          refs_router.router, polypizza_router.router, gamemodel_router.router,
+          deepseek_creator_router.router, ws.router):
     app.include_router(r)
 
 
@@ -313,6 +315,16 @@ async def _warm_up() -> None:
                   f"${rep['after']:.2f}")
     except Exception as e:
         print(f"[warmup] cost-ledger repair skipped: {e}")
+    # ...and once more for the second leak: results that did no work but carried a process total
+    # (an adopted or resumed process) were banked as turns. See ledger_repair.drop_phantoms.
+    try:
+        from . import ledger_repair
+        rep = ledger_repair.drop_phantoms()
+        if rep.get("rows"):
+            print(f"[warmup] removed {rep['rows']} no-work rows from the cost ledgers "
+                  f"(${rep['removed']:.2f} that was counted twice)")
+    except Exception as e:
+        print(f"[warmup] no-work row repair skipped: {e}")
 
 
 @app.on_event("startup")

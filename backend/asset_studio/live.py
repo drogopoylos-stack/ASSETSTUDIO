@@ -3246,7 +3246,9 @@ def _batch_ops() -> dict:
         _BATCH = {
             "forge": forge, "look": look, "aim": aim, "eval": evaluate,
             "scene": scene, "find": find, "console": console, "perf": perf,
-            "bench": bench, "pictures": pictures,
+            # The forge page's own bench: an agent asks what IT has built, not what file the
+            # window happens to be showing.
+            "bench": _forge_bench, "pictures": pictures,
         }
         # The scene calls: list, move, place, read back. `edit` and `place` take a body, so the
         # call's own fields become it — the same shape the HTTP routes take. A batch is a script:
@@ -3405,7 +3407,29 @@ def session_code(project: str) -> str:
 
 
 def bench(project: str) -> dict:
-    """What is on the bench, for a window that wants to mirror it.
+    """What is on the bench, for a window that wants to mirror it — or the model file an agent
+    wrote since, whichever is newer.
+
+    THE NEWER OF THE TWO. An agent that writes its GLB with a script of its own never calls /glb,
+    and the window showed its last forge call instead: a probe that built an empty group, under
+    "live · empty", for the whole of a job that wrote two models. agent_glb knows every model file
+    an agent's tool calls named and wrote, so the window shows what the agent has in front of it
+    whichever way it got there.
+    """
+    forged = _forge_bench(project)
+    try:
+        from . import agent_glb
+        wrote = agent_glb.bench(project)
+    except Exception:                                    # pragma: no cover - defensive
+        wrote = None
+    if wrote and (not forged.get("open") or not forged.get("code")
+                  or float(wrote.get("ts") or 0) > float(forged.get("ts") or 0)):
+        return wrote
+    return forged
+
+
+def _forge_bench(project: str) -> dict:
+    """What the forge page holds.
 
     `open` says whether a tab is actually still there. Without it a window would happily follow a
     session that was reaped ten minutes ago.

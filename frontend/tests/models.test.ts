@@ -39,6 +39,8 @@ eq("Sonnet 5", friendlyModel("claude-sonnet-5"), "Sonnet 5");
 eq("Sonnet 4.6", friendlyModel("claude-sonnet-4-6"), "Sonnet 4.6");
 eq("the Sonnet alias", friendlyModel("sonnet"), "Sonnet");
 eq("Haiku", friendlyModel("claude-haiku-4-5-20251001"), "Haiku");
+eq("Fable 5.2", friendlyModel("claude-fable-5-2"), "Fable 5.2");
+eq("Mythos 5.2", friendlyModel("claude-mythos-5-2"), "Mythos 5.2");
 eq("Fable 5.1", friendlyModel("claude-fable-5-1"), "Fable 5.1");
 eq("Fable 5", friendlyModel("claude-fable-5"), "Fable 5");
 eq("Mythos 5.1", friendlyModel("claude-mythos-5-1"), "Mythos 5.1");

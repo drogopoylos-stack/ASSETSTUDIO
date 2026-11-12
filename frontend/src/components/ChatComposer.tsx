@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AtSign,
   Bot,
@@ -34,6 +35,7 @@ import { cls, pollWhileVisible } from "./ui";
 import { agentKey, folderAgent, modeFallback, pinnedAgent, readEffort, readPref, writeEffort, writePref } from "./sendPrefs";
 import { VoiceButton, type VoiceState } from "./VoiceButton";
 import { DEEPSEEK_MODELS } from "./modelLabel";
+import { DeepSeekCreator } from "./DeepSeekCreator";
 import { CODEX_ACCESS, CodexSettings, CodexSignIn, codexEffortRows, codexModeOf, codexModelRows, refreshCodex, useCodex } from "./CodexPanel";
 
 // Every version we name is pinned by FULL id, never by a bare alias, so a label can't start lying when
@@ -50,7 +52,10 @@ import { CODEX_ACCESS, CodexSettings, CodexSignIn, codexEffortRows, codexModeOf,
 // says: 1M native, June 2026 cutoff, 128k max output where Opus 5 defaults to 64k, every effort
 // level, fast mode, and $4/$20 per million with cache reads at $0.20 — against Opus 5's $5/$25 and
 // $0.50. Its own default effort is medium, not high. Opus 5 stays on the list beside it.
-const MODELS: [string, string][] = [["default", "Default"], ["claude-opus-5-5", "Opus 5.5"], ["claude-opus-5", "Opus 5"], ["claude-opus-4-8", "Opus 4.8"], ["opus", "Opus (auto)"], ["claude-fable-5-1", "Fable 5.1"], ["claude-fable-5", "Fable 5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]];
+// Fable 5.2 (released 2026-11-09) is in the catalog of CLI 2.1.322: 1M native, June 2026 cutoff,
+// default effort high, $8/$40 per million with cache reads at $0.20 — cheaper than Fable 5.1's
+// $10/$50 and $0.25. Fable 5.1 stays on the list beside it.
+const MODELS: [string, string][] = [["default", "Default"], ["claude-opus-5-5", "Opus 5.5"], ["claude-opus-5", "Opus 5"], ["claude-opus-4-8", "Opus 4.8"], ["opus", "Opus (auto)"], ["claude-fable-5-2", "Fable 5.2"], ["claude-fable-5-1", "Fable 5.1"], ["claude-fable-5", "Fable 5"], ["claude-sonnet-5-5", "Sonnet 5.5"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]];
 // Kimi runs through the same Claude Code engine (Moonshot endpoint) — model rides the spawn env
 const KIMI_MODELS: [string, string][] = [["default", "Kimi K3"], ["kimi-k3", "Kimi K3 (pinned)"], ["kimi-k2-turbo-preview", "Kimi K2 Turbo"]];
 // Qwen rides the SAME Claude Code engine (DashScope's Anthropic-compatible endpoint), so the model
@@ -203,6 +208,8 @@ export function ChatComposer({
   const [sending, setSending] = useState(false);
   const [cfg, setCfg] = useState(false);
   const [agentMenu, setAgentMenu] = useState(false);
+  // DeepSeek Creator mode: the official DeepSeek Harness app over the whole window (DeepSeekCreator).
+  const [creator, setCreator] = useState(false);
   const [model, setModel] = useState(() => readPref("model", projectId, initialAgent(projectId), "default"));
   const [effort, setEffort] = useState(() => {
     const a = initialAgent(projectId);
@@ -1141,6 +1148,10 @@ export function ChatComposer({
     <div className={cls("composer-box relative shrink-0", compact ? "" : "border-t border-line bg-panel/70 p-2")}
       onDragOver={(e) => { if (rootPath) { e.preventDefault(); setDropping(true); } }}
       onDragLeave={() => setDropping(false)} onDrop={onDrop}>
+      {/* In a portal: a pane's own layout must not clip or move a window-sized overlay. */}
+      {creator && rootPath && createPortal(
+        <DeepSeekCreator folder={rootPath} name={rootName} onClose={() => setCreator(false)}
+          onSettings={() => setTab("settings")} />, document.body)}
 
       {/* drag to set how tall the input can grow */}
       <div onPointerDown={startComposerResize}
@@ -1488,6 +1499,16 @@ export function ChatComposer({
             <div>Permissions: <strong className="text-text">Full access</strong></div>
             <p>The native SDK can run commands and edit files with your user permissions.</p>
             <button className="underline text-brand" onClick={() => setTab("settings")}>Settings → API Keys → DeepSeek Harness</button>
+            <div className="border-t border-line pt-1.5 mt-1 space-y-1">
+              <button className="btn !py-1 text-xs w-full disabled:opacity-50" disabled={!rootPath}
+                title={rootPath ? "Open the DeepSeek Harness app for this folder, with new sessions in Creator mode"
+                                : "Open a project folder first"}
+                onClick={() => setCreator(true)}>Creator mode</button>
+              <p className="text-[10px] text-muted/80 leading-snug">
+                The agent writes a DeepSeek Harness plugin (a tool, a panel or an MCP connection) and installs it
+                for this folder. It runs in the official DeepSeek Harness app, which the Studio installs once.
+              </p>
+            </div>
           </div>}
           {agentId !== "claude" && agentId !== "codex" && <p className="text-[10px] text-muted/70 leading-snug">{agent?.note}</p>}
           {companions.filter((c) => c !== agentId).length > 0 && (

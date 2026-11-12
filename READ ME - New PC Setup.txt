@@ -68,6 +68,38 @@ AFTER INSTALLING
   * Logs of every setup run: data\logs\ in the Studio's folder.
   * "Asset Studio - Setup or repair" (Start menu) or Setup.bat runs the setup again
     at any time; it only fixes what is missing.
+  * To check that every feature works: open the Studio, start an agent in the
+    Studio's folder and ask it to "check this Studio against FEATURES.md". It runs
+    python scripts\features\verify.py  and then the checks in the app, and reports
+    each feature. You can run that command yourself too.
+
+
+TOKEN USE AND THE PROMPT CACHE
+------------------------------
+  * Every request of a Claude session reads the whole conversation again. While the
+    prompt cache holds it (one hour after the last request), that read is cheap. When
+    the cache is lost, the next request writes the whole conversation again: on a
+    large session that one request can cost as much as 40 cheap ones.
+  * Settings -> Cost -> "Prompt cache" has two switches. Both are on by default:
+      - Cache guard: a session that holds more than 150k tokens and has been idle for
+        50 minutes is compacted while its cache is still warm. After such a pause the
+        agent continues from a summary. A warm session also resumes on the Claude Code
+        version it started on, because a new version writes the whole cache again.
+      - Smaller screenshots: an image that an agent reads is re-encoded as WebP with
+        the same pixels, so old screenshots are removed from the conversation less
+        often (sessions in bypass-permissions mode only).
+    The same place shows each live session: its size, its idle time, when its cache
+    expires, and what the guard does next.
+  * "Compact at" (same place) sets where new sessions compact. The "1M context"
+    switch (Settings -> Planning & review) sets how large a conversation can grow. A
+    smaller context costs less on every request, and the agent remembers less.
+  * Effort costs tokens two times: as output, and again on every later request,
+    because the thinking of earlier turns stays in the conversation. Subagents use the
+    session's effort. Keep X-High for hard work.
+  * Subagents keep their cache for 5 minutes only. They are told to run a job longer
+    than 4 minutes in the background and check it within 4 minutes.
+  * For an unrelated task, a new conversation is cheaper: the agent says so in one
+    line, and you decide.
 
 
 OPTIONAL  -  Local AI generators (2D/3D)

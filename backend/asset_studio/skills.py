@@ -141,7 +141,7 @@ _GROUP_OF_ID = {
     "openai-image-generation": "images", "gemini-image-generation": "images",
     "ui-ux-pro-max": "ui", "tailwind-play-cdn-gotchas": "ui", "zustand-stable-selectors": "ui",
     "electron-native-file-ops": "ui", "learned-ui": "ui", "studio-ui": "ui",
-    "orch": "agents", "orch2": "agents", "ai-token-routing": "agents", "claude-code-1m-context": "agents",
+    "orch": "agents", "orch2": "agents", "basic": "agents", "ai-token-routing": "agents", "claude-code-1m-context": "agents",
     "claude-code-headless-sdk": "agents", "graphify": "agents",
     "cs-cart-integration": "integrations", "wolt-drive-api": "integrations", "learned-backend": "integrations",
     "learned-integrations": "integrations", "studio-backend": "integrations",

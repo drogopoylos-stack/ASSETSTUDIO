@@ -455,6 +455,18 @@ print("READY " + exe)
         else { Warn "Codex CLI unavailable (optional) - install later: npm install -g @openai/codex" }
     }
 
+    # 7b) the feature map. FEATURES.md says what must work and how to check it, and it is built
+    #     from the code. In a clone, a pre-commit hook builds it again in each commit, so main
+    #     always carries a map of the code beside it. An installed copy has no .git and needs none.
+    if (Test-Path (Join-Path $root ".git")) {
+        Step "Installing the feature-map hook (keeps FEATURES.md in step with the code)..."
+        $eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        $hOut = (& $venvPy (Join-Path $root "scripts\features\build.py") --install-hook 2>&1 | Out-String).Trim()
+        $hCode = $LASTEXITCODE
+        $ErrorActionPreference = $eap
+        if ($hCode -eq 0) { Good "Feature-map hook ready." } else { Warn ("feature-map hook: " + $hOut) }
+    }
+
     # 8) optional local AI pack
     if (-not $Yes) {
         Write-Host ""
@@ -468,6 +480,8 @@ print("READY " + exe)
     Write-Host ""
     Good "Setup complete - Asset Studio is ready."
     Write-Host "    Launch it with 'Asset Studio.vbs' (or the desktop shortcut)." -ForegroundColor Green
+    Write-Host "    To check every feature, ask an agent to check the Studio against FEATURES.md," -ForegroundColor Green
+    Write-Host "    or run: python scripts\features\verify.py" -ForegroundColor Green
     if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not $NoClaude) {
         Warn "Claude Code is not installed yet - the app offers to install it, or run: irm https://claude.ai/install.ps1 | iex"
     }

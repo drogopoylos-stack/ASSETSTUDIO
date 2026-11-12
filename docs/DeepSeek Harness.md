@@ -81,6 +81,88 @@ is not included in this restoration. New conversation starts without that contex
 Optional session-log uploads and telemetry are disabled in the integration. Normal
 DeepSeek requests still include the conversation and tools needed for the user's task.
 
+## Creator mode
+
+**Creator mode** (DeepSeek, 2026-11-02) is the agent preset of the DeepSeek Harness app for
+extending the app itself. You describe a tool, a panel or an MCP connection in plain language; the
+agent writes it as a plugin bundle in the workspace, installs it with `plugin_manager
+install_bundle`, tests it, and fixes it. The plugin stays in the app's profile and loads in every
+later session of that profile. Its internal preset id is `cordis`, after the Cordis plugin framework
+the app is built on; the other presets are Standard, PTC and Minimal.
+
+**Open it:** the DeepSeek settings in the chat box (the sliders button) → **Creator mode**. The
+first time, the Studio installs the app (below). The app then opens over the whole window: new
+sessions start in Creator mode, the pane's folder is the workspace, and the model is the one this
+engine uses. **browser** opens the same app in a browser; **stop** ends it; **×** closes the view and
+leaves the app running.
+
+### Why it is a second runtime
+
+The chat box drives `deepseek-harness-sdk` 0.1.5, whose runtime has two profiles (`sdk`,
+`sdk-minimal`) and no agent presets: `session/prompt` creates the agent with a folder and a model
+only, so a session there cannot be put in Creator mode. SDK 0.2.1 adds `session/resume` and still no
+preset. Creator mode, `plugin_manager` and the plugin panels are in the full app,
+`@deepseek-ai/dsh` 0.2.2-rc.1. So `backend/asset_studio/deepseek_creator.py` runs that app:
+`node …/dsh/lib/bin.js --profile web --patch <studio.patch.yml> --no-open --host 127.0.0.1 --port 0`
+with the folder as its working directory, and the page is shown in the Studio.
+
+### What the Studio sets
+
+All of it is one patch overlay, rewritten at each start (`deepseek_creator.patch_text`):
+
+| Row | Value | Why |
+|---|---|---|
+| `agent-preset-registry.default` | `cordis` | New sessions start in Creator mode. The app's picker still offers the others. |
+| `workspace-controller.documentsDirectory` | `data/dsh-creator/documents` | The app's first-use folder stays out of your Documents. |
+| inserted `studio-workspace` | the pane's folder | A three-line host plugin calls `workspaceRegistry.create(folder)`; the app has no launch option for it. It does not wait for `ready`, which never fires for a patched plugin (measured). |
+| `session-log-deepseek.enabled` | `false` | Optional session-log uploads stay off. |
+| `llm-pi-ai.providers.river` + `agent-default-model` | RIVER.AI only | See below. |
+
+**The key** is the one this engine uses (`deepseek_session.route`), passed in the launch
+environment. The app's own credential store wins over it, so a key you save inside the app takes over.
+
+**RIVER.AI.** The app's DeepSeek route speaks Anthropic Messages (`https://api.deepseek.com/anthropic`).
+RIVER answers `/v1/messages` with an empty `application/grpc` reply (measured 2026-11-11), so a RIVER
+key goes through the app's other model route, `llm-pi-ai`, as an OpenAI-compatible gateway:
+`api: openai-completions`, `baseURL: https://api.river.ai/v1`, model `deepseek-ai/DeepSeek-V4.1-Flash`
+with text and image input, chosen as the default model for new sessions.
+
+**pnpm.** `plugin_manager` installs bundles with pnpm from PATH. On a PC without it every install
+fails, and the agent then tried to fix that itself: in the first test it wrote a `pnpm.cmd` shim into
+the user's global npm folder. The Studio therefore installs `pnpm@12.11.2` beside the app and puts only
+that folder first on the app's PATH. Nothing global is installed or changed.
+
+### Where things are
+
+| Path | What |
+|---|---|
+| `data/dsh-creator/app` | The app and its pnpm (`npm install --prefix`, about 870 MB, about 100 s) |
+| `data/dsh-creator/homes/<hash>` | One `DSH_HOME` per folder: profile, sessions, installed plugins, `web.out`/`web.err` |
+| `data/dsh-creator/servers.json` | Running servers (pid, URL with the app's token); the next backend reuses them |
+
+**One profile per folder**, because a Creator plugin runs with your permissions and loads into every
+session of its profile: a plugin made for one game does not load in another.
+
+### Safety and cost
+
+- Each `plugin_manager` action asks for approval in a Workspace Write session. Read each request: a
+  plugin is code that runs with your permissions. In the first test the agent also asked to change
+  the access rights of a folder that Git Bash had made (the app's Windows sandbox could not read it).
+- Creator mode is not cheap per plugin. Measured 2026-11-11 on RIVER.AI with DeepSeek V4.1 Flash: a
+  minimal one-tool plugin took 85 steps and 5.8 M tokens, 96% of them cache reads, about 5-7 US cents;
+  a one-word answer took 10 K tokens (the Creator prompt).
+- The app is a public preview (its own notice says so) and has had no security audit.
+
+### Verified
+
+`backend/deepseek_creator_test.py` checks the patch, the plugin, the URL, the refusals and the
+process tracking without starting anything. Measured end to end on 2026-11-11: install through the
+module; the app started for a folder with that folder as its only workspace, a new session in
+Creator mode with `DeepSeek V4.1 Flash (RIVER.AI)`; a real one-word turn; a real plugin
+(`studio-hello`) built, installed into the folder's profile (`dsh plugin --profile web list` shows it)
+and called; the Studio's button opening the app in the overlay; a second open reusing the server; Stop
+ending the server and its child.
+
 ## The workbench follows the engine
 
 Every main-UI control used to assume Claude: the activity bar's panels read `~/.claude`, sent to

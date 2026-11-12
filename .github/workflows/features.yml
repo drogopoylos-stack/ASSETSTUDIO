@@ -1,0 +1,45 @@
+# Keep FEATURES.md in step with the code on main.
+#
+# The git pre-commit hook (scripts/features/build.py --install-hook) already rebuilds the map in
+# each commit, so on a normal push this finds nothing to change and commits nothing. It is the
+# safety net for a commit made without the hook: on GitHub's web editor, on a machine where the
+# setup did not run, or with --no-verify. The build reads the tracked files only and writes no
+# date and no commit id, so the same code always gives the same bytes.
+name: Feature map
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feature-map
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build FEATURES.md from the code
+        run: python scripts/features/build.py
+
+      - name: Commit the map when it changed
+        run: |
+          if [ -z "$(git status --porcelain -- FEATURES.md docs/features/features.json)" ]; then
+            echo "The feature map is already in step with the code."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add FEATURES.md docs/features/features.json
+          git commit -m "Update the feature map [skip ci]"
+          git push

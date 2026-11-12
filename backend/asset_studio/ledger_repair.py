@@ -160,3 +160,65 @@ def _mark(report: dict) -> None:
         MARKER.write_text(json.dumps({"at": time.time(), **report}, indent=1), encoding="utf-8")
     except OSError:
         pass
+
+
+# THE SECOND LEAK, found 2026-11-12. A `result` with no tokens and no message did no work, but it
+# can still carry a total: the first result of a process the Studio did not watch from its start
+# (adopted after a backend restart, or resumed from a restored figure). The result handler took its
+# "delta" against a high-water mark of 0 and banked the whole previous total as one turn. 45 rows,
+# $373.58 here, among them one KAPOW row of $58.74 that was exactly the sum of the six turns of the
+# process before it. `cc_session` no longer banks such a result; this takes the old ones out.
+PHANTOM_MARKER = DATA_DIR / ".ledger-phantoms-dropped"
+
+
+def is_phantom(r: dict) -> bool:
+    """A Claude row with a cost and no work in it. A /compact streams no message of its own and is
+    billed, so it never counts; other engines bank tokens always and are not touched."""
+    try:
+        return (int(r.get("tokens") or 0) <= 0 and int(r.get("messages") or 0) <= 0
+                and not r.get("compacting") and float(r.get("cost") or 0) > 0
+                and str(r.get("model") or "").lower().startswith("claude-"))
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def drop_phantoms() -> dict:
+    """Remove the no-work rows from turns.jsonl and their dollars from spend.json, once."""
+    if PHANTOM_MARKER.exists():
+        return {"ok": True, "already": True}
+    from . import spend as _spend, turns as _turns
+    dropped: list[dict] = []
+    turns_backup = ""
+    with _turns._lock:            # the result handler appends under this lock
+        if TURNS.exists():
+            keep: list[str] = []
+            for line in TURNS.read_text(encoding="utf-8", errors="replace").splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                try:
+                    r = json.loads(s)
+                except ValueError:
+                    keep.append(s)
+                    continue
+                if isinstance(r, dict) and is_phantom(r):
+                    dropped.append(r)
+                else:
+                    keep.append(s)
+            if dropped:
+                turns_backup = _backup(TURNS)
+                try:
+                    tmp = TURNS.with_suffix(".tmp")
+                    tmp.write_text("\n".join(keep) + "\n", encoding="utf-8")
+                    fsutil.replace(tmp, TURNS)
+                except OSError as e:
+                    return {"ok": False, "error": f"could not rewrite turns.jsonl: {e}"}
+    spend_backup = _backup(SPEND) if dropped else ""
+    removed = _spend.unbank(dropped) if dropped else 0.0
+    report = {"ok": True, "rows": len(dropped), "removed": round(removed, 2),
+              "turns_backup": turns_backup, "spend_backup": spend_backup}
+    try:
+        PHANTOM_MARKER.write_text(json.dumps({"at": time.time(), **report}, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+    return report
