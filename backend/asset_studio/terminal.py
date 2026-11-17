@@ -336,6 +336,9 @@ AGENT_CLIS: list[dict] = [
     {"id": "gemini", "name": "Gemini CLI", "color": "#4285f4", "bin": "gemini",
      "install": _NPM + "@google/gemini-cli",
      "note": "Google's coding agent. Free tier with a Google account."},
+    {"id": "antigravity", "name": "Antigravity", "color": "#3b82f6", "bin": "agy",
+     "install": "powershell -NoProfile -Command \"irm https://antigravity.google/cli/install.ps1 | iex\"",
+     "note": "Google's agent CLI (replaces Gemini CLI for Google accounts). Sign in on first run."},
     {"id": "opencode", "name": "OpenCode", "color": "#f59e0b", "bin": "opencode",
      "install": _NPM + "opencode-ai",
      "note": "Open-source agent; brings its own model picker (Anthropic, OpenAI, local)."},
@@ -369,6 +372,9 @@ def _resolve(binary: str) -> Optional[str]:
     """
     if not binary:
         return None
+    if binary == "agy":
+        from .antigravity_session import find_agy
+        return find_agy()
     if os.name == "nt":
         for ext in (".cmd", ".exe", ".bat", ".com", ".ps1"):
             p = shutil.which(binary + ext)
@@ -416,7 +422,14 @@ def launch(agent_id: str, cwd: str = "", cols: int = 100, rows: int = 30,
         eff = agents._codex_effort(effort)
         if eff:
             cmd += ["-c", f'model_reasoning_effort="{eff}"']
-    return create(cmd, cwd, cols, rows, label=a["name"])
+    env = None
+    if a["id"] == "gemini":
+        # the Studio's Gemini key (Settings > Keys), so Gemini and its nanobanana extension
+        # start signed in; None keeps plain inheritance when no key is stored
+        from .cc_session import _gemini_env
+        extra = _gemini_env()
+        env = {**os.environ, **extra} if extra else None
+    return create(cmd, cwd, cols, rows, label=a["name"], env=env)
 
 
 def _runnable(path: str) -> list:

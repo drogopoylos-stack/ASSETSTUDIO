@@ -48,7 +48,7 @@ export function ModelBadge({ model: modelProp, projectId, folderId, className, c
   const folder = folderId || projectId || "";
   const agentSel = feedAgent(projectId || folder, folder);
   const selModel = readPref("model", folder, agentSel, "default");
-  const fallbackName = agentSel === "kimi" ? "Kimi K3" : agentSel === "codex" ? "Codex" : agentSel === "deepseek-harness" ? "DeepSeek V4.1 Flash" : "Claude";
+  const fallbackName = agentSel === "kimi" ? "Kimi K3" : agentSel === "codex" ? "Codex" : agentSel === "deepseek-harness" ? "DeepSeek V4.1 Flash" : agentSel === "antigravity" ? "Antigravity" : "Claude";
   const name = friendlyModel(model) || (selModel !== "default" ? friendlyModel(selModel) || selModel : fallbackName);
   const eff = readEffort(folder, agentSel, selModel);
   const effLabel = EFFORT_LABEL[eff] || "";

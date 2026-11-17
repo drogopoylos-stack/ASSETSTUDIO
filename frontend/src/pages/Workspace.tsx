@@ -140,7 +140,7 @@ function applyRootPrefs(list: WorkspaceRoot[]): WorkspaceRoot[] {
 // /api/mission/agents, so a new one works the moment it is saved — no code change.
 // Codex keeps its conversation in its own app-server, filed under "codex--<folder>" the same way
 // (backend codex_app.py), so the feed, live stream, context meter and phases look it up there.
-const BUILTIN_ALT_AGENTS = ["kimi", "qwen", "codex", "deepseek-harness"];
+const BUILTIN_ALT_AGENTS = ["kimi", "qwen", "codex", "deepseek-harness", "antigravity"];
 
 function altFeedPrefix(agentId: string, customIds: string[]): string {
   return (BUILTIN_ALT_AGENTS.includes(agentId) || customIds.includes(agentId)) ? `${agentId}--` : "";
@@ -1287,7 +1287,7 @@ export default function Workspace() {
   /** The backend session an agent choice lands in, or "" when it holds none of ours. A terminal
    *  for Claude resumes the Claude conversation, so it counts as Claude; other CLIs run alone. */
   const engineKey = (a: string) => (a === "term:claude" ? "claude" : a.startsWith("term:") ? "" : a);
-  const ENGINE_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", "deepseek-harness": "DeepSeek" };
+  const ENGINE_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", "deepseek-harness": "DeepSeek", antigravity: "Antigravity" };
   const engineLabel = (a: string) => ENGINE_LABEL[engineKey(a)] || engineKey(a) || a;
   /** Another chat pane that already runs `agent` on this project, if any. */
   function clashPane(paneId: string, rootId: string, agent: string, panes: Pane[] = layout.panes): Pane | null {
@@ -1298,7 +1298,7 @@ export default function Workspace() {
   }
   /** An engine no other pane runs on this project: the other of Claude/Codex first, then DeepSeek. */
   function freeEngine(paneId: string, rootId: string, prefer: string, panes: Pane[] = layout.panes): string {
-    const order = [prefer, prefer === "codex" ? "claude" : "codex", "claude", "codex", "deepseek-harness"];
+    const order = [prefer, prefer === "codex" ? "claude" : "codex", "claude", "codex", "deepseek-harness", "antigravity"];
     return order.find((a) => !clashPane(paneId, rootId, a, panes)) || prefer;
   }
   const clashMessage = (agent: string) =>

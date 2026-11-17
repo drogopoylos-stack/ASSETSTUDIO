@@ -397,6 +397,7 @@ export function ChatComposer({
   const modelsFor = (id: string): [string, string][] =>
     customModels[id] || (id === "codex" ? codexModelRows(codex.models, codex.def) : id === "kimi" ? KIMI_MODELS
       : id === "deepseek-harness" ? DEEPSEEK_MODELS
+      : id === "antigravity" ? (agents.find((a) => a.id === id)?.models || [["default", "Antigravity default"]])
       : id === "qwen" ? QWEN_MODELS : MODELS);
 
   // Models this account was refused on a real turn — learned by the backend from the CLI's own
@@ -1592,6 +1593,21 @@ export function ChatComposer({
                 for this folder. It runs in the official DeepSeek Harness app, which the Studio installs once.
               </p>
             </div>
+          </div>}
+          {agentId === "antigravity" && <div className="text-[11px] text-muted space-y-1.5">
+            <div><label className="label !mb-0.5 flex items-center gap-1">Effort <span className="text-muted/60 font-normal normal-case">· thinking depth</span></label>
+              <select className="input !py-1 text-xs" value={effort} onChange={(e) => pickEffort(e.target.value)}>
+                {EFFORTS.filter(([v]) => v !== "ultracode").map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            <div><label className="label !mb-0.5">Permission mode</label>
+              <select className="input !py-1 text-xs" value={mode || modeFallback(agentId)} onChange={(e) => pickMode(e.target.value)}>
+                <option value="full">Full access (runs commands and edits files)</option>
+                <option value="acceptEdits">Accept edits (shell commands are refused)</option>
+                <option value="plan">Plan (no changes)</option>
+              </select></div>
+            <p className="text-[10px] text-muted/80 leading-snug">
+              Runs on your Google sign-in. If a turn says &quot;authentication required&quot;, open a terminal and run <span className="font-mono">agy</span> once.
+              Ask it for a picture and it uses Nano Banana; other agents can call POST /api/antigravity/image.
+            </p>
           </div>}
           {agentId !== "claude" && agentId !== "codex" && <p className="text-[10px] text-muted/70 leading-snug">{agent?.note}</p>}
           {companions.filter((c) => c !== agentId).length > 0 && (

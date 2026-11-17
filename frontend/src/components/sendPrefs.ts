@@ -32,7 +32,7 @@ export const prefKey = (kind: string, pid: string, a: string) => `cc-${kind}:${p
 export const effortKey = (pid: string, a: string, m: string) => `cc-effort:${pid}:${a}:${m || "default"}`;
 // Codex's "full" is full access with no sandbox: on Windows its sandboxed modes block or ask about
 // every command until Codex's own sandbox is set up, so the mode that works on every PC is the default.
-export const modeFallback = (a: string) => (a === "codex" || a === "deepseek-harness" ? "full" : "acceptEdits");
+export const modeFallback = (a: string) => (a === "codex" || a === "deepseek-harness" || a === "antigravity" ? "full" : "acceptEdits");
 
 /** The ids one folder can be stored under: this one first, then the same id with the drive
  *  letter's case flipped. Anything that is not a drive-letter id has only itself. */

@@ -51,6 +51,7 @@ from .routers import worktrees as worktrees_router
 from .routers import mcp as mcp_router
 from .routers import codex as codex_router
 from .routers import deepseek_creator as deepseek_creator_router
+from .routers import antigravity as antigravity_router
 from .routers import ws
 from .system_stats import collect
 
@@ -74,7 +75,7 @@ for r in (system.router, providers.router, jobs.router, catalog.router,
           web_router.router, live_router.router, live_stream_router.router, engine_router.router,
           tools_router.router, mcp_router.router, codex_router.router, polyhaven_router.router,
           refs_router.router, polypizza_router.router, gamemodel_router.router,
-          deepseek_creator_router.router, ws.router):
+          deepseek_creator_router.router, antigravity_router.router, ws.router):
     app.include_router(r)
 
 
@@ -397,6 +398,11 @@ async def _shutdown():
     try:
         from . import deepseek_session
         deepseek_session.shutdown()
+    except Exception:
+        pass
+    try:
+        from . import antigravity_session
+        antigravity_session.shutdown()
     except Exception:
         pass
     for attr in ("_stats_task", "_avail_task", "_warm_task"):

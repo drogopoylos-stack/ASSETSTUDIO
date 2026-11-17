@@ -85,6 +85,17 @@ AGENTS: list[dict] = [
                 "and watch its commands, edits and subagents in the feed.",
     },
     {
+        "id": "antigravity",
+        "name": "Antigravity",
+        "color": "#3b82f6",
+        "streams": True,    # stream-json into a Claude-format transcript (antigravity_session)
+        "detect": None,     # replaced below - agy's folder is not on an older backend's PATH
+        "install_cmd": "irm https://antigravity.google/cli/install.ps1 | iex   (then run `agy` once to sign in)",
+        "install_url": "https://antigravity.google/docs/cli",
+        "note": "Google Antigravity CLI on your Google sign-in, no API key: Gemini, Claude and GPT-OSS "
+                "models from `agy models`, and Nano Banana images through its own image generator.",
+    },
+    {
         "id": "gemini",
         "name": "Gemini CLI",
         "color": "#4285f4",
@@ -144,6 +155,14 @@ _BY_ID = {a["id"]: a for a in AGENTS}
 _BY_ID["kimi"]["detect"] = _kimi_detect
 _BY_ID["qwen"]["detect"] = _qwen_detect
 _BY_ID["codex"]["detect"] = _codex_detect
+
+
+def _antigravity_detect() -> Optional[str]:
+    from . import antigravity_session
+    return antigravity_session.find_agy()
+
+
+_BY_ID["antigravity"]["detect"] = _antigravity_detect
 
 
 def spec(agent_id: str) -> Optional[dict]:
@@ -234,6 +253,9 @@ def _list_agents_build() -> list[dict]:
             "install_cmd": a["install_cmd"], "install_url": a["install_url"],
             **({"needs_key": not bool(__import__(__package__ + ".deepseek_session", fromlist=["api_key"]).api_key())}
                if a["id"] == "deepseek-harness" else {}),
+            # the account's own list (`agy models`), so the chat box offers every model it can use
+            **({"models": __import__(__package__ + ".antigravity_session", fromlist=["models"]).models()}
+               if a["id"] == "antigravity" and path else {}),
         })
     out.extend(_custom_agents())
     return out
@@ -294,8 +316,17 @@ def build_args(agent_id: str, exe: str, message: str, cwd: str,
         args = [exe]
         if model and model != "default":
             args += ["-m", model]
-        args += ["-y", "-p", message]  # -y = auto-approve tool calls
+        # -y = auto-approve tool calls. --skip-trust: headless Gemini refuses any folder not
+        # trusted in an interactive session ("not running in a trusted directory").
+        args += ["-y", "--skip-trust", "-p", message]
         return args
+    if agent_id == "antigravity":
+        # one-shot (companion) runs; the chat's own turns go through antigravity_session
+        args = [exe, "-p", message]
+        if model and model != "default":
+            args += ["--model", model]
+        from .antigravity_session import _permission_args
+        return args + _permission_args(permission_mode)
     if agent_id == "cursor":
         args = [exe, "-p", message, "--force"]
         if model and model != "default":

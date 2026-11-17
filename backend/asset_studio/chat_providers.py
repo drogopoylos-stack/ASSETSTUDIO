@@ -37,7 +37,7 @@ STORE = DATA_DIR / "chat_providers.json"
 _lock = threading.Lock()
 
 # ids that already mean something to the chat layer
-RESERVED = {"claude", "kimi", "qwen", "codex", "deepseek-harness", "gemini", "cursor", "default", "none", "all"}
+RESERVED = {"claude", "kimi", "qwen", "codex", "deepseek-harness", "antigravity", "gemini", "cursor", "default", "none", "all"}
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 
 PROTOCOLS = ("anthropic", "openai")

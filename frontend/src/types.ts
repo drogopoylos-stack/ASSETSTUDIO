@@ -658,6 +658,7 @@ export interface AgentInfo {
   install_url: string;
   custom?: boolean;      // added by the user in Settings → Models
   protocol?: string;     // "anthropic" | "openai"
+  models?: [string, string][];  // the account's own model list, when the CLI can say (Antigravity)
 }
 
 /** Codex in the chat box (GET /api/codex/status): installed, which version, signed in and how,

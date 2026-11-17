@@ -153,7 +153,8 @@ def claude_projects_dir() -> Path:
 # engine gets the same isolation without a single extra line in the feed code.
 KIMI_PREFIX = "kimi--"
 QWEN_PREFIX = "qwen--"
-BUILTIN_ALT_HOMES = {KIMI_PREFIX: "kimi-home", QWEN_PREFIX: "qwen-home", "deepseek-harness--": "deepseek-harness-home"}
+BUILTIN_ALT_HOMES = {KIMI_PREFIX: "kimi-home", QWEN_PREFIX: "qwen-home", "deepseek-harness--": "deepseek-harness-home",
+                     "antigravity--": "antigravity-home"}
 ALT_HOMES = BUILTIN_ALT_HOMES      # kept for callers that only need the built-ins
 
 

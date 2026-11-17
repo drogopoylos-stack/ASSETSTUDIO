@@ -1855,6 +1855,23 @@ def _apply_1m(model: str, one_m: Optional[bool] = None) -> str:
     return m
 
 
+def _gemini_env() -> dict[str, str]:
+    """Hand the Studio's Gemini key (Settings > Keys) to the Gemini CLI.
+
+    Headless `gemini -p` exits at once with "Please set an Auth method" when it has no
+    ~/.gemini/settings.json and no GEMINI_API_KEY. NANOBANANA_API_KEY is the name the
+    nanobanana extension reads first (it takes an API key only, no Google login). A key
+    already in the environment wins."""
+    try:
+        from . import keychain
+        key = keychain.get_key("gemini")
+    except Exception:
+        key = None
+    if not key:
+        return {}
+    return {k: os.environ.get(k) or key for k in ("GEMINI_API_KEY", "NANOBANANA_API_KEY")}
+
+
 def _claude_context_env(one_m: Optional[bool] = None) -> dict[str, str]:
     """Bound native 1M models as well as older explicit [1m] variants.
 
@@ -4907,7 +4924,7 @@ def send(
     # browser that never picked one must not restart a full-access session in "acceptEdits".
     from . import session_modes
     permission_mode = session_modes.resolve(project_id, agent, permission_mode,
-                                            "full" if agent in ("codex", "deepseek-harness") else "acceptEdits")
+                                            "full" if agent in ("codex", "deepseek-harness", "antigravity") else "acceptEdits")
     # /steer and the button use the same path. Validate before snapshots/BOOST/companions.
     command = re.match(r"^\s*/steer(?:\s+|$)", message or "", flags=re.I)
     if command:
@@ -5155,6 +5172,7 @@ def send(
             # same gate as the streaming path, or the subagent instruction is dropped here
             env={**os.environ, "CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT": "1",
                  **(_claude_context_env(one_m) if agent == "claude" else {}),
+                 **(_gemini_env() if agent == "gemini" else {}),
                  **({"CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"} if settings.get("cc_phases", True) else {})},
         )
     except Exception as e:

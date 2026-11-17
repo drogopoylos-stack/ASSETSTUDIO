@@ -249,10 +249,46 @@ class _DeepSeek(Engine):
         return skills._dsh_roots(project_id)
 
 
+class _Antigravity(Engine):
+    """Google Antigravity CLI (`agy`): one headless process per turn, resumed by agy's own
+    conversation id, writing the same Claude-format transcript DeepSeek writes."""
+    id, name, prefix = "antigravity", "Antigravity", "antigravity--"
+    reports_working = True
+
+    def start_turn(self, project_id: str, message: str, **opts) -> dict:
+        from . import antigravity_session
+        return antigravity_session.send(project_id, message, model=opts.get("model", "default"),
+                                        permission_mode=opts.get("permission_mode", "full"),
+                                        images=opts.get("images"), effort=opts.get("effort", "default"),
+                                        new_session=bool(opts.get("new_session")),
+                                        session=opts.get("session", ""), path=opts.get("path", ""))
+
+    def is_sending(self, project_id: str) -> bool:
+        from . import antigravity_session
+        return antigravity_session.is_sending(project_id)
+
+    def cancel(self, project_id: str) -> dict:
+        from . import antigravity_session
+        return antigravity_session.cancel(project_id)
+
+    def live_state(self, project_id: str) -> dict:
+        from . import antigravity_session
+        return antigravity_session.live_state(project_id)
+
+    def live_rows(self) -> list[tuple[str, bool, int]]:
+        from . import antigravity_session
+        return [(b, bool(busy), 0) for b, busy in antigravity_session.live_rows()]
+
+    def reset(self, project_id: str) -> None:
+        from . import antigravity_session
+        antigravity_session.reset(project_id)
+
+
 CLAUDE = _Claude()
 CODEX = _Codex()
 DEEPSEEK = _DeepSeek()
-ALL: tuple[Engine, ...] = (CLAUDE, CODEX, DEEPSEEK)
+ANTIGRAVITY = _Antigravity()
+ALL: tuple[Engine, ...] = (CLAUDE, CODEX, DEEPSEEK, ANTIGRAVITY)
 # The engines with a prefix of their own, longest prefix first so no prefix can swallow another.
 _PREFIXED: tuple[Engine, ...] = tuple(sorted((e for e in ALL if e.prefix), key=lambda e: -len(e.prefix)))
 
