@@ -65,6 +65,7 @@
    "purpose": "The app's own routes: health, and the built UI served for every other path.",
    "settings": [],
    "tests": [
+    "features_map_test.py",
     "restart_test.py",
     "stability_test.py"
    ]
@@ -488,6 +489,51 @@
     "steer_test.py"
    ]
   },
+  "deepseek_creator": {
+   "endpoints": [
+    {
+     "function": "status",
+     "method": "GET",
+     "path": "/api/deepseek/creator/status",
+     "summary": "Whether the app is installed, Node's version, an install in progress, and the running servers."
+    },
+    {
+     "function": "install",
+     "method": "POST",
+     "path": "/api/deepseek/creator/install",
+     "summary": "Install the DeepSeek Harness app into the Studio's data folder, in the background."
+    },
+    {
+     "function": "open_",
+     "method": "POST",
+     "path": "/api/deepseek/creator/open",
+     "summary": "Start the app for one folder (or reuse its server) and return its URL, token included."
+    },
+    {
+     "function": "stop",
+     "method": "POST",
+     "path": "/api/deepseek/creator/stop",
+     "summary": "Stop the app of one folder, or of every folder when none is named."
+    }
+   ],
+   "file": "backend/asset_studio/routers/deepseek_creator.py",
+   "pages": [
+    "mission",
+    "workspace"
+   ],
+   "prefixes": [
+    "/api/deepseek/creator"
+   ],
+   "programs": [
+    "node",
+    "npm"
+   ],
+   "purpose": "DeepSeek Creator mode: the official DeepSeek Harness app, run for one folder and shown in the Studio.",
+   "settings": [],
+   "tests": [
+    "deepseek_creator_test.py"
+   ]
+  },
   "engine": {
    "endpoints": [
     {
@@ -604,6 +650,7 @@
     "port"
    ],
    "tests": [
+    "agent_glb_test.py",
     "detail_test.py",
     "engine_test.py",
     "forge_review_test.py",
@@ -1013,10 +1060,12 @@
     "port"
    ],
    "tests": [
+    "agent_glb_test.py",
     "animate_test.py",
     "apireflect_test.py",
     "detail_test.py",
     "engine_test.py",
+    "features_map_test.py",
     "forge_review_test.py",
     "goblin_bench_test.py",
     "live_stage_test.py",
@@ -1388,6 +1437,7 @@
     "agent_tokens_test.py",
     "agents_parallel_test.py",
     "attention_test.py",
+    "cache_guard_test.py",
     "claude_compact_test.py",
     "codex_account_test.py",
     "codex_app_test.py",
@@ -2821,6 +2871,7 @@
    ],
    "tests": [
     "agent_tokens_test.py",
+    "features_map_test.py",
     "live_status_test.py",
     "queue_guard_test.py",
     "restart_test.py",
@@ -2884,6 +2935,7 @@
     "agents_parallel_test.py",
     "attention_test.py",
     "boost_test.py",
+    "cache_guard_test.py",
     "cc_control_test.py",
     "claude_compact_test.py",
     "cmdline_fit_test.py",
@@ -2948,7 +3000,9 @@
    "smoke": [
     "/api/mission/cache-guard"
    ],
-   "tests": [],
+   "tests": [
+    "cache_guard_test.py"
+   ],
    "title": "The prompt cache guard"
   },
   {
@@ -2980,6 +3034,7 @@
     "codex_panels_test.py",
     "codex_rail_test.py",
     "codex_runs_test.py",
+    "deepseek_creator_test.py",
     "deepseek_test.py",
     "engine_parity_test.py",
     "engines_test.py",
@@ -3127,10 +3182,12 @@
     "/api/review/status"
    ],
    "tests": [
+    "agent_glb_test.py",
     "animate_test.py",
     "apireflect_test.py",
     "detail_test.py",
     "engine_test.py",
+    "features_map_test.py",
     "forge_review_test.py",
     "goblin_bench_test.py",
     "guard_test.py",
@@ -3182,11 +3239,13 @@
     "/api/refs/status"
    ],
    "tests": [
+    "agent_glb_test.py",
     "animate_test.py",
     "apireflect_test.py",
     "detail_test.py",
     "editor_place_test.py",
     "engine_test.py",
+    "features_map_test.py",
     "forge_review_test.py",
     "glb_test.py",
     "goblin_bench_test.py",
@@ -3376,7 +3435,9 @@
    "modules": [],
    "parts": [],
    "smoke": [],
-   "tests": [],
+   "tests": [
+    "features_map_test.py"
+   ],
    "title": "This map and the installation check"
   }
  ],
@@ -3507,6 +3568,7 @@
     "autolearn",
     "chat_models",
     "codex",
+    "deepseek_creator",
     "mission",
     "settings",
     "terminal",
@@ -3693,6 +3755,7 @@
     "autolearn",
     "chat_models",
     "codex",
+    "deepseek_creator",
     "git",
     "live",
     "mission",
@@ -3851,6 +3914,27 @@
    "defaults": [],
    "label": "Blender kiln"
   },
+  "cc_cache_guard": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
+  },
+  "cc_cache_guard_after_s": {
+   "areas": [],
+   "defaults": [
+    "3000"
+   ],
+   "label": ""
+  },
+  "cc_cache_guard_min_tokens": {
+   "areas": [],
+   "defaults": [
+    "150000"
+   ],
+   "label": ""
+  },
   "cc_code_tools": {
    "areas": [],
    "defaults": [
@@ -3860,7 +3944,9 @@
   },
   "cc_compact_window": {
    "areas": [],
-   "defaults": [],
+   "defaults": [
+    "0"
+   ],
    "label": ""
   },
   "cc_debugger": {
@@ -3892,7 +3978,7 @@
    "defaults": [
     "True"
    ],
-   "label": "Fable token efficiency"
+   "label": "Token economy"
   },
   "cc_fast_mode": {
    "areas": [],
@@ -3925,6 +4011,13 @@
     "True"
    ],
    "label": "Code graph"
+  },
+  "cc_image_shrink": {
+   "areas": [],
+   "defaults": [
+    "True"
+   ],
+   "label": ""
   },
   "cc_live": {
    "areas": [
@@ -4506,6 +4599,18 @@
     "pages": [],
     "summary": "An adopted session's signature must equal the one a send builds, or every backend restart costs the next message a respawn and a 'Setting changed mid-conversation' warni…"
    },
+   "agent_glb_test.py": {
+    "areas": [
+     "engine",
+     "live"
+    ],
+    "modules": [
+     "agent_glb",
+     "live"
+    ],
+    "pages": [],
+    "summary": "Does the Engine window see a GLB that an agent wrote with its own tools?"
+   },
    "agent_tokens_test.py": {
     "areas": [
      "mission",
@@ -4600,6 +4705,21 @@
     ],
     "pages": [],
     "summary": "BOOST: the local economies, and the promise that each number on the button is real."
+   },
+   "cache_guard_test.py": {
+    "areas": [
+     "mission"
+    ],
+    "modules": [
+     "cache_guard",
+     "cc_session",
+     "config",
+     "ledger_repair",
+     "read_shrink",
+     "spend"
+    ],
+    "pages": [],
+    "summary": "The prompt-cache guard, the screenshot shrink and the no-work ledger rows."
    },
    "cc_control_test.py": {
     "areas": [],
@@ -4705,6 +4825,16 @@
     ],
     "pages": [],
     "summary": ""
+   },
+   "deepseek_creator_test.py": {
+    "areas": [
+     "deepseek_creator"
+    ],
+    "modules": [
+     "deepseek_creator"
+    ],
+    "pages": [],
+    "summary": "DeepSeek Creator mode: does the Studio start the official app the right way, and refuse cleanly?"
    },
    "deepseek_test.py": {
     "areas": [
@@ -4840,6 +4970,17 @@
     ],
     "pages": [],
     "summary": "Verify workspace scoping and both Studio session integrations without starting an agent."
+   },
+   "features_map_test.py": {
+    "areas": [
+     "app",
+     "live"
+    ],
+    "modules": [
+     "routers.demo"
+    ],
+    "pages": [],
+    "summary": "Does the feature map describe the code, and does the checker catch a missing route?"
    },
    "forge_review_test.py": {
     "areas": [

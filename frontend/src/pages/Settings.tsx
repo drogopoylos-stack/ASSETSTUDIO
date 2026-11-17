@@ -958,7 +958,10 @@ function CacheGuardSection() {
           Each request reads the whole conversation from the cache: 800k tokens cost about $0.16 a
           request on Opus 5.5, 200k about $0.04. A smaller window keeps every request and every
           lost cache cheaper, and the agent remembers less detail after each compaction. Applies to
-          sessions started after the change.
+          sessions started after the change. Default is 400k: measured on this machine, the tokens
+          above it are 99.9% in the ten per cent of calls that carry the most context, so it trims
+          the tail without touching ordinary requests. A conversation started with “1M context”
+          in the chat box is not capped: it runs the whole 1M window.
         </span>
         <select className="input !py-1 text-xs !w-auto mt-2" value={win}
           onChange={(e) => { const v = Number(e.target.value); setWin(v);
@@ -1508,8 +1511,8 @@ const NOTE_CATALOG: NoteRow[] = [
     why: "The Blender MCP pipeline: source, generate, clean, texture, export." },
   { key: "cc_1m", label: "1M context", group: "studio", default: true, tokens: 97,
     why: "Allows 1M context. Off limits new Claude sessions to 200k, including native 1M models." },
-  { key: "cc_fable_efficient", label: "Fable token efficiency", group: "studio", default: true, tokens: 163,
-    why: "Act on what is known, do not re-derive, lead with the outcome. Fable models only." },
+  { key: "cc_fable_efficient", label: "Token economy", group: "studio", default: true, tokens: 279,
+    why: "Act on what is known, do not re-derive, lead with the outcome, and batch shell commands so one round trip does the work of several. Claude models." },
   { key: "cc_force_plan", label: "Force plan mode", group: "studio", default: false, tokens: 174,
     why: "Starts every conversation in plan mode. The plan note is sent while a session is in plan mode." },
   { key: "cc_memory", label: "Memory", group: "studio", default: true, tokens: 43,
@@ -2045,7 +2048,7 @@ const FIND: Find[] = [
   { label: "Engine notes for subagents", pane: "planning", also: "subagent fan-out tokens forge live scene navigate bloat", what: "Full engine notes for every subagent, or one line that says where they are." },
   { label: "Auto-learn skills", pane: "planning", also: "learned mining sessions qwen local", what: "Mine finished sessions for validated learnings, with no tokens." },
   { label: "Blender kiln", pane: "planning", also: "mcp 3d pipeline export", what: "The Blender MCP asset pipeline." },
-  { label: "Fable token efficiency", pane: "planning", also: "cheap model routing", what: "How Fable is told to spend." },
+  { label: "Token economy", pane: "planning", also: "cheap model routing shell batching round trip", what: "How a Claude session is told to spend." },
   { label: "Force plan mode", pane: "planning", also: "planning first ask", what: "Every turn starts in plan mode." },
   { label: "Memory", pane: "planning", also: "remember recall facts", what: "The file-backed memory an agent writes to." },
 

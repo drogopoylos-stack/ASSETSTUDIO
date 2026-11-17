@@ -489,7 +489,8 @@ that you did not agree to.
 | Build phases panel | **on** | The phase list beside the chat |
 | Forge | **on** | Render asset code in a lit studio, with numbers and a reference |
 | Mesh ops | **on** | The modelling library |
-| 1M context | **on** | Tells the agent its window is a million tokens, so it does not compact early |
+| 1M context | **on** | The default window for a **new** conversation, and tells the agent its window is a million tokens so it does not compact early. The chat box picks it per conversation (below) |
+| Token economy | **on** | Claude sessions act on what is known, batch shell commands into one round trip, and hand delegated sweeps to the pinned Sonnet worker. Style only — reasoning is never capped |
 | Memory | **on** | Off adds a note that memory is unavailable |
 | Visual review | off | Contact sheets of the running game |
 | Live game link | off | Question and change the running game |
@@ -498,9 +499,30 @@ that you did not agree to.
 | Blender kiln | off | The Blender MCP pipeline |
 | Force plan mode | off | Start every conversation in plan mode |
 
+**The context window belongs to the conversation.** Each request re-sends the whole conversation,
+so its size is the cost. Pick the window in the chat box when a conversation starts; it keeps that
+window for its whole life, and moving the switch in Settings never restarts a running chat (a
+restart would write the whole conversation into the cache again).
+
+| Chat box choice | Window | Compacts at | For |
+|---|---|---|---|
+| Use setting | 1M | **400k** (Settings → Prompt cache → Compact at) | ordinary work — about a third less context sent |
+| 1M context — full window | 1M | where Claude Code decides (about 967k) | big jobs that need the whole window |
+| 200k only | 200k | about 200k | small jobs |
+
+Subagents run inside the same CLI process, so they share the conversation's compaction point. The
+pinned `studio-sonnet` worker always has 200k (Sonnet 1M uses extra credits). If the Studio must
+restart a session whose cache is still warm, and that costs $1 or more, the chat box asks first.
+
 A **browser rule** is always sent and cannot be switched off: never kill every browser on the
 machine. `taskkill /IM chrome.exe` takes out the user's browser and every other agent's too, so the
 hook refuses it and says what to do instead.
+
+**Long heredocs are moved to a file before they run.** On Windows the CLI cannot carry a long Bash
+command intact: above about 8,000 characters most heredocs failed, and some wrote a file cut short
+with no error. In bypass-permissions mode, the hook writes each quoted heredoc body (`<<'EOF'`) to a
+temporary file and feeds it with `< file` — the same bytes, in a short command. Unquoted heredocs
+are left alone, because bash expands them.
 
 Notes that describe local tools **look before they speak** — Blender, `gltf-transform` and the
 Hunyuan3D weights are discovered on the machine, and named as missing when they are missing. A tool

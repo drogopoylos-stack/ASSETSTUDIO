@@ -80,11 +80,76 @@ class PlanUsageTests(unittest.TestCase):
                 self.addCleanup(live.logf.close)
                 self.assertEqual(spawn.call_args.kwargs["env"].get("CLAUDE_CODE_DISABLE_1M_CONTEXT") == "1", limited)
 
-    def test_context_switch_changes_idle_session_signature(self):
+    def test_explicit_1m_conversation_is_not_compact_capped(self):
+        """A conversation started with an explicit "1M context" runs the whole window; any other
+        Claude launch keeps the `cc_compact_window` cap (the economy default)."""
+        def setting(key, default=None):
+            if key == "cc_compact_window":
+                return 400_000
+            return False if key == "cc_phases" else (True if key == "cc_1m" else default)
+        proc = SimpleNamespace(pid=123, poll=lambda: None)
+        with patch.object(cc.settings, "get", side_effect=setting),              patch.object(cc, "_claim_pending_btw", return_value=""),              patch.object(cc, "_resolve_node_shim", return_value=None),              patch.object(cc, "_mcp_on", return_value=False),              patch.object(cc, "_start_keeper", return_value=(None, None, None)),              patch.object(cc, "_register"), patch.object(cc, "_start_reaper"),              patch.object(cc.threading, "Thread"),              patch.object(cc.subprocess, "Popen", return_value=proc) as spawn:
+            for full, cap in ((False, "400000"), (True, None)):
+                with self.subTest(full=full), patch.dict(os.environ, {}, clear=True):
+                    live = cc._spawn_live("d--project", ["claude"], _data.name,
+                                          ("claude", _data.name, "default"), True, full)
+                    self.addCleanup(live.logf.close)
+                    self.assertEqual(spawn.call_args.kwargs["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"), cap)
+                    self.assertIs(live.want_full, full)
+
+    def test_full_window_record_is_per_conversation(self):
+        with tempfile.TemporaryDirectory() as d,                 patch.object(mission, "_FULL_F", Path(d) / "full.json"),                 patch.object(mission, "_full_cache", {"mtime": -1.0, "map": {}}):
+            self.assertFalse(mission.full_window("p1", "s1"))
+            mission.remember_full_window("p1", "s1")
+            mission.remember_full_window("p1", "s1")          # add-only, no duplicate
+            self.assertTrue(mission.full_window("p1", "s1"))
+            self.assertFalse(mission.full_window("p1", "s2"))
+            self.assertFalse(mission.full_window("p2", "s1"))
+            self.assertFalse(mission.full_window("p1", ""))
+            self.assertEqual(json.loads((Path(d) / "full.json").read_text())["p1"], ["s1"])
+
+    def test_context_switch_does_not_respawn_idle_session(self):
+        """D6: the 1M window belongs to the CONVERSATION, so moving the global switch must not
+        change the idle-session signature.
+
+        This test used to assert the opposite. A signature change respawns the CLI, which re-sends
+        the whole conversation under a NEW prefix — a prompt-cache WRITE where the same request would
+        have been a read, about $6.50 on an 800k conversation. The switch now sets only the default
+        for the NEXT new conversation, so there is no signature difference left to detect."""
         with patch.object(cc.settings, "get", return_value=True):
-            before = cc._note_sig()
+            before = cc._note_sig(True)
         with patch.object(cc.settings, "get", side_effect=lambda k, d=True: False if k == "cc_1m" else True):
-            self.assertNotEqual(before, cc._note_sig())
+            self.assertEqual(before, cc._note_sig(True))
+        # a conversation that chose 200k holds that too
+        self.assertEqual(cc._note_sig(False), cc._note_sig(False))
+        # AND THE LENGTH IS PART OF THE CONTRACT. An inherited session's stored signature is
+        # compared positionally, so a tuple of a different size would differ from every adopted
+        # session's record and respawn it for a change the user never made.
+        self.assertEqual(len(cc._note_sig(True)), 13)
+
+    def test_window_is_per_conversation_not_global(self):
+        """D6: a conversation keeps the window it started with; the global is only a default."""
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(mission, "_WINDOW_F", Path(d) / "window.json"), \
+                patch.object(mission, "_window_cache", {"mtime": -1.0, "map": {}}):
+            # recorded once, read back
+            mission.remember_window("p1", "s1", False)
+            self.assertIs(mission.window_for("p1", "s1"), False)
+            # the global moving does NOT re-window a live conversation
+            with patch.object(cc.settings, "get", return_value=True):
+                self.assertFalse(cc._resolve_window("p1", "s1", False))
+            # ...but a new conversation takes the current default
+            with patch.object(cc.settings, "get", return_value=True):
+                self.assertTrue(cc._resolve_window("p1", "", True))
+            # a conversation from before this feature adopts today's setting, then holds it
+            with patch.object(cc.settings, "get", return_value=False):
+                self.assertFalse(cc._resolve_window("p1", "s2", False))
+            with patch.object(cc.settings, "get", return_value=True):
+                self.assertFalse(cc._resolve_window("p1", "s2", False))
+            self.assertIs(mission.window_for("p1", "s2"), False)
+            # an unknown conversation is not claimed to have a choice
+            self.assertIsNone(mission.window_for("p1", "never-seen"))
+            self.assertIsNone(mission.window_for("p1", ""))
 
     def test_subscription_totals_are_separate_and_survive_reload(self):
         spend.record("claude-project", "opus", 100, billed=False)

@@ -121,6 +121,14 @@ const rememberAgent = (pid: string, a: string) => {
   window.dispatchEvent(new Event("cc-agent"));
 };
 
+// A saved 1M-context choice for one folder + agent. TRI-STATE on purpose: `undefined` means "do
+// not name a window at all, follow the global cc_1m setting", which is what an untouched folder
+// gets. `readPref` treats "" as unset (sendPrefs), so that same mechanism stores the third state.
+const oneMPref = (pid: string, a: string): boolean | undefined => {
+  const v = readPref("oneM", pid, a, "");
+  return v === "" ? undefined : v === "1";
+};
+
 // Model / effort / approval are bound to the FOLDER as well as the agent, so "Opus at high effort
 // in STUDIO" survives a trip to another workspace. The per-agent key stays as the fallback: an
 // existing setup carries over, and a workspace you have never configured starts from your usual
@@ -220,6 +228,12 @@ export function ChatComposer({
   const [mode, setMode] = useState(() => readPref("mode", projectId, initialAgent(projectId), ""));
   const [fork, setFork] = useState(() => localStorage.getItem("cc-fork") === "1");
   const [thinking, setThinking] = useState(() => localStorage.getItem("cc-thinking") === "1");
+  const [oneM, setOneM] = useState<boolean | undefined>(() => oneMPref(projectId, initialAgent(projectId)));
+  // What "use the setting" actually resolves to, painted from the api.settings() load below so the
+  // option can say which way it goes. Not a state of its own fetch: the composer already asks once.
+  const [oneMDefault, setOneMDefault] = useState(true);
+  // Where a "use setting" conversation compacts (Settings > Prompt cache > Compact at); 0 = CLI's own.
+  const [compactAt, setCompactAt] = useState(0);
   const [autolearn, setAutolearn] = useState(() => localStorage.getItem("cc-autolearn") !== "0");
   // BOOST — the ON/OFF button in the row that makes a prompt cheaper by using this PC first.
   // The BACKEND is authoritative here, unlike the note switches below: switching it on also
@@ -405,6 +419,8 @@ export function ChatComposer({
       setCodexFast(!!st?.codex_fast);
       setCodexPlanner(!!st?.codex_planner);
       setForcePlan(!!st?.cc_force_plan);
+      if (typeof st?.cc_1m === "boolean") setOneMDefault(st.cc_1m);
+      setCompactAt(Number(st?.cc_compact_window || 0));
       // These four are the BACKEND's settings - that is what the agent gets - and Settings ->
       // Agent notes switches them there without touching this browser's copy, so a switch changed
       // there looked unchanged here. The copy only paints the first frame; the backend wins.
@@ -470,6 +486,7 @@ export function ChatComposer({
     setModel(m);
     setEffort(readEffort(projectId, agentId, m));
     setMode(readPref("mode", projectId, agentId, ""));
+    setOneM(oneMPref(projectId, agentId));
     // THE SERVER'S MODE WINS: it is the last one picked on ANY device. A phone that once pinned
     // "acceptEdits" must not keep sending it after full access was chosen at the desk.
     let alive = true;
@@ -725,8 +742,38 @@ export function ChatComposer({
     const useAgent = ov?.agent || agentId;
     const useFeed = ov ? (useAgent === "claude" ? projectId : `${useAgent}--${projectId}`) : feedId;
     try {
-      const r = await api.sessionSend(projectId, { message: payload.full, model: ov?.model ?? model, permission_mode: ov?.mode ?? mode, fork: steer ? false : fork, effort: ov?.effort ?? effort, thinking, steer, images: payload.images, agent: useAgent, new_session: newSession, session, path: rootPath || "",
-        companions: steer ? [] : companions.filter((c) => c !== useAgent).map((cid) => ({ id: cid, model: compGet(cid, "model", "default"), effort: compGet(cid, "effort", "default"), permission_mode: compGet(cid, "mode", cid === "codex" ? "full" : "default") })) });
+      // ONE WINDOW PER CONVERSATION. The backend honours `one_m` only when a send STARTS the
+      // conversation, so it is named when this send may start one and omitted otherwise; a
+      // continued chat keeps the window it was launched with, whatever this box shows now.
+      //
+      // `startsConversation` is deliberately the BACKEND's rule (`new_session or no session id`),
+      // not just `newSession`: a folder with no conversation yet is started by an ordinary send
+      // with `newSession` false, and its saved choice must still reach the backend. Where this
+      // over-approximates — a live pane passes `session: ""` while a conversation is running — the
+      // backend has the conversation's own record and simply keeps it, so the extra field is
+      // ignored rather than obeyed.
+      const startsConversation = newSession || !session;
+      // `confirm_respawn: false` OPTS IN to being asked before an expensive restart. It is sent
+      // explicitly because the backend's default is NOT to ask: callers with no dialog (scheduled
+      // jobs, the remote bridge, Workspace's quick actions) must not be blocked by a question they
+      // cannot show.
+      const body = { message: payload.full, model: ov?.model ?? model, permission_mode: ov?.mode ?? mode, fork: steer ? false : fork, effort: ov?.effort ?? effort, thinking, steer, images: payload.images, agent: useAgent, new_session: newSession, session, path: rootPath || "", one_m: startsConversation ? oneM : undefined, confirm_respawn: false,
+        companions: steer ? [] : companions.filter((c) => c !== useAgent).map((cid) => ({ id: cid, model: compGet(cid, "model", "default"), effort: compGet(cid, "effort", "default"), permission_mode: compGet(cid, "mode", cid === "codex" ? "full" : "default") })) };
+      let r = await api.sessionSend(projectId, body);
+      // A RESPAWN THAT COSTS MONEY IS ASKED ABOUT FIRST. The backend refuses the send when a
+      // changed setting would restart an idle session and re-send the whole conversation as a
+      // cache write; the user decides before that money is spent. It only asks while the cache is
+      // still warm and the extra cost is at least $1.00, and never for a non-interactive caller.
+      if (!r.ok && r.confirm_respawn) {
+        if (!window.confirm(r.confirm_respawn.message + "\n\nRestart the session now?")) {
+          // Declined: nothing restarted and no turn ran, so the prompt goes back in the box.
+          dropInflight(useFeed, payload);
+          setMsg((m) => m.trim() ? payload.full + "\n\n" + m : payload.full);
+          setImages((im) => [...new Set([...im, ...payload.images])]);
+          return;
+        }
+        r = await api.sessionSend(projectId, { ...body, confirm_respawn: true });
+      }
       if (!r.ok) {
         toast(r.error || "send failed", "danger");
         // Codex's own banner above the box says what is missing and fixes it; the agent menu
@@ -743,6 +790,8 @@ export function ChatComposer({
       // than cache-read, which is the line a long agent spends most of its money on. The backend
       // reports the reason; this is the only place the user can be told, and the fix on their side is
       // one line: change settings between turns, not during one.
+      // The ASK now happens BEFORE the turn, in the confirm_respawn branch above; this toast is the
+      // fallback for respawns the backend did not ask about (already accepted, or too cheap to ask).
       if ((r as any).respawn_reason === "settings") {
         toast("Setting changed mid-conversation — this answer re-sent the whole context as a cache miss, which bills like a fresh start. Change model / effort / mode between turns, not during one.", "warn");
       }
@@ -1485,6 +1534,40 @@ export function ChatComposer({
                 onChange={(e) => pickMode(e.target.value)}>
                 {MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select>
               {forcePlan && <div className="text-[10px] text-muted/70 mt-0.5">forced in Settings &rarr; Planning</div>}</div>
+            {/* 1M CONTEXT IS PER CONVERSATION, NOT PER MESSAGE. The backend honours one_m only when
+                a send STARTS a conversation: moving a running one to another window restarts the
+                session and re-sends the whole chat as a cache WRITE (about $6.50 on an 800k
+                conversation). So it is settable while a send here may start a conversation, and
+                over one already running it reads fixed with the reason on hover.
+
+                The enable rule is the BACKEND's (`new_session or no session id`), so a folder with
+                no conversation yet can still have its choice applied. The `session === ""` case is
+                ambiguous from here — a live pane passes it while a conversation IS running — and
+                there the backend simply keeps that conversation's own record. */}
+            <div>
+              <label className="label !mb-0.5 flex items-center gap-1">Context window</label>
+              <select className="input !py-1 text-xs"
+                value={oneM === undefined ? "" : oneM ? "1" : "0"}
+                disabled={!(newSession || !session)}
+                aria-label={newSession
+                  ? "1M context for this new conversation"
+                  : "Context window is set when a conversation starts — the running one keeps the window it was launched with"}
+                title={newSession
+                  ? `1M context for this conversation. "Use setting" follows Settings → Chat helpers → 1M context, currently ${oneMDefault ? "on" : "off"}.`
+                  : "A conversation keeps the window it was started with. Changing it mid-conversation would restart the session and re-send the whole conversation as a cache write, so pick it when you start a new conversation."}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  writePref("oneM", projectId, agentId, v);   // "" reads back as "use the setting"
+                  setOneM(v === "" ? undefined : v === "1");
+                }}>
+                {/* "1M context" is the WHOLE window: the compact cap is the economy default for
+                    ordinary chats and is not applied to a conversation started with it. */}
+                <option value="">Use setting — {oneMDefault ? (compactAt ? `1M, compacts at ${Math.round(compactAt / 1000)}k` : "1M") : "200k"}</option>
+                <option value="1">1M context — full window, for big jobs</option>
+                <option value="0">200k only</option>
+              </select>
+              {!newSession && <div className="text-[10px] text-muted/70 mt-0.5">applies when a conversation starts</div>}
+            </div>
             <label className="flex items-center gap-1.5 cursor-pointer text-muted">
               <input type="checkbox" checked={fork} onChange={(e) => { setFork(e.target.checked); localStorage.setItem("cc-fork", e.target.checked ? "1" : "0"); }} /> new session (fork)
             </label>

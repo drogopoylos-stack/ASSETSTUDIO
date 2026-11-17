@@ -113,7 +113,10 @@ class _Live:
                  # THE CACHE GUARD (cache_guard.py): when the main thread last used the prompt
                  # cache, how big the cached conversation is, how long the cache lives, when the
                  # guard last compacted, and the CLI build this process runs.
-                 "last_api", "ctx_tokens", "cache_ttl", "guard_at", "cli_version")
+                 "last_api", "ctx_tokens", "cache_ttl", "guard_at", "cli_version",
+                 # the per-conversation 1M choice this launch was given, carried so the init event
+                 # can record it against the conversation id (D6)
+                 "want_1m", "want_full")
 
     def __init__(self, project_id: str, proc: subprocess.Popen, logf, sig: tuple,
                  session_id: Optional[str]):
@@ -156,6 +159,8 @@ class _Live:
         self.cache_ttl = 0.0         # 3600 once a 1-hour cache write is seen; 0 = not known yet
         self.guard_at = 0.0          # when the cache guard last sent /compact
         self.cli_version = ""        # `claude_code_version` from the init event
+        self.want_1m = None          # the per-conversation window this launch was given (D6)
+        self.want_full = False       # ...and whether it runs that window uncapped (explicit 1M)
 
 # Pinned ids first, then the aliases. `claude-fable-5-1` arrived with CLI 2.1.257 and
 # `claude-opus-5-5` with 2.1.280; both roll out per account, so either can be listed here and still
@@ -172,7 +177,20 @@ MODELS = ["default", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "opu
 # family aliases, which may resolve to an older Sonnet on some providers.
 _STUDIO_SUBAGENTS = {
     "studio-sonnet": {
-        "description": "Sonnet 5.5 worker. Use only when the user asks to delegate a task to Sonnet.",
+        # ROUTED, NOT OPT-IN (D4, 2026-11-16). It used to say "Use only when the user asks", and
+        # the measurement says that was backwards: 18,974 Opus 5.5 subagent calls cost $1,398.36 —
+        # 43% of the calls, 38% of the spend — while the Studio's own routing policy puts scoped
+        # retrieval and gate-checked sweeps on Sonnet. The work named here is the work the policy
+        # already assigns away from the lead. The refusal clause is load-bearing: the routing
+        # invariant forbids buying savings by downgrading judgment, so the description says in the
+        # same breath what must NOT come here.
+        "description": (
+            "Sonnet 5.5 worker for SCOPED, VERIFIABLE work: retrieval and search fan-outs, "
+            "mechanical gate-checked sweeps, and checking a specific claim against concrete "
+            "evidence. When such work is delegated, use this worker rather than one on the lead's "
+            "own model. Do NOT send judgment work: architecture, design, synthesis, adjudication, "
+            "or anything launch-critical."
+        ),
         "model": "claude-sonnet-5-5",
         "prompt": (
             "Complete the task delegated by the parent agent, within its stated scope and constraints. "
@@ -181,13 +199,21 @@ _STUDIO_SUBAGENTS = {
         ),
     },
 }
+# WHEN, NOT WHETHER (review, 2026-11-17). The first rewrite said this work belongs on Sonnet
+# "instead of doing it on your own model", which reads as "delegate lookups you would have done
+# inline" — and a new worker pays for its own system prompt and its own cold cache, so a two-call
+# lookup moved to a subagent costs MORE, not less. The note now chooses the worker for delegation
+# that was going to happen anyway, and says plainly that small lookups stay inline.
 _SUBAGENT_ROUTING_NOTE = (
-    "SONNET DELEGATION: when the user asks for a Sonnet subagent, use the Agent (or Task) tool "
-    "with subagent_type='studio-sonnet'. That worker is pinned to claude-sonnet-5-5. Omit the "
-    "per-call model argument so it does not override the pinned version. Pass the task and its "
-    "constraints, then review and integrate the result. Keep your own model unchanged. Use this "
-    "worker only when requested; if it is unavailable, report the error rather than silently "
-    "substituting another model."
+    "SONNET DELEGATION: when you delegate scoped retrieval, a search/explore fan-out, a mechanical "
+    "sweep or a check against concrete evidence, use the Agent (or Task) tool with "
+    "subagent_type='studio-sonnet' (pinned to claude-sonnet-5-5) rather than an agent on your own "
+    "model. Do not delegate a lookup you can finish yourself in a few tool calls: a new worker "
+    "pays for its own prompt and cache. Judgment work (architecture, design, synthesis, "
+    "adjudication, launch-critical correctness) stays on the lead. Omit the per-call model "
+    "argument so it does not override the pinned version. Pass the task and its constraints, then "
+    "review and integrate the result. Keep your own model unchanged. If it is unavailable, report "
+    "the error rather than silently substituting another model."
 )
 PERMISSION_MODES = ["default", "plan", "acceptEdits", "bypassPermissions"]
 
@@ -1151,8 +1177,8 @@ def agent_notes_catalog(cwd: str = "") -> dict:
          "tokens": size(_blender_kiln_note), "why": "The Blender MCP pipeline: source, generate, clean, texture, export."},
         {"key": "cc_1m", "label": "1M context", "group": "studio", "default": dflt("cc_1m", True),
          "tokens": size(lambda: _context_window_note("claude-fable-5-1[1m]")), "why": "Allows 1M context. Off limits new Claude sessions to 200k, including native 1M models."},
-        {"key": "cc_fable_efficient", "label": "Fable token efficiency", "group": "studio", "default": dflt("cc_fable_efficient", True),
-         "tokens": size(_fable_efficiency_note), "why": "Act on what is known, do not re-derive, lead with the outcome. Fable models only."},
+        {"key": "cc_fable_efficient", "label": "Token economy", "group": "studio", "default": dflt("cc_fable_efficient", True),
+         "tokens": size(_efficiency_note), "why": "Act on what is known, do not re-derive, lead with the outcome, and batch shell commands so one round trip does the work of several. Claude models."},
         {"key": "cc_force_plan", "label": "Force plan mode", "group": "studio", "default": dflt("cc_force_plan", False),
          "tokens": size(_plan_note), "why": "Starts every conversation in plan mode. The plan note is sent while a session is in plan mode."},
         {"key": "cc_memory", "label": "Memory", "group": "studio", "default": dflt("cc_memory", True),
@@ -1609,7 +1635,7 @@ def _engine_pointer_note(cwd: str = "") -> str:
 
 
 def _subagent_cache_note() -> str:
-    """One rule for subagents about long waits (on while the cache guard is on).
+    """The rules for subagents that decide what a fan-out really costs (on while the guard is on).
 
     A subagent's prompt cache lives FIVE MINUTES after its last request (the main session's lives
     an hour). A single command that runs longer lets it expire, and the next request writes the
@@ -1618,12 +1644,36 @@ def _subagent_cache_note() -> str:
     that waited 5-6.5 minutes (`until grep ...`, `timeout 500 node replay.mjs`): $19.40 of the
     $28 lost to expiry. A check that returns inside four minutes is a request, and a request reads
     the cache and keeps it alive, so the same wait done in checks costs a read each time instead.
+
+    THE RETRY AND SCOPE RULES ARE HERE FOR THE SAME REASON, measured 2026-11-16 on Opus 5.5 alone:
+    a subagent is 43% of its API calls (18,974 of 44,112) and 38% of its spend ($1,398.36 of
+    $3,701.48). 128 workers ran; 28 of them passed 200k context and those alone cost $482.15, the
+    largest $64.43 across 416 calls. A failed step re-run unchanged pays for the whole context
+    again, and a worker that keeps reading is the same leak by another door.
+
+    BOTH RULES TARGET WASTE, NOT CAPABILITY, and that distinction is deliberate. The first draft
+    said "retry once then stop" and "stay under 150k" — an independent review (gpt-6.1-sol,
+    2026-11-16) rejected it, correctly: a rule that ends productive debugging, or that returns a
+    half-finished investigation because of a token count, buys money by degrading the work, which
+    this project forbids (skills/ai-token-routing/SKILL.md:17). So the note forbids the UNCHANGED
+    repeat and the undeliberate read, and leaves the judgment with the worker.
     """
     return ("PROMPT CACHE: your cache lives 5 minutes after your last request. A command that runs "
             "longer than about 4 minutes lets it expire, and your next request writes your whole "
             "context again at about 25 times the price of reading it. For a job longer than that, "
             "start it in the background, then check it with a command that returns within 4 "
-            "minutes, and repeat until it is done.")
+            "minutes, and repeat until it is done. "
+            "ON FAILURE: say in one line what the failure tells you, then act on it — change "
+            "something that addresses the cause and try again. A retry is fine when the cause was "
+            "transient (a timeout, a flaky step, a rate limit) or when you have changed something; "
+            "what to avoid is repeating the step unchanged and hoping. If you have neither a "
+            "change nor a reason to expect a different result, report what you have with the "
+            "blocker rather than looping. "
+            "WATCH YOUR SCOPE: a worker's context is re-sent on every request, so read "
+            "deliberately instead of broadly. Past roughly 150k tokens, keep going only if the "
+            "task genuinely needs the material you are reading; otherwise report what you have, "
+            "what you still need and why, and let the parent decide — do not balloon instead of "
+            "finishing.")
 
 
 def _browser_rule_note() -> str:
@@ -1693,10 +1743,78 @@ def _output_style_note() -> str:
     )
 
 
-def _fable_efficiency_note() -> str:
-    """Injected when the session model is Fable (and cc_fable_efficient is on): trims Fable's
-    output/deliberation overhead WITHOUT capping its reasoning — per Anthropic's own Fable
-    prompting guidance. Also points at the bundled ai-token-routing skill for delegation."""
+# Which models the economy directive is for. It was Fable-only until 2026-11-16, and that was
+# backwards: the measured burn is on Opus, and Fable was the one reasoning model that heard the
+# note while Opus — the model that spends the most per call — never did.
+#
+# IDENTITY, NOT SUBSTRING — twice reviewed (2026-11-16). The first version used `x in ml` and
+# pulled in "octopus" and "vendor/non-claude-model". The second used a token-boundary regex and
+# still took "mythos-lab-custom" and "vendor/non-opus-model". So there is no family regex now: a
+# model is a Claude model if it is an id the picker offers by itself, or an Anthropic-shaped id
+# (`claude-*`, incl. dated and Bedrock-prefixed). Everything else is somebody else's model.
+#
+# `default` is in the alias set because on the CLAUDE engine the CLI's own pick is a Claude
+# reasoning model. What an alternate engine's default means is a different question, and
+# `_note_model` below answers it rather than assuming.
+_EFFICIENCY_ALIASES = {"opus", "sonnet", "haiku", "fable", "mythos", "default"}
+
+
+def _efficiency_applies(model: str) -> bool:
+    """Whether the economy directive is for this session's model.
+
+    Never call this with the bare word "default" for an alternate-engine session — pass the model
+    that engine will actually run, via `_note_model`."""
+    ml = (model or "").strip().lower()
+    # A context/output selector rides the id — `opus[1m]`, `claude-opus-5-5[1m]`. Strip it, or the
+    # picker's bare `opus` loses the note exactly when cc_1m is on, which is the default. Caught by
+    # the third review (2026-11-16).
+    ml = re.sub(r"\[[^\]]*\]$", "", ml).strip()
+    if not ml:
+        return False
+    if ml in _EFFICIENCY_ALIASES:
+        return True
+    return bool(re.match(r"^(?:claude-|us\.anthropic\.claude-|anthropic\.claude-)", ml))
+
+
+def _note_model(project_id: str, model: str) -> str:
+    """The model id the economy note should be judged against for this session.
+
+    On the Claude engine the model string is the truth. On an alternate engine — the built-in Kimi
+    and Qwen homes, or any provider the user added in Settings > Models — the CLI default is that
+    vendor's model, so an unresolved `default` must NOT be read as Claude. An EXPLICIT id is
+    trusted whatever route it takes, because a custom provider can legitimately serve a real Claude
+    model, and the second review (2026-11-16) found the previous guard excluding exactly that case.
+
+    This asks `_alt_model`, the SAME resolver the spawn path uses, so the note and the runtime can
+    never disagree. Reading the provider's declared `default_model` instead was the third review's
+    finding: it ignores the model the user actually selected for that provider
+    (`settings[spec["setting"]]`), and it was reproducible in both directions.
+    """
+    ml = (model or "").strip()
+    if ml and ml.lower() != "default":
+        return ml
+    pfx = mission.alt_prefix(project_id)
+    if not pfx:
+        return ml or "default"          # the Claude engine's own pick
+    try:
+        return str(_alt_model(pfx, ml) or "")
+    except Exception:
+        return ""                       # an unknown alternate engine is not claimed as Claude
+
+
+def _efficiency_note() -> str:
+    """Injected on a Claude reasoning session (with cc_fable_efficient on): trims output and
+    deliberation overhead WITHOUT capping the model's reasoning — per Anthropic's own prompting
+    guidance. Also points at the bundled ai-token-routing skill for delegation.
+
+    THE SECOND HALF IS MEASURED, NOT STYLE. Instrumented on this machine on 2026-11-16
+    (docs/opus-token-economy-brief.md): the snapshot is 45,821 deduped API calls across ALL models,
+    of which 44,112 are Opus 5.5 and cost $3,701.48. Within Opus 5.5, cache READS of the re-sent
+    conversation were $1,486.89 (40.2%), cache WRITES $1,284.81 (34.7%), and actual output only
+    $929.42 (25.1%). Input billed at the uncached rate was 89,063 tokens — one part in ~86,000 of
+    what crossed the wire. There were 34,362 Bash INVOCATIONS across 33,301 Opus 5.5 calls, and
+    945 of those calls already carried several Bash calls in parallel, which is why the note says
+    "one at a time" rather than "every command"."""
     return (
         "TOKEN EFFICIENCY (style, not a capability cap): when you have enough information to act, act — "
         "don't re-derive established facts, re-litigate settled decisions, or survey options you won't "
@@ -1704,16 +1822,27 @@ def _fable_efficiency_note() -> str:
         "reader does next). Don't add features, refactors, abstractions, or error handling beyond what "
         "the task requires. Prefer reading a repo's existing docs/maps over re-grepping what's already "
         "mapped. When delegating to subagents or Workflows, route each task to the cheapest model+effort "
-        "that preserves judgment quality — the `ai-token-routing` skill has the routing table."
+        "that preserves judgment quality — the `ai-token-routing` skill has the routing table. "
+        "SHELL ECONOMY: this conversation is re-sent to the model on every round trip, so commands "
+        "run ONE AT A TIME each cost a full re-send. Batch related commands into a single call — a "
+        "short script or one chained command — and gather what a task needs in one pass instead of "
+        "probing file by file. (Calls you issue together in one response already share a round "
+        "trip; this is about the sequential ones.) Write a whole file with the Write tool, not a "
+        "long Bash heredoc."
     )
 
 
-def _apply_1m(model: str) -> str:
+def _apply_1m(model: str, one_m: Optional[bool] = None) -> str:
     """Request extended context for an explicit Opus pick; preserve the CLI default.
+
+    `one_m` is the PER-CONVERSATION choice (D6). `None` falls back to the global `cc_1m`
+    setting, which is now the default for a conversation that has not made a choice yet.
 
     Native 1M models also need the environment gate below when the switch is off.
     """
-    if not settings.get("cc_1m", True):
+    if one_m is None:
+        one_m = bool(settings.get("cc_1m", True))
+    if not one_m:
         return model
     m = (model or "").strip()
     if "[" in m:  # already carries a context/output selector, e.g. opus[1m]
@@ -1726,9 +1855,51 @@ def _apply_1m(model: str) -> str:
     return m
 
 
-def _claude_context_env() -> dict[str, str]:
-    """Bound native 1M models as well as older explicit [1m] variants."""
-    return {} if settings.get("cc_1m", True) else {"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}
+def _claude_context_env(one_m: Optional[bool] = None) -> dict[str, str]:
+    """Bound native 1M models as well as older explicit [1m] variants.
+
+    `one_m` is the per-conversation choice (D6); it is read at LAUNCH, so passing the conversation's
+    own value is what stops a respawn of a 1M conversation from silently dropping it to 200k when
+    the global switch has since been turned off.
+    """
+    if one_m is None:
+        one_m = bool(settings.get("cc_1m", True))
+    return {} if one_m else {"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}
+
+
+def _resolve_window(project_id: str, session_id: str, new_session: bool) -> bool:
+    """The 1M choice for the turn about to run, and record it for a conversation that has none.
+
+    An existing conversation keeps the window it was started with, whatever the global switch now
+    says — that stability is the point (see `mission.remember_window`). A conversation that predates
+    this feature adopts today's setting the first time it is seen, and keeps it from then on.
+    """
+    if not new_session and session_id:
+        recorded = mission.window_for(project_id, session_id)
+        if recorded is not None:
+            # A NAMED conversation resolved, so any parked guess is superseded — and an unclaimed
+            # one left behind is exactly what gets misattributed later. Clearing here bounds the
+            # slot's life to "until the next send in this project" (found by review, 2026-11-16).
+            mission.clear_pending_window(project_id)
+            return recorded
+        # No record for this conversation, but a launch may have left one behind keyed by nothing
+        # but the project — a terminal or one-shot start, which never sees an init event. Claim it
+        # now that the id is known; that is what makes such a choice survive a later global flip.
+        # The claim is ATOMIC (read + write + clear under one lock), so two sends cannot both take
+        # it, and it is cleared as it is taken, so it cannot be taken twice.
+        claimed = mission.claim_pending_window(project_id, session_id)
+        if claimed is not None:
+            return claimed
+    one_m = bool(settings.get("cc_1m", True))
+    if not new_session and session_id:
+        # ADOPT, THEN HOLD — and hold to the value that actually LANDED. `remember_window` is
+        # write-once and atomic, so a concurrent resolver may have got there first; returning the
+        # local `one_m` here would launch this turn with a window the record does not agree with,
+        # which is exactly the split this whole mechanism exists to prevent (found by review,
+        # 2026-11-16).
+        stored = mission.remember_window(project_id, session_id, one_m)
+        return one_m if stored is None else stored
+    return one_m
 
 
 _PROMPT_FP = DATA_DIR / "prompt_fingerprints.json"
@@ -1776,7 +1947,7 @@ def _snapshot_flag(project_id: str, notes: list[str], resuming: bool) -> list[st
     return ["--system-prompt-snapshot", "off" if (changed and resuming) else "on"]
 
 
-def _context_window_note(model: str) -> str:
+def _context_window_note(model: str, one_m: Optional[bool] = None) -> str:
     """Tell the session how big its context window actually IS.
 
     Nothing in the harness states the window size, so a model falls back on the 200k it was
@@ -1787,9 +1958,15 @@ def _context_window_note(model: str) -> str:
 
     The 1M test matches ``mission._context_info`` on purpose, so the meter the user reads and
     the number the model believes can never disagree. Returns '' when 1M is not in play —
-    better to say nothing than to assert a window we did not verify."""
+    better to say nothing than to assert a window we did not verify.
+
+    `one_m` is the CONVERSATION's window (D6), and it must be passed for the match above to hold:
+    the global switch is only the default for the next new chat, so a conversation that chose 1M
+    while the switch is off would otherwise be told it has 200k — the exact misreading this
+    function exists to prevent.
+    """
     ml = (model or "").lower()
-    on_1m = mission.model_window(model) == 1_000_000
+    on_1m = mission.model_window(model, 0, one_m) == 1_000_000
     if not on_1m:
         return ""
     head = ("CONTEXT WINDOW: this session holds 1,000,000 tokens, not the 200k default. Convert "
@@ -1942,7 +2119,8 @@ def _launch_problem(args: list) -> str:
 
 
 def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
-                 permission_mode: str, fork: bool, effort: str, project_id: str = "") -> list[str]:
+                 permission_mode: str, fork: bool, effort: str, project_id: str = "",
+                 one_m: Optional[bool] = None) -> list[str]:
     args: list[str] = [exe, "-p", message, "--output-format", "text"]
     if session_id:
         args += ["--resume", session_id]
@@ -1971,11 +2149,12 @@ def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
         notes.append(_blender_kiln_note())
     if not settings.get("cc_memory", True):
         notes.append(_memory_off_note())
-    win_note = _context_window_note(model)   # model already carries [1m] — _apply_1m runs before this
+    win_note = _context_window_note(model, one_m)   # model carries [1m]; one_m is the conversation's
     if win_note:
         notes.append(win_note)
-    if settings.get("cc_fable_efficient", True) and "fable" in (model or "").lower():
-        notes.append(_fable_efficiency_note())
+    if settings.get("cc_fable_efficient", True) and _efficiency_applies(
+            _note_model(project_id, model)):
+        notes.append(_efficiency_note())
     # BOOST's one note. Appended in BOTH arg builders, and byte-identical on every turn on
     # purpose: a note that is re-worded between turns moves the cached prefix, which reprices
     # the whole conversation and costs more than the note saves. See boost.py.
@@ -2011,7 +2190,8 @@ def _claude_args(exe: str, message: str, session_id: Optional[str], model: str,
 
 def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
                         permission_mode: str, fork: bool, effort: str,
-                        project_id: str = "", cwd: str = "") -> list[str]:
+                        project_id: str = "", cwd: str = "",
+                        one_m: Optional[bool] = None) -> list[str]:
     """Process args for a persistent streaming session. The user message is NOT here —
     it's written to stdin as stream-json. Everything else (model/effort/permission/
     system-prompt/resume) is fixed for the life of the process."""
@@ -2100,11 +2280,12 @@ def _claude_stream_args(exe: str, session_id: Optional[str], model: str,
         notes.append(_plan_note())
     if not settings.get("cc_memory", True):
         notes.append(_memory_off_note())
-    win_note = _context_window_note(model)   # model already carries [1m] — _apply_1m runs before this
+    win_note = _context_window_note(model, one_m)   # model carries [1m]; one_m is the conversation's
     if win_note:
         notes.append(win_note)
-    if settings.get("cc_fable_efficient", True) and "fable" in (model or "").lower():
-        notes.append(_fable_efficiency_note())
+    if settings.get("cc_fable_efficient", True) and _efficiency_applies(
+            _note_model(project_id, model)):
+        notes.append(_efficiency_note())
     # BOOST's one note. Appended in BOTH arg builders, and byte-identical on every turn on
     # purpose: a note that is re-worded between turns moves the cached prefix, which reprices
     # the whole conversation and costs more than the note saves. See boost.py.
@@ -2641,6 +2822,15 @@ def _live_reader(live: "_Live") -> None:
                     # pin it: this is the conversation the Studio is really running, so a
                     # restart resumes THIS one even if something else touched the folder
                     mission.remember_active_session(live.project_id, sid)
+                    # ...and record the window with it, once, so this conversation keeps it for
+                    # its whole life no matter what the global switch does later (D6).
+                    if live.want_1m is not None:
+                        try:
+                            mission.remember_window(live.project_id, sid, live.want_1m)
+                            if live.want_full:
+                                mission.remember_full_window(live.project_id, sid)
+                        except Exception:
+                            pass
                 # The build this conversation's cache was written by: a resume on another build
                 # writes the whole conversation again (cache_guard.warm_binary).
                 ver = str(ev.get("claude_code_version") or "")
@@ -3131,7 +3321,8 @@ def sweep_keeper_mail() -> int:
     return gone
 
 
-def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Live":
+def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple,
+                one_m: Optional[bool] = None, full_1m: bool = False) -> "_Live":
     # A /btw note still pending from the OLD process must survive the respawn (it used to be
     # deleted here and lost). Claim it now, re-deliver it into the new session below.
     carried_btw = _claim_pending_btw(project_id)
@@ -3165,12 +3356,15 @@ def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Liv
     if alt:
         env.update(_alt_env(alt, str(sig[2]) if len(sig) > 2 else "default"))
     else:
-        env.update(_claude_context_env())
+        env.update(_claude_context_env(one_m))
         # Where auto-compaction starts (CLI 2.1.322: CLAUDE_CODE_AUTO_COMPACT_WINDOW, clamped by
         # the CLI to the model's window). Not in the signature on purpose: it changes no prompt
         # text, so it rides the next natural start instead of forcing one.
+        # NOT for a conversation started with an explicit "1M context" (`full_1m`): the cap is the
+        # economy default, and applying it there made the 1M the user asked for unreachable — it
+        # compacted at 400k like any other chat (mission.remember_full_window).
         try:
-            win = int(settings.get("cc_compact_window") or 0)
+            win = 0 if full_1m else int(settings.get("cc_compact_window") or 0)
         except (TypeError, ValueError):
             win = 0
         if win > 0 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in os.environ:
@@ -3214,6 +3408,11 @@ def _spawn_live(project_id: str, args: list[str], cwd: str, sig: tuple) -> "_Liv
         except OSError:
             pass
     live = _Live(project_id, proc, logf, sig, None)
+    # The window this launch was given, carried so the init event can record it against the
+    # conversation id the CLI is about to report (D6). Until now the choice existed only in this
+    # process; the record is what makes it survive the process.
+    live.want_1m = one_m
+    live.want_full = bool(full_1m and one_m)
     if keeper is not None and inbox is not None:
         live.inbox = str(inbox)
         live.keeper_pid = keeper.pid
@@ -4125,7 +4324,7 @@ def _claude_billed(project_id: str = "") -> bool:
         return True
 
 
-def _note_sig() -> tuple:
+def _note_sig(one_m: Optional[bool] = None) -> tuple:
     """Every setting that decides WHICH notes go into the appended system prompt.
 
     The rule, and the reason this is a list rather than a hash of the prompt: the appended prompt
@@ -4137,10 +4336,24 @@ def _note_sig() -> tuple:
     The prompt is NOT hashed, deliberately. The phases note carries the live phase list, which
     changes several times a minute; hashing it would respawn the session constantly. What is
     stable is the set of switches, so that is what is compared.
+
+    `one_m` is the CONVERSATION's window (D6). It occupies the SAME SLOT the live `cc_1m` switch
+    used to, and that is deliberate — see below.
     """
     keys = ("cc_forge", "cc_live", "cc_ops", "cc_review", "cc_graphify", "cc_web_tools",
             "cc_phases", "cc_memory", "cc_blender_kiln", "cc_fable_efficient",
-            "studio_tools_prompt", "cc_1m")
+            "studio_tools_prompt")
+    # THE 1M SLOT STAYED, BUT STOPPED TRACKING THE GLOBAL SWITCH (D6, 2026-11-16). Reading the
+    # setting here made it a respawn trigger for no benefit: the window is a property of the
+    # CONVERSATION now (`mission.remember_window`), so moving the switch changes the next new chat
+    # and nothing about a live one. Keeping the slot filled with the RESOLVED value means the tuple
+    # is still the same LENGTH and shape it has always been — and that matters more than it looks.
+    # An adopted session's stored signature is read back from JSON and compared positionally; a
+    # shorter tuple would differ from every inherited session's record, so every session alive
+    # across this upgrade would respawn (and, once D7 landed, ask to) for a change the user never
+    # made. Length is part of the contract here; do not "tidy" this slot away.
+    if one_m is None:
+        one_m = bool(settings.get("cc_1m", True))
     # BOOST IS NOT IN THIS LIST, ON PURPOSE, and it used to be. Its note is a set of HABITS
     # ("use the local index, do not re-read a file"), not a capability: a live session that never
     # hears it loses a saving and nothing else. Forcing a respawn to deliver it did the opposite
@@ -4152,7 +4365,15 @@ def _note_sig() -> tuple:
     # keys that are not in this tuple either.
     # Deliver newly available delegation capabilities on the next safe idle send,
     # including sessions adopted from a backend that predates this worker.
-    return tuple(bool(settings.get(k, True)) for k in keys) + ("studio-sonnet-5-5-v1",)
+    #
+    # DO NOT BUMP THIS FOR A WORDING CHANGE (D4, 2026-11-16). The marker exists for a genuinely NEW
+    # worker: a session adopted from an older backend would otherwise never be told it exists. A live
+    # session already HAS `studio-sonnet` in its --agents JSON, so re-routing its description buys a
+    # better decision on the next conversation and nothing else — and bumping the marker would force
+    # every live session to respawn, which is exactly the cache WRITE that §7 constraint 1 forbids
+    # ("never force a respawn to deliver a note"). The new description rides the next natural start.
+    return (tuple(bool(settings.get(k, True)) for k in keys)
+            + (bool(one_m), "studio-sonnet-5-5-v1"))
 
 
 def _warm_exe(project_id: str, resume: Optional[str], exe: str, fork: bool) -> str:
@@ -4171,9 +4392,62 @@ def _warm_exe(project_id: str, resume: Optional[str], exe: str, fork: bool) -> s
     return run or exe
 
 
+# What a respawn has to cost before the Studio interrupts to ask (D7). Below this, asking is noise.
+_RESPAWN_WARN_USD = 1.00
+
+
+def _respawn_warning(live: "_Live", model: str, diff: list) -> Optional[dict]:
+    """What this respawn costs, or None when it is not worth interrupting for (D7, 2026-11-16).
+
+    A respawn re-sends the conversation under a NEW request prefix, so what would have been a
+    prompt-cache READ (~0.1x) is billed as a cache WRITE (~1.25x). The number that matters is the
+    DIFFERENCE between the two on this session's own last request — not the whole context, which the
+    send would have paid for anyway.
+    """
+    ctx = int(live.ctx_tokens or 0)
+    if ctx <= 0:
+        return None
+    # ONLY A WARM CACHE MAKES THE REWRITE AVOIDABLE. If the cache has already expired, the next
+    # request writes the whole conversation regardless, so respawning costs nothing extra and the
+    # warning would be a plain lie. `cache_ttl` is 3600 once a 1-hour write is seen, else the 5-min
+    # default; no recorded request yet means we cannot know, so say nothing.
+    if not live.last_api:
+        return None
+    ttl = float(live.cache_ttl or 300.0)
+    if (time.time() - live.last_api) > ttl:
+        return None
+    m = (model or "").split("[")[0].strip() or "claude-opus-5-5"
+    # THE TTL IS PART OF THE PRICE. A 1-hour cache write bills at `cw1h`, about double the
+    # 5-minute `cw5m` — on Opus 5.5 at 800k that is $6.24 against $3.84, so pricing every session
+    # as a 5-minute one would understate exactly the long conversations this warning exists for.
+    # `cache_ttl` is 3600 once a 1-hour write has been seen (see _Live), and the 300 fallback
+    # above is the CLI's normal TTL.
+    write = {"cache_write_1h": ctx} if ttl >= 3600 else {"cache_write": ctx}
+    try:
+        from . import pricing
+        extra = pricing.cost(m, write) - pricing.cost(m, {"cache_read": ctx})
+    except Exception:
+        return None
+    if extra < _RESPAWN_WARN_USD:
+        return None
+    why = ", ".join(diff) or "a settings change"
+    return {
+        "tokens": ctx,
+        "cost_usd": round(extra, 2),
+        "reasons": list(diff),
+        "message": ("Applying %s restarts this session, which re-sends %s tokens of conversation as "
+                    "a fresh cache write instead of reusing the cached one — about $%.2f. You can "
+                    "instead finish this conversation and let it apply to the next one."
+                    % (why, f"{ctx:,}", extra)),
+    }
+
+
 def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                     permission_mode: str, fork: bool, effort: str, exe: str,
-                    new_session: bool, session: str, newest_session: Optional[str], steer: bool = False) -> dict:
+                    new_session: bool, session: str, newest_session: Optional[str], steer: bool = False,
+                    one_m: Optional[bool] = None,
+                    confirm_respawn: Optional[bool] = None,
+                    full_1m: bool = False) -> dict:
     want_sig = (exe, cwd, model or "default", permission_mode or "default",
                 bool(fork), (effort or "default").lower(), bool(settings.get("cc_autolearn")),
                 # the style rides the system prompt, which is fixed for the life of the process —
@@ -4182,8 +4456,10 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                 # fast mode is read from the settings file at startup, so the same applies:
                 # without this the toggle would appear to do nothing until something else respawned
                 bool(settings.get("cc_fast_mode")),
-                # ...and so does every switch that adds or removes a note.
-                _note_sig())
+                # ...and so does every switch that adds or removes a note. The 1M slot is passed
+                # the CONVERSATION's window, not the global switch, so moving the switch cannot
+                # respawn a live chat (D6).
+                _note_sig(one_m))
     # /compact INTERRUPTS THE TURN, AND A BACKGROUND AGENT DOES NOT SURVIVE THAT.
     #
     # Compaction is not a quiet bookkeeping step: the CLI stops what it is doing to make room.
@@ -4261,6 +4537,17 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
                 and not _has_recent_agent_activity(project_id)
                 and not _open_background(project_id))
         )
+        # D7: ASK BEFORE AN EXPENSIVE RESPAWN. Only for a sig-driven restart of an existing, idle
+        # conversation, and only when the caller can actually be asked: `confirm_respawn` is None
+        # for a non-interactive caller (a scheduled job, or a remote client with no dialog to show),
+        # and blocking one of those on a question it cannot hear would turn a warning into a bug.
+        # Starting a new conversation or picking a different one is a deliberate action whose cost
+        # the user already chose, so those never ask either.
+        if (need_new and sig_changed and confirm_respawn is False and not new_session
+                and not (session and session != (live.session_id or ""))):
+            warn = _respawn_warning(live, model, diff)
+            if warn:
+                return {"ok": False, "confirm_respawn": warn, "error": warn["message"]}
         if need_new:
             if new_session:
                 resume = None
@@ -4275,7 +4562,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
             # The signature keeps the INSTALLED binary even when the launch uses an older build:
             # it names what the user chose, and a mismatch there would respawn the session again.
             args = _claude_stream_args(_warm_exe(project_id, resume, exe, fork), resume, model,
-                                       permission_mode, fork, effort, project_id, cwd)
+                                       permission_mode, fork, effort, project_id, cwd, one_m)
             problem = _launch_problem(args)
             if problem:
                 return {"ok": False, "error": problem}
@@ -4292,7 +4579,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
             except Exception:
                 pass
             try:
-                live = _spawn_live(project_id, args, cwd, want_sig)
+                live = _spawn_live(project_id, args, cwd, want_sig, one_m, full_1m)
             except Exception as e:
                 return {"ok": False, "error": f"failed to launch claude: {e}"}
             _live[project_id] = live
@@ -4357,7 +4644,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
         old_sid = live.session_id
         resume2 = session or old_sid or newest_session
         r_args = _claude_stream_args(_warm_exe(project_id, resume2, exe, fork), resume2, model,
-                                     permission_mode, fork, effort, project_id, cwd)
+                                     permission_mode, fork, effort, project_id, cwd, one_m)
         problem = _launch_problem(r_args)
         if problem and alive_now:
             return {"ok": False, "error": problem}     # a live process is kept, not traded for nothing
@@ -4369,7 +4656,7 @@ def _send_streaming(project_id: str, message: str, cwd: str, model: str,
             if _live.get(project_id) is live:
                 _live.pop(project_id, None)
             try:
-                live = _spawn_live(project_id, r_args, cwd, want_sig)
+                live = _spawn_live(project_id, r_args, cwd, want_sig, one_m, full_1m)
             except Exception as e:
                 return {"ok": False, "error": f"failed to relaunch claude: {e}"}
             _live[project_id] = live
@@ -4609,6 +4896,8 @@ def send(
     thinking: bool = False,
     companions: Optional[list[dict]] = None,
     steer: bool = False,
+    one_m_req: Optional[bool] = None,
+    confirm_respawn: Optional[bool] = None,
 ) -> dict:
     from . import agents
     # WHICH ENGINE IS ABOUT TO WRITE, read before the alt remap below renames it to "claude". The
@@ -4714,10 +5003,6 @@ def send(
         return {"ok": False, "needs_install": True, "agent": agent,
                 "error": f"{sp['name']} not found. Install it: {sp['install_cmd']}"}
 
-    if agent == "claude" and not mission.alt_prefix(project_id):
-        model = _apply_1m(model)  # request the 1M context window (Opus on Max) when cc_1m is on
-                                  # (kimi/qwen: model rides ANTHROPIC_MODEL in the spawn env instead)
-
     resolved_cwd, newest_session = _resolve(project_id)
     if resolved_cwd and not Path(resolved_cwd).exists() and path and Path(path).exists():
         resolved_cwd = path   # renamed project: the UI's root path is the live truth
@@ -4733,12 +5018,62 @@ def send(
         if not (live_now is not None and live_now.alive):
             new_session = True
 
-    # which conversation to continue: new (none), a chosen one, or the pinned one
-    session_id = None if new_session else (session or newest_session)
+    # WHICH CONVERSATION THIS TURN REALLY CONTINUES. It was `session or newest_session`, and that
+    # can name a DIFFERENT chat from the one the streaming path resumes: with a live process for A,
+    # a send that merely *mentions* B pins B (just above) while `_send_streaming` still resumes A —
+    # so B's window was launched on A and then written over A's own record (found by review,
+    # 2026-11-16; no parked value or concurrency needed). The live process's conversation wins,
+    # by the SAME rule `_send_streaming` uses to pick `resume`, so both halves agree on which chat
+    # this is. A dead entry is ignored here exactly as `_send_streaming` pops it.
+    live_now = _live.get(project_id)
+    live_sid = ""
+    if (live_now is not None and live_now.alive
+            and (live_now.proc is None or live_now.proc.poll() is None)):
+        live_sid = live_now.session_id or ""
+    session_id = None if new_session else (session or live_sid or newest_session)
     if session_id and not new_session:
         # the user picking a conversation (or us resuming the pinned one) makes it THE
         # active chat for this project, so later plain sends stay on it
         mission.remember_active_session(project_id, session_id)
+
+    # THE CONTEXT WINDOW IS DECIDED HERE, ONCE PER CONVERSATION (D6), and before the model string is
+    # built — the `[1m]` suffix rides that string. It has to come AFTER the conversation is known
+    # (the choice belongs to the conversation, not to the process) and the resolved value then
+    # travels with the launch, so the environment gate (`_claude_context_env`) cannot disagree with
+    # the model the CLI was handed.
+    one_m: Optional[bool] = None
+    # `fresh` and `park_choice` are defined OUT HERE, before the branch, because the one-shot launch
+    # far below reads them — and an alt engine (Kimi/Qwen/custom provider) never enters this branch
+    # at all. Reading `fresh` there raised UnboundLocalError AFTER the process had been spawned and
+    # registered: a launched turn that then threw (found by review, 2026-11-16).
+    fresh = new_session or not session_id
+    park_choice = False
+    # THE WHOLE 1M, UNCAPPED, only for a conversation the user STARTED with an explicit "1M context"
+    # (one_m_req True). "Use setting" keeps the compact cap; that is the economy default. A fork
+    # inherits its parent's choice, because it continues the same work.
+    full_1m = False
+    if agent == "claude" and not mission.alt_prefix(project_id):
+        if fresh:
+            # a NEW conversation takes the caller's explicit choice, or the setting as its default
+            one_m = bool(one_m_req) if one_m_req is not None else bool(settings.get("cc_1m", True))
+            full_1m = one_m_req is True
+        else:
+            one_m = _resolve_window(project_id, session_id or "", False)
+            full_1m = bool(one_m) and mission.full_window(project_id, session_id or "")
+            if one_m_req is not None and bool(one_m_req) != one_m:
+                # It cannot be changed by sending into a live conversation: the window is fixed at
+                # launch, and changing it mid-conversation IS the cache re-write this decision
+                # exists to prevent. Log it rather than obeying (which would respawn) or failing
+                # the send (which would lose the user's message).
+                print("[window] %s: %s is fixed for this conversation; start a new one to change it"
+                      % (project_id, "1M" if one_m else "200k"), flush=True)
+        model = _apply_1m(model, one_m)
+        # NO PARKING HERE. The streaming path records the choice against the real conversation id
+        # as soon as the CLI reports it (the init handler), so a parked guess would only be an
+        # orphan waiting to be misattributed. The one-shot path has no init event, so IT parks —
+        # after its launch succeeds (see below), which is the only place `park_choice` is used.
+        park_choice = bool(fresh and one_m is not None)
+        # (kimi/qwen: model rides ANTHROPIC_MODEL in the spawn env instead)
 
     # (the pre-turn snapshot is taken at the top of `send()`, for every engine — see
     # `_snapshot_before_turn`. It used to live here, which is why DeepSeek never had one.)
@@ -4787,14 +5122,16 @@ def send(
     if agent == "claude" and settings.get("cc_streaming", True):
         return _start_companions(
             _send_streaming(project_id, message, cwd, model, permission_mode, fork,
-                            effort, exe, new_session, session, newest_session, steer=steer))
+                            effort, exe, new_session, session, newest_session, steer=steer,
+                            one_m=one_m, confirm_respawn=confirm_respawn, full_1m=full_1m))
 
     # one-shot path (non-claude agents, or streaming disabled) — reject if busy
     if is_sending(project_id):
         return {"ok": False, "error": "a turn is already running for this project"}
 
     if agent == "claude":
-        args = _claude_args(exe, message, session_id, model, permission_mode, fork, effort, project_id)
+        args = _claude_args(exe, message, session_id, model, permission_mode, fork, effort, project_id,
+                            one_m)
     else:
         # Codex / Gemini / Cursor have no --append-system-prompt, so the graph instruction has to
         # ride in the message. Without this, switching agent silently dropped it and that agent
@@ -4817,7 +5154,7 @@ def send(
             stdin=subprocess.DEVNULL, creationflags=flags,
             # same gate as the streaming path, or the subagent instruction is dropped here
             env={**os.environ, "CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT": "1",
-                 **(_claude_context_env() if agent == "claude" else {}),
+                 **(_claude_context_env(one_m) if agent == "claude" else {}),
                  **({"CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"} if settings.get("cc_phases", True) else {})},
         )
     except Exception as e:
@@ -4829,6 +5166,12 @@ def send(
     _procs[project_id] = proc
     _logfiles[project_id] = logf
     _last_agent[project_id] = agent
+    # A ONE-SHOT LAUNCH HAS NO INIT EVENT, so nothing will ever tell us the conversation id it just
+    # created. Park the choice now that the launch has actually SUCCEEDED, for the first send that
+    # identifies it (D6). Parking BEFORE the launch is what produced orphans whenever it failed,
+    # and an orphan is what gets misattributed to the next unrecorded conversation.
+    if park_choice:
+        mission.remember_pending_window(project_id, one_m)
     return _start_companions({
         "ok": True, "agent": agent, "streams": sp.get("streams", False),
         "session_id": session_id, "forked": bool(fork and session_id),
@@ -4976,14 +5319,23 @@ def become_terminal(project_id: str, cols: int = 100, rows: int = 30, model: str
     elif session:
         session_id = session       # the conversation picked in the chat's own dropdown
 
+    # The same per-conversation window as a chat launch (D6), resolved once and used by BOTH the
+    # model string and the environment gate — a terminal that opened a 1M conversation must not be
+    # handed the 200k bound just because the global switch moved since.
+    # `_term_new` is `_resolve_window`'s own notion of "this starts a conversation", and the parking
+    # below uses the SAME expression: `fresh` alone missed the default case of an empty workspace
+    # with no session to resume, which is also a fresh conversation (found by review, 2026-11-16).
+    _term_new = fresh or not session_id
+    _term_1m = _resolve_window(project_id, session_id or "", _term_new)
+
     # One owner. Ours, any other engine pointed at the same transcripts, and any terminal that
     # exited or was left behind (for_project above only matches a LIVE one).
     cancel(project_id)
     _stop_shared(project_id)
     terminal.close_for_project(project_id)
 
-    args = _tui_args(_claude_stream_args(exe, session_id, _apply_1m(model), permission_mode,
-                                         False, effort, project_id, cwd))
+    args = _tui_args(_claude_stream_args(exe, session_id, _apply_1m(model, _term_1m), permission_mode,
+                                         False, effort, project_id, cwd, _term_1m))
     # A .cmd shim is a batch file, so it needs its interpreter; a real .exe is spawned directly.
     if os.name == "nt" and str(args[0]).lower().endswith((".cmd", ".bat")):
         args = [os.environ.get("COMSPEC") or "cmd.exe", "/c", *args]
@@ -5001,7 +5353,7 @@ def become_terminal(project_id: str, cols: int = 100, rows: int = 30, model: str
     # and the other half rides here. Subagents need the first key to inherit their prompt; the
     # Phases panel needs the second, or the terminal is TOLD about a panel it has no tool to fill.
     env["CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT"] = "1"
-    env.update(_claude_context_env())
+    env.update(_claude_context_env(_term_1m))
     if settings.get("cc_phases", True):
         env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
     # Deliberately NOT ASSET_STUDIO_CC=1: that marker means "a Studio live-stream process", and
@@ -5012,6 +5364,13 @@ def become_terminal(project_id: str, cols: int = 100, rows: int = 30, model: str
     if r.get("ok"):
         r["session_id"] = session_id or ""
         r["cwd"] = cwd
+        if _term_new:
+            # The terminal owns the CLI, so there is no init event for us to read the new
+            # conversation id from — park the choice for the first send that identifies it (D6).
+            # PARKED ONLY NOW, after the launch really happened: parking before `terminal.create`
+            # left an orphan whenever it failed, and an orphan is exactly the thing that gets
+            # misattributed to the next unrecorded conversation (found by review, 2026-11-16).
+            mission.remember_pending_window(project_id, _term_1m)
     return r
 
 

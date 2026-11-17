@@ -22,9 +22,10 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from . import agent_glb, live_notes, read_shrink
+    from . import agent_glb, heredoc_fix, live_notes, read_shrink
 else:
     import agent_glb
+    import heredoc_fix
     import live_notes
     import read_shrink
 
@@ -89,6 +90,15 @@ def main() -> int:
             out["permissionDecision"] = "allow"     # bypassPermissions only: nothing was asked anyway
             out["permissionDecisionReason"] = "Studio: the same picture re-encoded as WebP, fewer bytes"
             out["updatedInput"] = updated
+    # A LONG HEREDOC IS MOVED TO A FILE before the CLI runs it: see heredoc_fix.py. Above about
+    # 8,000 characters the command does not survive the trip on Windows (80% failed, measured), and
+    # a quoted heredoc read from a file is the same input. bypassPermissions only, like the above.
+    if event == "PreToolUse" and "updatedInput" not in out:
+        fixed = heredoc_fix.redirect(payload)
+        if fixed:
+            out["permissionDecision"] = "allow"
+            out["permissionDecisionReason"] = "Studio: long heredoc body moved to a file, same input"
+            out["updatedInput"] = fixed
     ctx = _note_context(p, payload)
     if ctx:
         out["additionalContext"] = ctx

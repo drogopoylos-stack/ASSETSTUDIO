@@ -244,6 +244,16 @@ class SendBody(BaseModel):
     thinking: bool = False
     steer: bool = False
     companions: list[dict] = []   # co-agents to run alongside (each: {id, model, effort, permission_mode})
+    # 1M context for THIS turn's conversation (D6). Honoured when it starts a new conversation; an
+    # existing one keeps the window it was launched with, because changing it mid-conversation
+    # re-writes the whole prompt cache. None = the global cc_1m setting.
+    one_m: bool | None = None
+    # D7: ask before an expensive restart. None/omitted means DO NOT ASK, just do it — the safe
+    # default for the callers that have no dialog to show (scheduled jobs, the remote bridge, and
+    # the quick-action sends in Workspace, which only surface the error they get back and would
+    # otherwise be blocked by a question they cannot answer). Only the chat composer, which can
+    # show a confirm, sends False to ask and True to accept.
+    confirm_respawn: bool | None = None
 
 
 @router.post("/projects/{project_id}/send")
@@ -251,7 +261,8 @@ def send_message(project_id: str, body: SendBody):
     return cc_session.send(project_id, body.message, body.model, body.permission_mode,
                            body.fork, body.images, body.effort, body.agent,
                            body.new_session, body.session, body.path, body.thinking,
-                           companions=body.companions, steer=body.steer)
+                           companions=body.companions, steer=body.steer, one_m_req=body.one_m,
+                           confirm_respawn=body.confirm_respawn)
 
 
 class ModeBody(BaseModel):

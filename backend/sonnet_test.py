@@ -54,11 +54,20 @@ class SonnetTests(unittest.TestCase):
                     workers = json.loads(value(args, "--agents"))
                     worker = workers["studio-sonnet"]
                     self.assertEqual(worker["model"], "claude-sonnet-5-5")
-                    self.assertIn("only when", worker["description"])
+                    # D4 (2026-11-16): the worker is ROUTED for scoped/verifiable work, not opt-in,
+                    # and in the same breath refuses judgment work — the routing invariant says
+                    # savings must never come from downgrading judgment.
+                    self.assertIn("SCOPED", worker["description"])
+                    self.assertIn("When such work is delegated", worker["description"])
+                    self.assertIn("judgment work", worker["description"])
+                    self.assertNotIn("only when", worker["description"])
                     self.assertNotIn("permissionMode", worker)
                     note = value(args, "--append-system-prompt")
                     self.assertIn("subagent_type='studio-sonnet'", note)
                     self.assertIn("Omit the per-call model", note)
+                    self.assertIn("stays on the lead", note)
+                    self.assertIn("Do not delegate a lookup you can finish yourself", note)
+                    self.assertNotIn("only when requested", note)
 
     def test_default_and_sonnet_parent_can_also_delegate(self):
         for model in ("default", "claude-sonnet-5-5"):

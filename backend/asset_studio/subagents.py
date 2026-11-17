@@ -612,6 +612,13 @@ def _ledger(path: Path) -> dict:
     out = dict(got)
     out["usage"] = dict(got.get("usage") or {})
     out["stats"] = dict(got.get("stats") or {})
+    # THE WINDOW IS NEVER TAKEN FROM THE CACHE. It depends on the CONVERSATION, not on the
+    # transcript, so a remembered copy goes stale as soon as that conversation's window is recorded
+    # or the switch moves — and this cache is a DISK one, so it stayed wrong across restarts
+    # (found by review, 2026-11-16: a parent record of 200k still drew a 1M card after the memory
+    # cache was cleared). Everything expensive here is the scan; one number is free to redo.
+    out["ctx_max"] = mission.model_window(str(got.get("model") or ""), 0,
+                                          mission.window_for_session(_session_of(path)))
     return out
 
 
@@ -775,7 +782,10 @@ def _ledger_read(path: Path) -> dict:
         # either question: every call re-sends the same growing prefix.
         "inherited": inherited,
         "peak": peak,
-        "ctx_max": mission.model_window(model),
+        # The window of the CONVERSATION this agent ran in, not the global switch (D6): a subagent
+        # shares its parent's window, and after a switch flip the global would size a 200k chat's
+        # card against 1M. The path is all this row has, so the lookup goes by session id.
+        "ctx_max": mission.model_window(model, 0, mission.window_for_session(_session_of(path))),
         # List price for this agent's own tokens. Not what a Max plan is charged - the UI says
         # so - but the only figure that makes two agents or two models comparable.
         "cost": pricing.cost(model, t),

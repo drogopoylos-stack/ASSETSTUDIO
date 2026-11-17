@@ -189,9 +189,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # keep one live `claude` process per project so messages stream in instantly
     # (fire several back-to-back without waiting, like the VS Code extension)
     "cc_streaming": True,
-    # when the session model is Fable, append a compact token-efficiency directive to the system
-    # prompt (act-don't-resurvey, outcome-first, no unrequested refactors, route subagents cheaply
-    # via the ai-token-routing skill). Style-only — it never caps Fable's reasoning power.
+    # on a Claude reasoning session, append a compact token-economy directive to the system prompt
+    # (act-don't-resurvey, outcome-first, no unrequested refactors, route subagents cheaply via the
+    # ai-token-routing skill, and batch shell commands so one round trip does the work of several).
+    # Style-only — it never caps the model's reasoning power. It was Fable-only until 2026-11-16,
+    # which meant the Opus session — the one that spends the most per round trip — never heard it.
+    # The key keeps its old name for compatibility; docs/opus-token-economy-brief.md has the numbers.
     "cc_fable_efficient": True,
     # CLI 2.1.257's --system-prompt-snapshot: record the system prompt once per conversation and
     # replay it verbatim, so the prompt-cache prefix stops moving between launches. OFF by default
@@ -222,7 +225,20 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # CLAUDE_CODE_AUTO_COMPACT_WINDOW for new Claude sessions, in tokens. 0 = the CLI's own
     # threshold (about 967k on a 1M window). A smaller window costs memory of the conversation
     # and saves the cache reads of a huge context on every request.
-    "cc_compact_window": 0,
+    #
+    # 400k IS THE MEASURED DEFAULT (D2, 2026-11-16). Over the 44,178 Opus 5.5 calls on this machine
+    # (2026-10-09..11-17, 233 transcripts), capping at 400k takes 1,033,770,222 tokens off the tail:
+    # $206.75 at the $0.20/M cache-read rate (pricing.py tier_4_20_cr020), $170.30 after allowing a
+    # 10% summary back per affected call. 99.9% of that excess sits in the top decile of calls, so
+    # it fires on 4,557 calls (10.3%) and leaves the dense 100k-200k ordinary-call mass alone.
+    # 200k saves more on paper ($448.83 naive) but lands in that densest band, and every extra
+    # compaction GENERATES a summary as output ($20/M) and re-writes the retained context ($5/M) —
+    # a cost these figures deliberately exclude — so it would compact constantly to buy a number
+    # that is already a ceiling. The bundled `ai-token-routing` skill's rule is "don't compact
+    # early": 400k is 40% of a 1M window, which is not early; 200k is 20% and is.
+    # Read at launch only, and deliberately NOT in `_note_sig()` — it changes no prompt text, so it
+    # rides the next natural start rather than forcing a respawn.
+    "cc_compact_window": 400000,
     # auto-capture reusable build knowledge as personal skills (studio-ui/game/backend/integrations/
     # general) while you work — OFF by default (it is the biggest note, ~1900 tokens a turn);
     # toggle on from the chat box (🎓) or Settings.

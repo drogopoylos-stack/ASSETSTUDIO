@@ -90,9 +90,10 @@ PLUGINS: list[dict[str, Any]] = [
      "label": "1M context window",
      "desc": "Ask for Claude's 1M-token window instead of 200k. Included on Max plans for Opus."},
     {"id": "cc_fable_efficient", "kind": "service", "group": "Chat helpers", "setting": "cc_fable_efficient",
-     "label": "Token-efficiency directive",
-     "desc": "On Fable sessions, add a short instruction to act instead of re-surveying the repo. "
-             "Changes style only, never reasoning depth."},
+     "label": "Token economy",
+     "desc": "On Claude sessions, add a short instruction to act instead of re-surveying the repo, "
+             "and to batch shell commands — commands run one at a time each re-send the whole "
+             "conversation. Changes style only, never reasoning depth."},
     {"id": "cc_prompt_snapshot", "kind": "service", "group": "Chat helpers", "setting": "cc_prompt_snapshot",
      "label": "Reuse the system prompt",
      "desc": "Record the system prompt once per conversation and replay it word for word, so the "

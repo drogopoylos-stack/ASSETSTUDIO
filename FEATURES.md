@@ -8,7 +8,7 @@ This file is made from the code. A git hook builds it again on each commit, and 
 - Everything else - every route, page, setting, program and test - is read from the code.
 - `scripts/features/verify.py` checks a running installation against this file.
 
-**Size:** 16 features, 36 API groups with 306 endpoints, 20 UI pages, 91 settings, 128 test suites.
+**Size:** 16 features, 37 API groups with 310 endpoints, 20 UI pages, 95 settings, 132 test suites.
 
 ## How to check an installation
 
@@ -114,7 +114,7 @@ icon, the top bar of tabs, the status bar and the Dashboard.
 
 **Parts:** `app`, `system`, `ws`, `setup`, `page:shell`, `page:dashboard`
 
-**Test suites for this feature:** `agent_tokens_test.py`, `live_status_test.py`, `queue_guard_test.py`, `restart_test.py`, `session_survival_test.py`, `stability_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `test:agenttokens`, `test:freemem`, `test:needsyou`, `test:pollshare`, `test:uiprefs`, `video_test.py`
+**Test suites for this feature:** `agent_tokens_test.py`, `features_map_test.py`, `live_status_test.py`, `queue_guard_test.py`, `restart_test.py`, `session_survival_test.py`, `stability_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `test:agenttokens`, `test:freemem`, `test:needsyou`, `test:pollshare`, `test:uiprefs`, `video_test.py`
 
 #### API `app` - the app itself, 2 endpoints
 
@@ -128,7 +128,7 @@ Code: `backend/asset_studio/main.py`
 | GET | `/{full_path:path}` |  |
 
 - Pages that use it: `page:settings`
-- Tests: `restart_test.py`, `stability_test.py`
+- Tests: `features_map_test.py`, `restart_test.py`, `stability_test.py`
 
 #### API `system` - `/api/system`, 6 endpoints
 
@@ -234,7 +234,7 @@ project on the machine.
 
 **Backend modules:** `cc_session`, `session_keeper`, `live_notes`, `btw_hook`, `session_hook`, `hook_events`, `checkpoints`, `scheduled`, `output_styles`, `model_access`, `turns`, `spend`
 
-**Test suites for this feature:** `adopt_sig_test.py`, `agent_tokens_test.py`, `agent_tools_test.py`, `agents_parallel_test.py`, `attention_test.py`, `boost_test.py`, `cc_control_test.py`, `claude_compact_test.py`, `cmdline_fit_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `deepseek_test.py`, `delegates_test.py`, `engine_parity_test.py`, `engines_test.py`, `extra_mcp_test.py`, `graph_hook_test.py`, `hook_events_test.py`, `install_test.py`, `keeper_live_test.py`, `keeper_test.py`, `live_status_test.py`, `live_test.py`, `mcp_engine_test.py`, `model_access_test.py`, `model_cmd_test.py`, `models_test.py`, `navigate_test.py`, `perf_test.py`, `phase_archive_test.py`, `plan_usage_test.py`, `remote_test.py`, `restart_test.py`, `session_modes_test.py`, `session_survival_test.py`, `sonnet_test.py`, `steer_test.py`, `subagent_notes_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `terrain_test.py`, `test:agentpanes`, `test:agenttokens`, `test:contextmeter`, `test:diffnotes`, `test:engines`, `test:feeddetail`, `test:feedscroll`, `test:models`, `test:pollshare`, `test:sendprefs`, `test:steer`, `turnbar_test.py`, `web_tools_test.py`
+**Test suites for this feature:** `adopt_sig_test.py`, `agent_tokens_test.py`, `agent_tools_test.py`, `agents_parallel_test.py`, `attention_test.py`, `boost_test.py`, `cache_guard_test.py`, `cc_control_test.py`, `claude_compact_test.py`, `cmdline_fit_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `deepseek_test.py`, `delegates_test.py`, `engine_parity_test.py`, `engines_test.py`, `extra_mcp_test.py`, `graph_hook_test.py`, `hook_events_test.py`, `install_test.py`, `keeper_live_test.py`, `keeper_test.py`, `live_status_test.py`, `live_test.py`, `mcp_engine_test.py`, `model_access_test.py`, `model_cmd_test.py`, `models_test.py`, `navigate_test.py`, `perf_test.py`, `phase_archive_test.py`, `plan_usage_test.py`, `remote_test.py`, `restart_test.py`, `session_modes_test.py`, `session_survival_test.py`, `sonnet_test.py`, `steer_test.py`, `subagent_notes_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `terrain_test.py`, `test:agentpanes`, `test:agenttokens`, `test:contextmeter`, `test:diffnotes`, `test:engines`, `test:feeddetail`, `test:feedscroll`, `test:models`, `test:pollshare`, `test:sendprefs`, `test:steer`, `turnbar_test.py`, `web_tools_test.py`
 
 #### API `mission` - `/api/mission`, 43 endpoints
 
@@ -291,7 +291,7 @@ Code: `backend/asset_studio/routers/mission.py`
 - Settings: `auto_compact_at`, `cc_1m`, `cc_phase_archive`, `claude_renews_on`, `compact_base_tokens`, `context_window`, `monthly_spend_cap_usd`, `needs_you`, `scheduled_paused`, `session_defaults`, `usage_budgets`, `workspace_roots`
 - Programs it calls: `code`, `code.cmd`
 - Pages that use it: `page:dashboard`, `page:mission`, `page:settings`, `page:shell`, `page:workspace`
-- Tests: `agent_tokens_test.py`, `agents_parallel_test.py`, `attention_test.py`, `claude_compact_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `deepseek_test.py`, `delegates_test.py`, `engine_parity_test.py`, `engines_test.py`, `graph_hook_test.py`, `hook_events_test.py`, `install_test.py`, `live_status_test.py`, `models_test.py`, `perf_test.py`, `phase_archive_test.py`, `plan_usage_test.py`, `remote_test.py`, `restart_test.py`, `session_modes_test.py`, `session_survival_test.py`, `sonnet_test.py`, `steer_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `test:contextmeter`, `test:feedscroll`, `test:pollshare`, `turnbar_test.py`
+- Tests: `agent_tokens_test.py`, `agents_parallel_test.py`, `attention_test.py`, `cache_guard_test.py`, `claude_compact_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `deepseek_test.py`, `delegates_test.py`, `engine_parity_test.py`, `engines_test.py`, `graph_hook_test.py`, `hook_events_test.py`, `install_test.py`, `live_status_test.py`, `models_test.py`, `perf_test.py`, `phase_archive_test.py`, `plan_usage_test.py`, `remote_test.py`, `restart_test.py`, `session_modes_test.py`, `session_survival_test.py`, `sonnet_test.py`, `steer_test.py`, `subagents_scan_test.py`, `subagents_visible_test.py`, `subagents_workflow_test.py`, `test:contextmeter`, `test:feedscroll`, `test:pollshare`, `turnbar_test.py`
 
 #### API `auth` - `/api/auth`, 4 endpoints
 
@@ -360,9 +360,9 @@ Code: `backend/asset_studio/routers/plans.py`
 
 #### UI `page:mission` - Mission Control (tab)
 
-Code: `frontend/src/pages/MissionControl.tsx` and 16 files it loads
+Code: `frontend/src/pages/MissionControl.tsx` and 17 files it loads
 
-- API groups it calls: `auth`, `autolearn`, `chat_models`, `codex`, `mission`, `settings`, `terminal`, `voice`, `web`, `workspace`
+- API groups it calls: `auth`, `autolearn`, `chat_models`, `codex`, `deepseek_creator`, `mission`, `settings`, `terminal`, `voice`, `web`, `workspace`
 - Tests: `test:agentpanes`, `test:agenttokens`, `test:contextmeter`, `test:diffnotes`, `test:engines`, `test:feeddetail`, `test:feedscroll`, `test:models`, `test:sendprefs`, `test:steer`
 
 #### UI `page:plans` - Plans (tab)
@@ -403,7 +403,7 @@ the Studio controls. It is in Settings -> Cost -> Prompt cache (`/settings?pane=
 
 **Backend modules:** `cache_guard`, `read_shrink`
 
-**Test suites for this feature:** **none.**
+**Test suites for this feature:** `cache_guard_test.py`
 
 ### 4. Other agent engines and terminals
 
@@ -438,7 +438,7 @@ same chat box. A real terminal (a pty) runs any CLI that draws its own screen.
 
 **Backend modules:** `codex_app`, `codex_runs`, `deepseek_session`, `cli_agents`
 
-**Test suites for this feature:** `agents_parallel_test.py`, `boost_test.py`, `cli_agents_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `codex_runs_test.py`, `deepseek_test.py`, `engine_parity_test.py`, `engines_test.py`, `extra_mcp_test.py`, `plan_usage_test.py`, `session_modes_test.py`, `stability_test.py`, `steer_test.py`
+**Test suites for this feature:** `agents_parallel_test.py`, `boost_test.py`, `cli_agents_test.py`, `codex_account_test.py`, `codex_app_test.py`, `codex_panels_test.py`, `codex_rail_test.py`, `codex_runs_test.py`, `deepseek_creator_test.py`, `deepseek_test.py`, `engine_parity_test.py`, `engines_test.py`, `extra_mcp_test.py`, `plan_usage_test.py`, `session_modes_test.py`, `stability_test.py`, `steer_test.py`
 
 #### API `codex` - `/api/codex`, 9 endpoints
 
@@ -504,7 +504,22 @@ Code: `backend/asset_studio/routers/terminal.py`
 - Pages that use it: `page:mission`, `page:settings`, `page:workspace`
 - Tests: `codex_account_test.py`, `session_modes_test.py`
 
-#### `deepseek_creator` - **no such part in the code.** Fix `docs/features/checks.md`.
+#### API `deepseek_creator` - `/api/deepseek/creator`, 4 endpoints
+
+Code: `backend/asset_studio/routers/deepseek_creator.py`
+
+> DeepSeek Creator mode: the official DeepSeek Harness app, run for one folder and shown in the Studio.
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| GET | `/api/deepseek/creator/status` | Whether the app is installed, Node's version, an install in progress, and the running servers. |
+| POST | `/api/deepseek/creator/install` | Install the DeepSeek Harness app into the Studio's data folder, in the background. |
+| POST | `/api/deepseek/creator/open` | Start the app for one folder (or reuse its server) and return its URL, token included. |
+| POST | `/api/deepseek/creator/stop` | Stop the app of one folder, or of every folder when none is named. |
+
+- Programs it calls: `node`, `npm`
+- Pages that use it: `page:mission`, `page:workspace`
+- Tests: `deepseek_creator_test.py`
 
 ### 5. Workspaces, panes and files
 
@@ -589,9 +604,9 @@ Code: `backend/asset_studio/routers/workspace.py`
 
 #### UI `page:workspace` - Workspace (tab)
 
-Code: `frontend/src/pages/Workspace.tsx` and 33 files it loads
+Code: `frontend/src/pages/Workspace.tsx` and 34 files it loads
 
-- API groups it calls: `auth`, `autolearn`, `chat_models`, `codex`, `git`, `live`, `mission`, `settings`, `skills`, `terminal`, `voice`, `web`, `workspace`, `worktrees`
+- API groups it calls: `auth`, `autolearn`, `chat_models`, `codex`, `deepseek_creator`, `git`, `live`, `mission`, `settings`, `skills`, `terminal`, `voice`, `web`, `workspace`, `worktrees`
 - Tests: `test:agentpanes`, `test:agenttokens`, `test:codexconversations`, `test:contextmeter`, `test:diffnotes`, `test:dropfolder`, `test:engines`, `test:feeddetail`, `test:feedscroll`, `test:models`, `test:needsyou`, `test:sendprefs`, `test:settingsswitches`, `test:skillgroups`, `test:steer`
 
 ### 6. Worktrees and git
@@ -795,7 +810,7 @@ the game for the live link, the review and the forge.
 
 **Backend modules:** `dev_server`
 
-**Test suites for this feature:** `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `engine_test.py`, `forge_review_test.py`, `goblin_bench_test.py`, `guard_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `navigate_test.py`, `new_game_test.py`, `open_path_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `subagents_scan_test.py`, `terrain_test.py`, `visibility_test.py`
+**Test suites for this feature:** `agent_glb_test.py`, `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `engine_test.py`, `features_map_test.py`, `forge_review_test.py`, `goblin_bench_test.py`, `guard_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `navigate_test.py`, `new_game_test.py`, `open_path_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `subagents_scan_test.py`, `terrain_test.py`, `visibility_test.py`
 
 #### API `live` - `/api/live`, 36 endpoints
 
@@ -844,7 +859,7 @@ Code: `backend/asset_studio/routers/live.py`
 
 - Settings: `cc_animate`, `cc_debugger`, `cc_engine_view`, `cc_forge`, `cc_live`, `cc_navigate`, `cc_review_quality`, `cc_scene_edit`, `engine`, `host`, `live_pick`, `port`
 - Pages that use it: `page:engine`, `page:settings`, `page:workspace`
-- Tests: `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `engine_test.py`, `forge_review_test.py`, `goblin_bench_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `navigate_test.py`, `open_path_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `terrain_test.py`, `visibility_test.py`
+- Tests: `agent_glb_test.py`, `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `engine_test.py`, `features_map_test.py`, `forge_review_test.py`, `goblin_bench_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `navigate_test.py`, `open_path_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `terrain_test.py`, `visibility_test.py`
 
 #### API `live_stream` - `/api/live`, 3 endpoints
 
@@ -921,7 +936,7 @@ assets in code.
 
 **Backend modules:** `agent_glb`, `glb`, `live_forge`, `library`, `assets_index`, `engine_tags`
 
-**Test suites for this feature:** `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `editor_place_test.py`, `engine_test.py`, `forge_review_test.py`, `glb_test.py`, `goblin_bench_test.py`, `library_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `model_cmd_test.py`, `navigate_test.py`, `new_game_test.py`, `open_path_test.py`, `perf_test.py`, `polyhaven_test.py`, `polypizza_test.py`, `refs_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `subagents_scan_test.py`, `terrain_test.py`, `test:agenttokens`, `test:constraints`, `test:curve`, `test:draw`, `test:edit`, `test:engineinuse`, `test:forgescript`, `test:graph`, `test:handles`, `test:handrig`, `test:hands`, `test:livemirror`, `test:material`, `test:meshedit`, `test:model`, `test:modstack`, `test:nav`, `test:open`, `test:openmodel`, `test:ops`, `test:opswire`, `test:paint`, `test:pollshare`, `test:presets`, `test:runtime`, `test:sculpt`, `test:settingsswitches`, `test:shading`, `test:shapekeys`, `test:stage`, `test:terrain`, `test:terraintool`, `test:verts`, `test:weightpaint`, `visibility_test.py`
+**Test suites for this feature:** `agent_glb_test.py`, `animate_test.py`, `apireflect_test.py`, `detail_test.py`, `editor_place_test.py`, `engine_test.py`, `features_map_test.py`, `forge_review_test.py`, `glb_test.py`, `goblin_bench_test.py`, `library_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `livepick_test.py`, `mcp_engine_test.py`, `model_cmd_test.py`, `navigate_test.py`, `new_game_test.py`, `open_path_test.py`, `perf_test.py`, `polyhaven_test.py`, `polypizza_test.py`, `refs_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `subagents_scan_test.py`, `terrain_test.py`, `test:agenttokens`, `test:constraints`, `test:curve`, `test:draw`, `test:edit`, `test:engineinuse`, `test:forgescript`, `test:graph`, `test:handles`, `test:handrig`, `test:hands`, `test:livemirror`, `test:material`, `test:meshedit`, `test:model`, `test:modstack`, `test:nav`, `test:open`, `test:openmodel`, `test:ops`, `test:opswire`, `test:paint`, `test:pollshare`, `test:presets`, `test:runtime`, `test:sculpt`, `test:settingsswitches`, `test:shading`, `test:shapekeys`, `test:stage`, `test:terrain`, `test:terraintool`, `test:verts`, `test:weightpaint`, `visibility_test.py`
 
 #### API `engine` - `/api/engine`, 15 endpoints
 
@@ -950,7 +965,7 @@ Code: `backend/asset_studio/routers/engine.py`
 - Settings: `cc_engine_view`, `cc_forge`, `cc_live`, `cc_review_quality`, `engine`, `host`, `port`
 - Programs it calls: `gltf-transform`
 - Pages that use it: `page:engine`, `page:settings`, `page:shell`
-- Tests: `detail_test.py`, `engine_test.py`, `forge_review_test.py`, `glb_test.py`, `goblin_bench_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `new_game_test.py`, `open_path_test.py`, `perf_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `terrain_test.py`, `test:edit`, `test:open`, `test:pollshare`, `visibility_test.py`
+- Tests: `agent_glb_test.py`, `detail_test.py`, `engine_test.py`, `forge_review_test.py`, `glb_test.py`, `goblin_bench_test.py`, `live_stage_test.py`, `live_stream_test.py`, `live_tabs_reap_test.py`, `live_test.py`, `live_view_test.py`, `new_game_test.py`, `open_path_test.py`, `perf_test.py`, `review_tabs_test.py`, `scene_api_test.py`, `skills_test.py`, `terrain_test.py`, `test:edit`, `test:open`, `test:pollshare`, `visibility_test.py`
 
 #### API `gamemodel` - `/api/gamemodel`, 1 endpoints
 
@@ -1455,7 +1470,7 @@ installation against it.
    an installed copy, with no `.git`, a difference is normal: it reads the folder, not git.)
 2. `python scripts/features/verify.py` prints the report and ends with a result line.
 
-**Test suites for this feature:** **none.**
+**Test suites for this feature:** `features_map_test.py`
 
 ## Parts no feature describes yet
 
@@ -1470,6 +1485,7 @@ Slow, and left out of "all": `keeper_live_test.py`. Run it by name.
 | Suite | Side | Reaches | What it checks |
 | --- | --- | --- | --- |
 | `adopt_sig_test.py` | backend | - | An adopted session's signature must equal the one a send builds, or every backend restart costs the next message a respawn and a 'Setting changed mid-conversation' warni… |
+| `agent_glb_test.py` | backend | `engine`, `live` | Does the Engine window see a GLB that an agent wrote with its own tools? |
 | `agent_tokens_test.py` | backend | `mission`, `plans`, `system`, `workflows` | An agent's tokens, counted the way they were spent: every API call ONCE. |
 | `agent_tools_test.py` | backend | `tools` | Jobs, the test runner, and touching code safely. |
 | `agents_parallel_test.py` | backend | `codex`, `mission`, `settings` | Two agents on one project, and the costs that come with them — checked without a vendor call. |
@@ -1477,6 +1493,7 @@ Slow, and left out of "all": `keeper_live_test.py`. Run it by name.
 | `apireflect_test.py` | backend | `live` | The API reflection: what forge-ops.js exports, read out of the source. |
 | `attention_test.py` | backend | `mission`, `plans` | Who needs you: the three states, the order, and the switch. |
 | `boost_test.py` | backend | `codex`, `settings` | BOOST: the local economies, and the promise that each number on the button is real. |
+| `cache_guard_test.py` | backend | `mission` | The prompt-cache guard, the screenshot shrink and the no-work ledger rows. |
 | `cc_control_test.py` | backend | - | A TOOL CALL THAT WAITS FOR THE HOST MUST NOT WAIT FOREVER. |
 | `claude_compact_test.py` | backend | `mission`, `plans` | Claude context meter regression tests, isolated from accounts and vendor calls. |
 | `cli_agents_test.py` | backend | - | A model CLI the agent starts in the BACKGROUND is a running card until its notification. |
@@ -1486,6 +1503,7 @@ Slow, and left out of "all": `keeper_live_test.py`. Run it by name.
 | `codex_panels_test.py` | backend | `codex`, `mission`, `plans`, `skills`, `workspace` | The four rail buttons on a CODEX pane: Skills, Subagents, Prompt history, Checkpoints. |
 | `codex_rail_test.py` | backend | `codex`, `mission`, `plans` | Does the subagents button on the left work for CODEX? |
 | `codex_runs_test.py` | backend | - |  |
+| `deepseek_creator_test.py` | backend | `deepseek_creator` | DeepSeek Creator mode: does the Studio start the official app the right way, and refuse cleanly? |
 | `deepseek_test.py` | backend | `mission`, `plans`, `settings` | Offline integration test using the installed official DSH runtime and a local API fixture. |
 | `delegates_test.py` | backend | `jobs`, `mission`, `plans`, `workspace` | Work handed to ANOTHER engine, shown as the subagent it is. |
 | `detail_test.py` | backend | `engine`, `live` | The detail review, and the three faults found on the same day beside it. |
@@ -1495,6 +1513,7 @@ Slow, and left out of "all": `keeper_live_test.py`. Run it by name.
 | `engine_test.py` | backend | `engine`, `live` | Does the engine window get the truth, and can it be talked into reading the wrong file? |
 | `engines_test.py` | backend | `codex`, `mission`, `plans`, `skills` | One interface for every engine (engines.py) — and every door in the app goes through it. |
 | `extra_mcp_test.py` | backend | `codex` | Verify workspace scoping and both Studio session integrations without starting an agent. |
+| `features_map_test.py` | backend | `app`, `live` | Does the feature map describe the code, and does the checker catch a missing route? |
 | `forge_review_test.py` | backend | `engine`, `live` | THE SHEET HAS TO SAY WHAT IT DID NOT CHECK. |
 | `glb_test.py` | backend | `engine`, `workspace` | The decoder, end to end: a Draco model becomes one anything can open. |
 | `goblin_bench_test.py` | backend | `engine`, `live`, `review` | The bench, after the goblin A/B (data/ab/goblin/engine/CONTRACT.md, section C, and items 8-10). |
@@ -1618,16 +1637,20 @@ Read from `settings.get(...)` in the backend. The label is the one the Settings 
 | `cc_animate` | Animation review | `False` | `live` |
 | `cc_autolearn` | Auto-learn skills | - | `autolearn`, `settings` |
 | `cc_blender_kiln` | Blender kiln | - | `cc_session` |
+| `cc_cache_guard` | - | `True` | `cache_guard` |
+| `cc_cache_guard_after_s` | - | `3000` | `cache_guard` |
+| `cc_cache_guard_min_tokens` | - | `150000` | `cache_guard` |
 | `cc_code_tools` | Code tools and tests | `False` | `cc_session` |
-| `cc_compact_window` | - | - | `cc_session` |
+| `cc_compact_window` | - | `0` | `cache_guard`, `cc_session` |
 | `cc_debugger` | Debugger | `False` | `live` |
 | `cc_engine_subagents` | - | `False` | `cc_session` |
 | `cc_engine_view` | - | - | `engine`, `live` |
-| `cc_fable_efficient` | Fable token efficiency | `True` | `cc_session` |
+| `cc_fable_efficient` | Token economy | `True` | `cc_session` |
 | `cc_fast_mode` | - | - | `cc_session` |
 | `cc_force_plan` | Force plan mode | - | `cc_session` |
 | `cc_forge` | The forge | `True` | `engine`, `live` |
 | `cc_graphify` | Code graph | `True` | `codex`, `mcp`, `settings`, `workspace` |
+| `cc_image_shrink` | - | `True` | `cache_guard` |
 | `cc_live` | Live game link | `True` | `engine`, `live` |
 | `cc_mcp` | Studio tools over MCP | `True` | `mcp` |
 | `cc_memory` | Memory | `True` | `cc_session` |
@@ -1702,6 +1725,7 @@ Read from `settings.get(...)` in the backend. The label is the one the Settings 
 | --- | --- |
 | `ai-token-routing` | AI model routing & token-efficiency policy — which Claude model + effort level to use per kind of work (lead vs subagents vs sweeps), plus the cache/subagent mechanics that decide real spend. |
 | `animation-vs-gameplay-clocks` | Use when an interactive object stops responding some of the time — a button that will not re-press, a pickup that will not re-highlight, a door that will not re-open — usually because its animation i… |
+| `basic` | Use when the user types /basic - run the task with the active Opus agent as the ORCHESTRATOR, Codex agents (GPT via the Codex CLI) for the coding, with a clear written brief each, and a Sonnet agent… |
 | `claude-code-1m-context` | Use when configuring Claude's 1M-token context window in Claude Code — the [1m] model suffix, plan gating, enabling/disabling, and verifying. |
 | `claude-code-headless-sdk` | Use when building an app/tool that drives Claude Code headlessly (the `claude` CLI) — print mode, streaming stream-json I/O, key flags, and the message-coalescing gotcha. |
 | `color-grade` | Generate .cube 3D LUTs for color correction in DaVinci Resolve and Adobe Premiere Pro. |

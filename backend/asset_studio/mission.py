@@ -569,6 +569,259 @@ def active_transcript(project_id: str, jsonls: list) -> Optional[Path]:
     return max(jsonls, key=lambda f: f.stat().st_mtime)
 
 
+# --- the context window is chosen PER CONVERSATION (D6, 2026-11-16) ----------
+# `cc_1m` used to be read live on every send, which quietly made it part of the session signature:
+# flipping it mid-conversation respawned the CLI and re-sent the whole conversation under a NEW
+# request prefix — a cache WRITE at ~1.25x where the same request would have been a read at ~0.1x.
+# On an 800k conversation that single flip is roughly $6.50, which is what §4.3 of the token brief
+# means by "never toggle 1M mid-conversation". The switch is not the expensive part; carrying a
+# large conversation across the switch is. So the choice is recorded when a conversation starts and
+# reused for its whole life, and the global setting is only the DEFAULT for the next new one.
+# To get a big window for work that needs it, start the conversation with it — that pays one cold
+# write of a SMALL context instead of re-writing a large one.
+_WINDOW_F = DATA_DIR / "sessions" / "conversation_window.json"
+_window_lock = threading.Lock()
+_window_cache: dict = {"mtime": -1.0, "map": {}}
+
+
+def _load_windows() -> dict:
+    try:
+        mt = _WINDOW_F.stat().st_mtime
+        if mt != _window_cache["mtime"]:
+            data = json.loads(_WINDOW_F.read_text(encoding="utf-8"))
+            _window_cache["map"] = data if isinstance(data, dict) else {}
+            _window_cache["mtime"] = mt
+    except Exception:
+        pass
+    return _window_cache["map"]
+
+
+def _remember_window_raw(project_id: str, session_id: str, one_m: Optional[bool],
+                         only_if_absent: bool = False, drop_pending: bool = False) -> Optional[bool]:
+    """Write — or, with `one_m=None`, DELETE — one slot of the window map.
+
+    `session_id` may be "" here: that is the PENDING slot (see `remember_pending_window`).
+
+    `only_if_absent` is the write-once rule, and it is applied INSIDE this lock on purpose: doing
+    the "is there already a record?" test in the caller and the write here left a window in which
+    another writer's first record could be overwritten (found by review, 2026-11-16). The test and
+    the insert have to be one critical section, or "write-once" is only a hope.
+
+    RETURNS the value that is now stored. That matters as much as the atomicity: a caller that
+    LOST the race must be told it lost, because it would otherwise go on and launch with the value
+    it wanted while the record says something else (found by review, 2026-11-16). Returns None only
+    when the slot is empty or was deleted.
+    """
+    if not project_id:
+        return None
+    with _window_lock:
+        m = {}
+        for k, v in _load_windows().items():
+            m[k] = dict(v) if isinstance(v, dict) else v
+        cur = m.get(project_id)
+        if not isinstance(cur, dict):
+            cur = {}
+            m[project_id] = cur
+        changed = False
+        if drop_pending and "" in cur:
+            cur.pop("", None)
+            changed = True
+        if one_m is None:
+            if session_id in cur:
+                cur.pop(session_id, None)
+                changed = True
+            effective: Optional[bool] = None
+        elif only_if_absent and isinstance(cur.get(session_id), bool):
+            effective = bool(cur[session_id])        # a first write already landed — keep it
+        else:
+            effective = bool(one_m)
+            if cur.get(session_id) is not effective:
+                cur[session_id] = effective
+                changed = True
+        if changed:
+            try:
+                _WINDOW_F.parent.mkdir(parents=True, exist_ok=True)
+                tmp = _WINDOW_F.with_suffix(".tmp")
+                tmp.write_text(json.dumps(m), encoding="utf-8")
+                fsutil.replace(tmp, _WINDOW_F)
+                _window_cache["map"] = m
+                _window_cache["mtime"] = _WINDOW_F.stat().st_mtime
+            except OSError:
+                pass
+    return effective
+
+
+def _window_raw(project_id: str, session_id: str) -> Optional[bool]:
+    if not project_id:
+        return None
+    conv = _load_windows().get(project_id)
+    v = conv.get(session_id) if isinstance(conv, dict) else None
+    return bool(v) if isinstance(v, bool) else None
+
+
+def remember_window(project_id: str, session_id: str, one_m: bool) -> Optional[bool]:
+    """Record the context window a conversation is running with. **Write-once: it never changes.**
+
+    ENFORCED, not merely documented, and enforced ATOMICALLY: `only_if_absent` is applied inside
+    `_remember_window_raw`'s lock, so a caller cannot pass a check, lose the race, and still write
+    over a record that landed in between.
+
+    Also drops the PENDING slot in the same critical section: a named conversation means the unnamed
+    launch that slot stood in for has now been identified (or was superseded by this one).
+
+    Returns the value now stored — which is NOT always `one_m`. Callers that go on to launch must
+    use the return value, or they will act on the choice they wanted rather than the one the record
+    holds.
+    """
+    if not session_id:
+        return None
+    return _remember_window_raw(project_id, session_id, one_m,
+                               only_if_absent=True, drop_pending=True)
+
+
+def window_for(project_id: str, session_id: str) -> Optional[bool]:
+    """The 1M choice recorded for this conversation, or None if it never made one."""
+    if not session_id:
+        return None
+    return _window_raw(project_id, session_id)
+
+
+def remember_pending_window(project_id: str, one_m: bool) -> None:
+    """The window a NEW conversation is being launched with, recorded before its id exists (D6).
+
+    The streaming path learns the conversation id from the CLI's init event and records it there,
+    but a terminal or one-shot launch hands the CLI its own process and never sees an init — the id
+    only exists in the transcript afterwards. Without this the choice would be lost, and the
+    conversation would adopt whatever the global switch happened to say the next time it was
+    resumed. `_resolve_window` claims it the first time that conversation is seen, and any
+    identified launch clears it.
+    """
+    _remember_window_raw(project_id, "", one_m)
+
+
+def pending_window(project_id: str) -> Optional[bool]:
+    """The launch choice for a conversation that has not been identified yet, if any."""
+    return _window_raw(project_id, "")
+
+
+def clear_pending_window(project_id: str) -> None:
+    """Drop a parked launch choice that a later, IDENTIFIED conversation has superseded (D6).
+
+    Called wherever a named conversation resolves, so the slot cannot outlive the next send in its
+    project. A parked guess is only ever meant for the conversation that launch created; once a
+    different one has been named, keeping it is how it ends up misattributed.
+    """
+    _remember_window_raw(project_id, "", None)
+
+
+def claim_pending_window(project_id: str, session_id: str) -> Optional[bool]:
+    """Take the parked launch choice for this conversation, atomically, and clear it.
+
+    ONE lock covers the read, the write and the clear. Doing it as `pending_window()` followed by
+    `remember_window()` was not atomic: two sends into two different conversations could both read
+    the value before either had written it, so both claimed the same window (found by review,
+    2026-11-16). Returns None when nothing was parked, or when the claim could not be recorded —
+    better to fall through to the normal default than to act on a claim that was not saved.
+    """
+    if not project_id or not session_id:
+        return None
+    with _window_lock:
+        m = {}
+        for k, v in _load_windows().items():
+            m[k] = dict(v) if isinstance(v, dict) else v
+        cur = m.get(project_id)
+        if not isinstance(cur, dict) or not isinstance(cur.get(""), bool):
+            return None
+        parked = bool(cur.pop(""))
+        # RE-CHECK UNDER THE LOCK. `_resolve_window` checks for a record before calling, but another
+        # thread can write one in between. The first record wins (write-once, see
+        # `remember_window`), and the parked guess is dropped rather than stored over it.
+        recorded = cur.get(session_id)
+        if isinstance(recorded, bool):
+            result = bool(recorded)
+        else:
+            cur[session_id] = parked
+            result = parked
+        try:
+            _WINDOW_F.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _WINDOW_F.with_suffix(".tmp")
+            tmp.write_text(json.dumps(m), encoding="utf-8")
+            fsutil.replace(tmp, _WINDOW_F)
+            _window_cache["map"] = m
+            _window_cache["mtime"] = _WINDOW_F.stat().st_mtime
+        except OSError:
+            return None
+    return result
+
+
+# --- a conversation started with an EXPLICIT 1M choice runs the WHOLE window (2026-11-17) -----
+# `cc_compact_window` (Settings > Prompt cache > Compact at) bounds where auto-compaction starts,
+# and it was applied to every Claude launch. So a conversation the user deliberately started with
+# "1M context" for a big job compacted at 400k like any other: the 1M it asked for was never
+# reachable. The cap is right for the DEFAULT conversation (measured on this machine, 25,160 Opus
+# 5.5 main-thread calls: a 400k cap sends about a third less context), and wrong for the one the
+# user opened 1M on purpose. This set names the second kind. Like the window, it is decided when
+# the conversation starts and held for its whole life, so a respawn keeps it.
+_FULL_F = DATA_DIR / "sessions" / "conversation_full_window.json"
+_full_cache: dict = {"mtime": -1.0, "map": {}}
+
+
+def _load_full() -> dict:
+    try:
+        mt = _FULL_F.stat().st_mtime
+        if mt != _full_cache["mtime"]:
+            data = json.loads(_FULL_F.read_text(encoding="utf-8"))
+            _full_cache["map"] = data if isinstance(data, dict) else {}
+            _full_cache["mtime"] = mt
+    except Exception:
+        pass
+    return _full_cache["map"]
+
+
+def remember_full_window(project_id: str, session_id: str) -> None:
+    """Mark a conversation as one that runs the whole 1M window, uncapped. Add-only."""
+    if not project_id or not session_id:
+        return
+    with _window_lock:
+        m = {k: list(v) for k, v in _load_full().items() if isinstance(v, list)}
+        ids = m.setdefault(project_id, [])
+        if session_id in ids:
+            return
+        ids.append(session_id)
+        try:
+            _FULL_F.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _FULL_F.with_suffix(".tmp")
+            tmp.write_text(json.dumps(m), encoding="utf-8")
+            fsutil.replace(tmp, _FULL_F)
+            _full_cache["map"] = m
+            _full_cache["mtime"] = _FULL_F.stat().st_mtime
+        except OSError:
+            pass
+
+
+def full_window(project_id: str, session_id: str) -> bool:
+    """Whether this conversation was started with an explicit 1M choice (no compact cap)."""
+    if not project_id or not session_id:
+        return False
+    ids = _load_full().get(project_id)
+    return isinstance(ids, list) and session_id in ids
+
+
+def window_for_session(session_id: str) -> Optional[bool]:
+    """The recorded window for a conversation id, whichever project it belongs to (D6).
+
+    For callers that hold a transcript PATH rather than a project — a subagent row, say — and must
+    still not draw its fill against a window the conversation is not using. Session ids are
+    globally unique, and this map holds one small entry per conversation, so the scan is cheap.
+    """
+    if not session_id:
+        return None
+    for conv in _load_windows().values():
+        if isinstance(conv, dict) and isinstance(conv.get(session_id), bool):
+            return bool(conv[session_id])
+    return None
+
+
 _GIT_TTL = perf.Ttl(15.0, limit=128)
 
 
@@ -764,7 +1017,11 @@ def _scan_one_project(pdir: Path) -> Optional[CCProject]:
         proj.todo_in_progress = st["todo_in_progress"]
         proj.awaiting_input = _awaiting_input(tail)
         proj.working = _is_working(tail, last_mtime, proj.awaiting_input, proj.id)
-        _apply(proj, _context_info(tail))
+        # The window the conversation being MEASURED is really running with (D6), not the global
+        # default and not the pinned chat's: `newest` here is the newest transcript by mtime, which
+        # is not always the pinned one, so the denominator has to come from the same conversation
+        # whose usage is in `tail`. Reading the global would draw a 200k chat against 1M.
+        _apply(proj, _context_info(tail, window_for(proj.id, newest.stem)))
 
     if proj.exists:
         _apply(proj, _git_info(cwd))
@@ -1413,7 +1670,7 @@ def _provider_window(model: str) -> int:
     return int(table.get(model, 0))
 
 
-def model_window(model: str, used: int = 0) -> int:
+def model_window(model: str, used: int = 0, one_m: Optional[bool] = None) -> int:
     """The context window this model is running with, in tokens.
 
     Pulled out of ``_context_info`` so that everything which shows a fill — the session meter, a
@@ -1423,6 +1680,12 @@ def model_window(model: str, used: int = 0) -> int:
 
     `used` is optional and only widens the answer: a turn that already billed more than 200k
     input proves the big window regardless of what the id looks like.
+
+    `one_m` is the CONVERSATION's recorded choice (D6). Pass it wherever the call site knows which
+    conversation is on screen: the global switch is now only the default for the NEXT new chat, so
+    reading it here can report a window the running session is not using — a 200k conversation
+    drawn against a 1M window reads as four times emptier than it is, and the model would be told
+    the same wrong number.
     """
     ml = (model or "").lower()
     cw = int(settings.get("context_window", 0) or 0)
@@ -1432,17 +1695,30 @@ def model_window(model: str, used: int = 0) -> int:
         return cw
     # Existing turns above 200k prove an older live session still has its large window.
     # New Claude launches with cc_1m off also bound models whose native default is 1M.
+    want_1m = bool(settings.get("cc_1m", True)) if one_m is None else bool(one_m)
     on_1m = (
         ("kimi-k3" in ml)
         or (used > 200_000)
-        or (bool(settings.get("cc_1m", True)) and (
+        or (want_1m and (
             "1m" in ml or "opus" in ml or "fable" in ml or "mythos" in ml
             or bool(re.search(r"(?:sonnet-[5-9]|haiku-5-5)", ml))))
     )
     return 1_000_000 if on_1m else 200_000
 
 
-def _context_info(entries: list[dict]) -> dict:
+def conversation_window(project_id: str) -> Optional[bool]:
+    """The 1M choice recorded for this project's ACTIVE conversation, or None if it has none (D6).
+
+    None means "no conversation has claimed a window yet", which `model_window` then answers from
+    the global setting — the same default a brand-new conversation would get.
+    """
+    try:
+        return window_for(project_id, active_session_id(project_id) or "")
+    except Exception:
+        return None
+
+
+def _context_info(entries: list[dict], one_m: Optional[bool] = None) -> dict:
     """Context-window fill from the latest assistant turn's token usage.
 
     Compaction-aware: right after a /compact the newest *assistant* turn in the
@@ -1510,7 +1786,7 @@ def _context_info(entries: list[dict]) -> dict:
                 break
     if used <= 0:
         return {}
-    mx = model_window(model, used)
+    mx = model_window(model, used, one_m)
     compact_at = float(settings.get("auto_compact_at", 0.92) or 0.92)
     frac = used / mx
     out = {
@@ -2181,7 +2457,7 @@ def project_context(project_id: str) -> dict:
         return {}
     newest = active_transcript(project_id, jsonls)   # context meter follows the pinned chat
     tail = _tail_entries_cached(newest, kb=128)
-    info = _context_info(tail)
+    info = _context_info(tail, window_for(project_id, newest.stem))
     awaiting = _awaiting_input(tail)
     info["awaiting_input"] = awaiting
     info["working"] = _is_working(tail, newest.stat().st_mtime, awaiting, project_id)
@@ -2255,7 +2531,7 @@ def _apply_compact_hook(info: dict, project_id: str, session: str = "") -> None:
     used = int(settings.get("compact_base_tokens", 25000) or 25000) + summary
     if info.get("ctx_used") and used >= int(info["ctx_used"]):
         return                     # nothing stale to correct — leave the real figure alone
-    mx = model_window(str(info.get("model") or ""))
+    mx = model_window(str(info.get("model") or ""), 0, window_for(project_id, session or ""))
     compact_at = float(settings.get("auto_compact_at", 0.92) or 0.92)
     frac = used / mx if mx else 0.0
     info.update({
